@@ -52,6 +52,7 @@ function createSafeRunner(sendOutputFn) {
       if (language === 'c' || language === 'cpp') {
         const binary = path.join(tempDir, process.platform === 'win32' ? 'program.exe' : 'program');
         const compiler = language === 'cpp' ? 'g++' : 'gcc';
+        out('info', 'Safety note: project code runs with your account permissions. Only run code you trust; this is not an OS sandbox.');
         out('info', `Compiling a temporary snapshot with ${compiler}…`);
         const includeArgs = filePath ? ['-I', originalDir] : [];
         const compile = await execProcess(compiler, [source, ...includeArgs, '-o', binary], tempDir, timeoutMs, out, setChild);
@@ -67,6 +68,7 @@ function createSafeRunner(sendOutputFn) {
         command = process.platform === 'win32' ? 'python' : 'python3'; args = [source];
       }
 
+      out('info', 'Safety note: project code runs with your account permissions. Only run code you trust; this is not an OS sandbox.');
       out('info', `Running temporary snapshot of ${fileName}…`);
       const result = await execProcess(command, args, originalDir, timeoutMs, out, setChild);
       const durationMs = Date.now() - startTime;
