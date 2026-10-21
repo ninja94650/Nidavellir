@@ -147,9 +147,13 @@ $('saveBtn').onclick = async () => {
 function createNewFile() {
   // Start a clean untitled document; never reuse the previous file path.
   currentPath = null;
-  currentName = 'untitled.js';
-  currentLanguage = 'javascript';
-  const documentState = { name: currentName, language: currentLanguage, content: '// Start coding here\n' };
+  currentName = 'untitled.cpp';
+  currentLanguage = 'cpp';
+  const documentState = {
+    name: currentName,
+    language: currentLanguage,
+    content: '#include <iostream>\n\nint main() {\n    std::cout << "Hello, Nidavellir!\\n";\n    return 0;\n}\n'
+  };
   $('tabs').querySelector('.tab').textContent = currentName;
   $('languageStatus').textContent = currentLanguage;
   setStatus('New unsaved file');
