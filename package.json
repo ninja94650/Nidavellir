@@ -1,0 +1,36 @@
+{
+  "name": "nidavellir-ide",
+  "version": "0.2.0",
+  "description": "Nidavellir — a beginner-friendly AI-assisted desktop coding environment",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/*.test.js",
+    "dist:dir": "electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "dev.nidavellir.ide",
+    "productName": "Nidavellir",
+    "files": [
+      "src/**/*",
+      "plugins/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}

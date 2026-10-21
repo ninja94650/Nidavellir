@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://api.openai.com https://generativelanguage.googleapis.com https://api.anthropic.com;">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nidavellir</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.min.js"></script>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><span class="logo">N</span><span>Nidavellir <small>AI IDE</small></span></div>
+    <div class="top-actions">
+      <button id="openFolderBtn">Open folder</button><button id="openBtn">Open file</button><button id="saveBtn">Save</button>
+      <button class="primary" id="runBtn">▶ Run</button>
+      <button id="pluginsBtn">🧩 Plugins</button>
+      <button id="settingsBtn">⚙ AI Settings</button>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <aside class="activity">
+      <button class="active" title="Explorer">▤</button>
+      <button title="AI panel" id="focusAiBtn">✧</button>
+      <button title="Terminal" id="focusTerminalBtn">⌁</button>
+    </aside>
+
+    <aside class="sidebar">
+      <div class="side-heading">EXPLORER <span id="folderName">NO FOLDER</span></div>
+      <div id="fileTree" class="file-tree"><div class="empty-hint">Open a folder to browse files.</div></div>
+      <div class="beginner-card"><strong>New here?</strong><p>Open a file or create a new one. Choose a language, press Run, then ask an AI to explain errors.</p><button id="newFileBtn">＋ New file</button></div>
+    </aside>
+
+    <main class="main-area">
+      <div class="tabs" id="tabs"><div class="tab active">welcome.md</div><div class="tab-spacer"></div><span class="status-pill" id="statusPill">READY</span></div>
+      <div class="editor-wrap">
+        <div id="editor"></div>
+        <div id="fallbackEditor" hidden><textarea id="plainEditor" spellcheck="false"></textarea></div>
+        <!-- Diff review overlay — sits on top of editor -->
+        <div id="diffOverlay" class="diff-overlay" hidden>
+          <div class="diff-header">
+            <span>📝 Review Proposed Changes</span>
+            <div class="diff-actions">
+              <button id="diffApply" class="primary">✓ Apply</button>
+              <button id="diffCopy">📋 Copy</button>
+              <button id="diffDismiss" class="close-btn">✗ Dismiss</button>
+            </div>
+          </div>
+          <div id="diffEditor" class="diff-editor-wrap"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-tabs">
+            <button class="panel-tab active" data-panel="terminal">TERMINAL / OUTPUT</button>
+            <button class="panel-tab" data-panel="problems">PROBLEMS</button>
+          </div>
+          <div class="panel-head-actions">
+            <button id="runHistoryBtn" class="subtle">History</button>
+            <button id="clearOutputBtn" class="subtle">Clear</button>
+          </div>
+        </div>
+        <div id="terminal" class="terminal"><div class="term-line muted">Welcome to Nidavellir. Run code to see output here.</div></div>
+        <div id="problems" class="terminal" hidden><div class="term-line muted">Compiler and runtime errors will appear in Terminal / Output.</div></div>
+        <!-- Run history dropdown -->
+        <div id="runHistoryDropdown" class="run-history" hidden>
+          <div class="run-history-title">RECENT RUNS</div>
+          <div id="runHistoryList"></div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="ai-panel" id="aiPanel">
+      <div class="ai-title"><div><span class="sparkle">✧</span> AI WORKBENCH</div><span class="online-dot"></span></div>
+      <p class="ai-subtitle">Ask multiple coding assistants to work together.</p>
+      <div class="provider-row">
+        <label><input type="checkbox" id="useOpenAI" checked> GPT</label>
+        <label><input type="checkbox" id="useGemini" checked> Gemini</label>
+        <label><input type="checkbox" id="useClaude" checked> Claude</label>
+        <label class="coordinator-label"><input type="checkbox" id="useCoordinator" checked> 🔮 Coordinator</label>
+      </div>
+      <div class="quick-actions" id="quickActions">
+        <button data-prompt="Explain this code to a beginner, line by line.">Explain code</button>
+        <button data-prompt="Find likely bugs and security problems in this code. Give fixes with file/line references where possible.">Find bugs</button>
+        <button data-prompt="Suggest and implement a fix for the current error. Explain the change.">Fix error</button>
+        <button data-prompt="Write useful tests for this code and explain how to run them.">Write tests</button>
+        <button data-action="generate-tests">🧪 Generate tests</button>
+      </div>
+      <div class="chat" id="chat"><div class="welcome-chat"><div class="welcome-icon">✦</div><strong>Your AI coding team</strong><p>Select one or more assistants. They will independently analyze the same prompt; the coordinator then synthesizes a unified answer.</p></div></div>
+      <div class="composer">
+        <textarea id="promptInput" placeholder="Ask the team to debug, explain, refactor, or build something…" rows="3"></textarea>
+        <div class="composer-bottom"><span id="selectionHint">Current file will be included</span><button id="askBtn" class="primary">Ask team ↗</button></div>
+      </div>
+      <div class="ai-foot">API usage may cost money. Review AI-generated code before running.</div>
+    </aside>
+  </div>
+
+  <footer class="statusbar">
+    <span id="statusText">Ready · No file open</span>
+    <span id="pluginStatusItems"></span>
+    <span id="languageStatus">JavaScript</span>
+    <span>Nidavellir 0.2.0</span>
+  </footer>
+</div>
+
+<!-- ── Settings modal ── -->
+<div class="modal-backdrop" id="settingsModal" hidden>
+  <section class="modal">
+    <div class="modal-title"><div><h2>AI provider settings</h2><p>Keys are encrypted with your operating system's secure storage.</p></div><button id="closeSettings" class="close">×</button></div>
+    <div class="provider-setting"><label for="openaiKey">OpenAI API key <span id="openaiState">Not checked</span></label><input id="openaiKey" type="password" placeholder="sk-…"><small>For GPT models. Get a key from the OpenAI developer platform.</small></div>
+    <div class="provider-setting"><label for="geminiKey">Google Gemini API key <span id="geminiState">Not checked</span></label><input id="geminiKey" type="password" placeholder="API key"><small>Get a key from Google AI Studio.</small></div>
+    <div class="provider-setting"><label for="claudeKey">Anthropic Claude API key <span id="claudeState">Not checked</span></label><input id="claudeKey" type="password" placeholder="sk-ant-…"><small>Get a key from Anthropic Console.</small></div>
+    <div class="modal-note">Nidavellir is an independent starter project, not an official product of OpenAI, Google, Anthropic, or Microsoft. Each provider requires its own API key and may require billing. Do not share your keys.</div>
+    <div class="modal-actions"><button id="checkKeysBtn">Check saved keys</button><button id="saveKeysBtn" class="primary">Save keys securely</button></div>
+    <div id="settingsMessage" class="settings-message"></div>
+  </section>
+</div>
+
+<!-- ── Plugin manager modal ── -->
+<div class="modal-backdrop" id="pluginModal" hidden>
+  <section class="modal">
+    <div class="modal-title"><div><h2>Plugin Manager</h2><p>Enable or disable installed plugins.</p></div><button id="closePlugins" class="close">×</button></div>
+    <div id="pluginList" class="plugin-list"></div>
+    <div class="modal-note">Plugins are loaded from the <code>plugins/</code> folder. Each plugin needs a <code>plugin.json</code> manifest and a JavaScript entry point.</div>
+  </section>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

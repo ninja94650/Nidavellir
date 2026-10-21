@@ -1,0 +1,6 @@
+{
+  "name": "timestamp-inserter",
+  "version": "1.0.0",
+  "description": "Adds a quick action that asks AI to insert a last-modified timestamp comment.",
+  "main": "index.js"
+}

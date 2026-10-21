@@ -1,0 +1,33 @@
+const { contextBridge, ipcRenderer } = require('electron');
+contextBridge.exposeInMainWorld('forge', {
+  // ── file operations ──
+  openFile:    ()       => ipcRenderer.invoke('file:open'),
+  saveFile:    payload  => ipcRenderer.invoke('file:save', payload),
+  openFolder:  ()       => ipcRenderer.invoke('file:open-folder'),
+  readPath:    filePath => ipcRenderer.invoke('file:read-path', filePath),
+
+  // ── runner ──
+  run:         payload  => ipcRenderer.invoke('runner:run', payload),
+  runSafe:     payload  => ipcRenderer.invoke('runner:run-safe', payload),
+  killRun:     ()       => ipcRenderer.invoke('runner:kill'),
+  runHistory:  ()       => ipcRenderer.invoke('runner:history'),
+
+  // ── AI ──
+  setKey:        payload => ipcRenderer.invoke('ai:set-key', payload),
+  askAI:         payload => ipcRenderer.invoke('ai:ask', payload),
+  keyStatus:     ()      => ipcRenderer.invoke('ai:key-status'),
+  synthesize:    payload => ipcRenderer.invoke('ai:synthesize', payload),
+  generateTests: payload => ipcRenderer.invoke('ai:generate-tests', payload),
+
+  // ── plugins ──
+  initPlugins:        ()      => ipcRenderer.invoke('plugins:init'),
+  listPlugins:        ()      => ipcRenderer.invoke('plugins:list'),
+  togglePlugin:       payload => ipcRenderer.invoke('plugins:toggle', payload),
+  pluginQuickActions: ()      => ipcRenderer.invoke('plugins:quick-actions'),
+  pluginStatusItems:  ()      => ipcRenderer.invoke('plugins:status-items'),
+
+  // ── events (renderer listens) ──
+  onRunnerOutput:       cb => ipcRenderer.on('runner:output',         (_e, v) => cb(v)),
+  onRunnerState:        cb => ipcRenderer.on('runner:state',          (_e, v) => cb(v)),
+  onPluginStatusUpdate: cb => ipcRenderer.on('plugins:status-update', (_e, v) => cb(v)),
+});

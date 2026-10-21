@@ -1,0 +1,6 @@
+{
+  "name": "word-counter",
+  "version": "1.0.0",
+  "description": "Shows a live word and character count in the status bar.",
+  "main": "index.js"
+}
