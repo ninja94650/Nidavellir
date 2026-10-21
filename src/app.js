@@ -144,19 +144,56 @@ $('saveBtn').onclick = async () => {
     if (f) { currentPath = f.filePath; currentName = f.name; $('tabs').querySelector('.tab').textContent = currentName; setStatus('Saved · ' + currentPath); }
   } catch (e) { addOutput('stderr', e.message); }
 };
+const newFileTypes = {
+  cpp: { extension: '.cpp', language: 'cpp' },
+  c: { extension: '.c', language: 'c' },
+  javascript: { extension: '.js', language: 'javascript' },
+  python: { extension: '.py', language: 'python' },
+  java: { extension: '.java', language: 'java' },
+  go: { extension: '.go', language: 'go' },
+  rust: { extension: '.rs', language: 'rust' },
+  typescript: { extension: '.ts', language: 'typescript' },
+  ruby: { extension: '.rb', language: 'ruby' },
+  php: { extension: '.php', language: 'php' },
+  bash: { extension: '.sh', language: 'bash' },
+  powershell: { extension: '.ps1', language: 'powershell' },
+  html: { extension: '.html', language: 'html' },
+  css: { extension: '.css', language: 'css' },
+  json: { extension: '.json', language: 'json' },
+  markdown: { extension: '.md', language: 'markdown' },
+  plaintext: { extension: '.txt', language: 'plaintext' }
+};
+
+function updateNewFilePreview() {
+  const rawName = $('newFileName').value.trim();
+  const type = newFileTypes[$('newFileType').value] || newFileTypes.cpp;
+  const baseName = rawName.replace(/\\.[^.]+$/, '');
+  $('newFilePreview').textContent = (baseName || 'untitled') + type.extension;
+}
+
 function createNewFile() {
-  // Start a clean untitled document; never reuse the previous file path.
+  $('newFileName').value = 'untitled';
+  $('newFileType').value = 'cpp';
+  updateNewFilePreview();
+  $('newFileModal').hidden = false;
+  $('newFileName').focus();
+  $('newFileName').select();
+}
+
+function createNewDocument(name, language) {
+  const type = Object.values(newFileTypes).find(item => item.language === language) || newFileTypes.cpp;
+  const starterCode = language === 'cpp'
+    ? '#include <iostream>\\n\\nint main() {\\n    std::cout << "Hello, Nidavellir!\\\\n";\\n    return 0;\\n}\\n'
+    : language === 'c'
+      ? '#include <stdio.h>\\n\\nint main(void) {\\n    printf("Hello, Nidavellir!\\\\n");\\n    return 0;\\n}\\n'
+      : '';
+  const documentState = { name, language, content: starterCode };
   currentPath = null;
-  currentName = 'untitled.cpp';
-  currentLanguage = 'cpp';
-  const documentState = {
-    name: currentName,
-    language: currentLanguage,
-    content: '#include <iostream>\n\nint main() {\n    std::cout << "Hello, Nidavellir!\\n";\n    return 0;\n}\n'
-  };
+  currentName = documentState.name;
+  currentLanguage = documentState.language;
   $('tabs').querySelector('.tab').textContent = currentName;
   $('languageStatus').textContent = currentLanguage;
-  setStatus('New unsaved file');
+  setStatus('New unsaved file · ' + currentName);
 
   if (monacoReady && editor) {
     setValue(documentState.content, documentState.language);
@@ -170,9 +207,36 @@ function createNewFile() {
     $('plainEditor').focus();
     return;
   }
-  // Monaco's loader is asynchronous; apply the request when it finishes.
   pendingNewDocument = documentState;
 }
+
+$('newFileName').addEventListener('input', updateNewFilePreview);
+$('newFileType').addEventListener('change', updateNewFilePreview);
+$('cancelNewFile').addEventListener('click', () => { $('newFileModal').hidden = true; });
+$('cancelNewFileAction').addEventListener('click', () => { $('newFileModal').hidden = true; });
+$('newFileModal').addEventListener('click', event => {
+  if (event.target === $('newFileModal')) $('newFileModal').hidden = true;
+});
+$('newFileForm').addEventListener('submit', event => {
+  event.preventDefault();
+  const rawName = $('newFileName').value.trim();
+  if (!rawName || /[\\\\/<>:"|?*\\x00-\\x1f]/.test(rawName) || rawName === '.' || rawName === '..') {
+    $('newFileName').setCustomValidity('Enter a valid filename without folder paths or reserved characters.');
+    $('newFileName').reportValidity();
+    return;
+  }
+  $('newFileName').setCustomValidity('');
+  const type = newFileTypes[$('newFileType').value] || newFileTypes.cpp;
+  const baseName = rawName.replace(/\\.[^.]+$/, '').trim();
+  if (!baseName || baseName === '.' || baseName === '..') {
+    $('newFileName').setCustomValidity('Enter a valid filename.');
+    $('newFileName').reportValidity();
+    return;
+  }
+  const name = baseName + type.extension;
+  $('newFileModal').hidden = true;
+  createNewDocument(name, type.language);
+});
 $('newFileBtn').onclick = createNewFile;
 
 /* ─────────────────────────────────────────────
