@@ -1092,3 +1092,57 @@ input:focus, textarea:focus, select:focus { outline-color: var(--accent); }
   .ai-panel { width: 260px; min-width: 240px; }
   .sidebar { width: 175px; min-width: 150px; }
 }
+
+
+/* Interactive Find / Replace toolbar */
+.find-bar {
+  position: relative;
+  z-index: 8;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  background: rgba(4, 20, 27, .98);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .2);
+}
+.find-bar[hidden], .find-row[hidden] { display: none !important; }
+.find-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+}
+.find-row + .find-row { margin-top: 6px; }
+.find-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 220px;
+  min-width: 120px;
+  color: #9bcbd5;
+  font-size: 12px;
+}
+.find-field input {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid rgba(110,230,255,.28);
+  border-radius: 4px;
+}
+.find-case { display: flex; align-items: center; gap: 5px; white-space: nowrap; font-size: 11px; color: #9bcbd5; }
+.find-count { min-width: 72px; color: #9bcbd5; font-size: 11px; white-space: nowrap; text-align: center; }
+.find-bar button {
+  padding: 6px 9px;
+  border: 1px solid rgba(110,230,255,.25);
+  border-radius: 4px;
+  background: rgba(9, 42, 53, .9);
+  color: #e6fbff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.find-bar button:hover { border-color: var(--accent); background: rgba(12, 68, 82, .95); }
+.find-spacer { flex: 1; }
+@media (max-width: 760px) {
+  .find-row { flex-wrap: wrap; }
+  .find-field { flex-basis: 100%; }
+  .find-count { flex: 1; }
+}
