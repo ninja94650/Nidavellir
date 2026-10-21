@@ -9,11 +9,13 @@
     "dist:dir": "electron-builder --dir",
     "dist:win": "electron-builder --win nsis --publish never",
     "dist:linux": "electron-builder --linux AppImage --publish never",
-    "dist:mac": "electron-builder --mac dmg --publish never"
+    "dist:mac": "electron-builder --mac dmg --publish never",
+    "test:ui": "node tests/ui-buttons.test.js"
   },
   "devDependencies": {
     "electron": "^38.0.0",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "playwright": "^1.56.1"
   },
   "build": {
     "appId": "dev.nidavellir.ide",
