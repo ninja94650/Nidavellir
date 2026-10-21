@@ -31,6 +31,22 @@ jobs:
         run: npm test
       - name: Build Windows installer
         run: npm run dist:win
+      - name: Smoke-test installed Windows desktop app
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem dist -Filter *.exe | Select-Object -First 1
+          if (-not $installer) { throw "Windows installer was not produced." }
+          $installDir = Join-Path $env:RUNNER_TEMP "NidavellirSmokeTest"
+          $proc = Start-Process -FilePath $installer.FullName -ArgumentList @("/S", "/D=$installDir") -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "Silent installer failed with exit code $($proc.ExitCode)." }
+          $appExe = Join-Path $installDir "Nidavellir.exe"
+          if (-not (Test-Path $appExe)) { throw "Installed Nidavellir.exe was not found." }
+          $app = Start-Process -FilePath $appExe -PassThru
+          Start-Sleep -Seconds 12
+          $app.Refresh()
+          if ($app.HasExited) { throw "Nidavellir exited during the startup smoke test (exit code $($app.ExitCode))." }
+          Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+          Write-Host "PASS: installer installed Nidavellir and the desktop process stayed alive for 12 seconds."
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
@@ -54,6 +70,22 @@ jobs:
         run: npm test
       - name: Build Linux AppImage
         run: npm run dist:linux
+      - name: Smoke-test Linux AppImage launch
+        shell: bash
+        run: |
+          set -euo pipefail
+          appimage="$(find dist -maxdepth 1 -name '*.AppImage' -print -quit)"
+          test -n "$appimage" || { echo "AppImage was not produced."; exit 1; }
+          chmod +x "$appimage"
+          set +e
+          timeout 15s xvfb-run -a "$appimage" --no-sandbox
+          status=$?
+          set -e
+          if [ "$status" -ne 124 ]; then
+            echo "AppImage did not remain running for the 15-second startup smoke test (exit code $status)."
+            exit 1
+          fi
+          echo "PASS: AppImage launched in a virtual desktop and stayed alive for 15 seconds."
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
