@@ -14,10 +14,10 @@ The separately supplied HTML/CSS/JavaScript mockup was used as a visual referenc
 
 - Electron desktop app with Monaco editor and a plain-text fallback.
 - Open files and folders, browse a project tree, and save edits.
-- Run supported project code through a guarded runner with output/history controls.
+- Run supported project code from a temporary snapshot so Run does not overwrite the source file; includes source-size, timeout, output, and process-tree stop safeguards (not a security sandbox).
 - Configure OpenAI, Google Gemini, and Anthropic Claude API keys; keys are stored using Electron `safeStorage` where available.
 - Ask configured AI providers for help, synthesize responses, generate tests, and review proposed changes before applying them.
-- Load local JavaScript plugins from `plugins/` with manifests and lifecycle hooks.
+- Discover local JavaScript plugins from `plugins/`; they start disabled and require explicit confirmation before activation.
 - Example plugins and Node.js smoke tests.
 
 ## Requirements
@@ -72,7 +72,7 @@ Each provider must be configured by the user with its own valid API key and may 
 
 Plugins are executable JavaScript and should be treated as trusted code. The current plugin API is intentionally small, but loading a plugin in the Electron main process is **not** a security sandbox. Install only reviewed plugins. See [plugin development and trust guidance](plugins/README.md).
 
-Project execution also has risks. Review commands and generated code before running them, keep backups or use Git, and do not treat the runner as a substitute for OS-level isolation.
+Project execution also has risks. The runner passes a reduced environment, disables shell invocation, and bounds source size, runtime, and captured output, but project code still runs with your account's permissions and may access files or the network available to you. Use an OS sandbox or isolated VM for untrusted code. Temporary snapshots may not resolve relative imports exactly like the original file. Review code before running it and keep backups or use Git.
 
 ## Roadmap
 
