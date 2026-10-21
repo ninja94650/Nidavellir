@@ -47,6 +47,21 @@ Create a local unpacked build:
 npm run dist:dir
 ```
 
+Build an installable desktop package for your operating system:
+
+```bash
+# Windows installer (.exe)
+npm run dist:win
+
+# Linux AppImage
+npm run dist:linux
+
+# macOS disk image (.dmg)
+npm run dist:mac
+```
+
+On Windows, open PowerShell in the cloned repository folder and run `npm install`, then `npm start` to launch the app. To create an installer, run `npm run dist:win`; the installer is written to `dist/\`. The GitHub Actions workflow also builds a Windows installer and Linux AppImage, runs the existing test suite, and publishes the generated files as downloadable workflow artifacts when successful. A workflow must finish successfully before those artifacts are available.
+
 The application is a desktop app; opening the repository in a browser does not run the Electron application. Monaco currently loads from a CDN, so an internet connection is needed for the full editor unless you vendor Monaco locally.
 
 ## AI providers and costs
