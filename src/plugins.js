@@ -114,13 +114,15 @@ async function initPluginSystem(pluginsDir) {
       const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
       if (!manifest.name || !manifest.main) continue;
       if (typeof manifest.main !== 'string' || path.isAbsolute(manifest.main)) continue;
+      const realPluginDir = await fs.realpath(pluginDir);
       const mainPath = path.resolve(pluginDir, manifest.main);
-      const relMain = path.relative(path.resolve(pluginDir), mainPath);
+      const realMainPath = await fs.realpath(mainPath);
+      const relMain = path.relative(realPluginDir, realMainPath);
       if (!relMain || relMain.startsWith('..') || path.isAbsolute(relMain)) continue;
-      await fs.access(mainPath);
+      await fs.access(realMainPath);
       // Third-party plugin code runs with the app's OS permissions. Never auto-run it.
       plugins.set(manifest.name, {
-        manifest, mainPath, dirPath: pluginDir,
+        manifest, mainPath: realMainPath, dirPath: realPluginDir,
         module: null, enabled: false, hookEntries: []
       });
     } catch { /* skip invalid plugins */ }
