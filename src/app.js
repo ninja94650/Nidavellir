@@ -167,7 +167,7 @@ const newFileTypes = {
 function updateNewFilePreview() {
   const rawName = $('newFileName').value.trim();
   const type = newFileTypes[$('newFileType').value] || newFileTypes.cpp;
-  const baseName = rawName.replace(/\.[^.]+$/, '');
+  const baseName = rawName.toLowerCase().endsWith(type.extension) ? rawName.slice(0, -type.extension.length) : rawName;
   $('newFilePreview').textContent = (baseName || 'untitled') + type.extension;
 }
 
@@ -226,8 +226,10 @@ $('newFileForm').addEventListener('submit', event => {
   }
   $('newFileName').setCustomValidity('');
   const type = newFileTypes[$('newFileType').value] || newFileTypes.cpp;
-  const baseName = rawName.replace(/\.[^.]+$/, '').trim();
-  if (!baseName || baseName === '.' || baseName === '..') {
+  const baseName = rawName.toLowerCase().endsWith(type.extension)
+    ? rawName.slice(0, -type.extension.length)
+    : rawName;
+  if (!baseName.trim() || baseName === '.' || baseName === '..') {
     $('newFileName').setCustomValidity('Enter a valid filename.');
     $('newFileName').reportValidity();
     return;
