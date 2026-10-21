@@ -139,6 +139,50 @@
   </footer>
 </div>
 
+<!-- ── New file dialog ── -->
+<div class="modal-backdrop" id="newFileModal" hidden>
+  <section class="modal new-file-modal" role="dialog" aria-modal="true" aria-labelledby="newFileTitle">
+    <div class="modal-title">
+      <div><h2 id="newFileTitle">Create new file</h2><p>Choose a filename and source type.</p></div>
+      <button id="cancelNewFile" class="close" type="button" aria-label="Close">×</button>
+    </div>
+    <form id="newFileForm">
+      <div class="provider-setting">
+        <label for="newFileName">File name</label>
+        <input id="newFileName" type="text" value="untitled" maxlength="120" autocomplete="off" required placeholder="e.g. main">
+        <small>Enter a name without a folder path. The selected extension will be added automatically.</small>
+      </div>
+      <div class="provider-setting">
+        <label for="newFileType">File type</label>
+        <select id="newFileType">
+          <option value="cpp">C++ (.cpp)</option>
+          <option value="c">C (.c)</option>
+          <option value="javascript">JavaScript (.js)</option>
+          <option value="python">Python (.py)</option>
+          <option value="java">Java (.java)</option>
+          <option value="go">Go (.go)</option>
+          <option value="rust">Rust (.rs)</option>
+          <option value="typescript">TypeScript (.ts)</option>
+          <option value="ruby">Ruby (.rb)</option>
+          <option value="php">PHP (.php)</option>
+          <option value="bash">Bash (.sh)</option>
+          <option value="powershell">PowerShell (.ps1)</option>
+          <option value="html">HTML (.html)</option>
+          <option value="css">CSS (.css)</option>
+          <option value="json">JSON (.json)</option>
+          <option value="markdown">Markdown (.md)</option>
+          <option value="plaintext">Text (.txt)</option>
+        </select>
+      </div>
+      <div id="newFilePreview" class="new-file-preview" aria-live="polite">untitled.cpp</div>
+      <div class="modal-actions">
+        <button id="cancelNewFileAction" type="button">Cancel</button>
+        <button class="primary" type="submit">Create file</button>
+      </div>
+    </form>
+  </section>
+</div>
+
 <!-- ── Settings modal ── -->
 <div class="modal-backdrop" id="settingsModal" hidden>
   <section class="modal">
