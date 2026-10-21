@@ -1,10 +1,26 @@
 const { chromium } = require('playwright');
 const path = require('node:path');
-const { pathToFileURL } = require('node:url');
+const fs = require('node:fs');
+const http = require('node:http');
 const assert = require('node:assert/strict');
 
 (async () => {
-  const browser = await chromium.launch({ headless: process.env.HEADLESS_UI === '1', args: ['--allow-file-access-from-files', '--no-sandbox'] });
+  const root = path.resolve(__dirname, '..');
+  const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf' };
+  const server = http.createServer((req, res) => {
+    let pathname;
+    try { pathname = decodeURIComponent(new URL(req.url, 'http://127.0.0.1').pathname); } catch { res.writeHead(400).end(); return; }
+    const target = path.resolve(root, '.' + pathname);
+    if (target !== root && !target.startsWith(root + path.sep)) { res.writeHead(403).end(); return; }
+    fs.readFile(target, (err, data) => {
+      if (err) { res.writeHead(err.code === 'ENOENT' ? 404 : 500).end(); return; }
+      res.writeHead(200, { 'content-type': mime[path.extname(target)] || 'application/octet-stream' });
+      res.end(data);
+    });
+  });
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  const baseUrl = 'http://127.0.0.1:' + server.address().port;
+  const browser = await chromium.launch({ headless: process.env.HEADLESS_UI === '1', args: ['--no-sandbox'] });
   const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
   await page.addInitScript(() => {
     const state = { runner: null, editorCommand: null, keys: {}, plugins: [{ name: 'sample-plugin', version: '1.0.0', description: 'UI test plugin', enabled: true }] };
@@ -38,8 +54,7 @@ const assert = require('node:assert/strict');
   });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
-  const file = pathToFileURL(path.resolve(__dirname, '../src/index.html')).href;
-  await page.goto(file);
+  await page.goto(baseUrl + '/src/index.html');
   await page.waitForSelector('#statusText');
   await page.waitForTimeout(1800);
   const click = async s => { const el = page.locator(s); await el.waitFor({ state: 'visible', timeout: 5000 }); await el.click({ timeout: 5000 }); };
@@ -81,7 +96,12 @@ const assert = require('node:assert/strict');
   });
   await check('Plugin manager toggle/close', async () => {
     await click('#pluginsBtn'); await called('listPlugins');
-    const toggle = page.locator('#pluginList input[type="checkbox"]'); await toggle.waitFor(); await toggle.uncheck(); await called('togglePlugin');
+    const toggle = page.locator('#pluginList input[type="checkbox"]');
+    await toggle.waitFor({ state: 'attached' });
+    const before = await toggle.isChecked();
+    await page.locator('#pluginList .plugin-toggle').click();
+    await page.waitForFunction(expected => document.querySelector('#pluginList input[type="checkbox"]').checked !== expected, before);
+    await called('togglePlugin');
     await click('#closePlugins'); assert.equal(await page.locator('#pluginModal').isVisible(), false);
   });
   await check('Ask team', async () => { await page.locator('#useGemini').uncheck(); await page.locator('#useClaude').uncheck(); await page.locator('#promptInput').fill('Explain test'); await click('#askBtn'); await called('askAI'); });
@@ -102,5 +122,6 @@ const assert = require('node:assert/strict');
   const summary = { totalChecks: results.length, passed: results.filter(x => x.result === 'PASS').length, failed: results.filter(x => x.result === 'FAIL').length, results, visibleButtonsAtEnd: inventory, pageErrors: errors };
   console.log(JSON.stringify(summary, null, 2));
   await browser.close();
+  await new Promise(resolve => server.close(resolve));
   if (summary.failed || errors.length) process.exitCode = 1;
 })().catch(e => { console.error(e); process.exitCode = 1; });
