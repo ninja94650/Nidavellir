@@ -10,6 +10,7 @@ on:
       - 'src/**'
       - 'plugins/**'
       - 'package.json'
+      - 'tests/**'
       - '.github/workflows/build-desktop.yml'
 
 permissions:
@@ -68,6 +69,10 @@ jobs:
         run: npm install
       - name: Run tests
         run: npm test
+      - name: Install Playwright Chromium for UI interaction tests
+        run: npx playwright install --with-deps chromium
+      - name: Click through renderer controls in virtual desktop
+        run: xvfb-run -a npm run test:ui
       - name: Build Linux AppImage
         run: npm run dist:linux
       - name: Install AppImage runtime dependency
