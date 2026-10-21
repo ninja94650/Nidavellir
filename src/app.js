@@ -641,6 +641,7 @@ function replaceCurrentMatch() {
     if (!selectFindMatch(0)) return;
   }
   const match = findMatches[activeFindMatch];
+  const previousIndex = activeFindMatch;
   const replacementText = $('replaceInput').value;
   if (monacoReady && editor) {
     const model = editor.getModel();
@@ -652,7 +653,7 @@ function replaceCurrentMatch() {
     field.dispatchEvent(new Event('input', { bubbles: true }));
   }
   collectFindMatches();
-  if (findMatches.length) selectFindMatch(Math.min(activeFindMatch, findMatches.length - 1));
+  if (findMatches.length) selectFindMatch(Math.min(previousIndex, findMatches.length - 1));
 }
 function replaceAllMatches() {
   const query = $('findInput').value;
