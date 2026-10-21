@@ -57,6 +57,35 @@ function sendRunnerState(running) {
 const runner = createSafeRunner(sendOutput);
 
 /* ─── window ─── */
+function sendEditorCommand(command) {
+  if (win && !win.isDestroyed()) win.webContents.send('editor:command', command);
+}
+
+function installApplicationMenu() {
+  const { Menu } = require('electron');
+  const template = [
+    { label: 'File', submenu: [
+      { label: 'New File', accelerator: 'CmdOrCtrl+N', click: () => sendEditorCommand('new') },
+      { label: 'Open File…', accelerator: 'CmdOrCtrl+O', click: () => sendEditorCommand('open') },
+      { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => sendEditorCommand('save') },
+      { type: 'separator' }, { role: 'quit' }
+    ]},
+    { label: 'Edit', submenu: [
+      { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+      { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'delete' },
+      { type: 'separator' }, { role: 'selectAll' }, { type: 'separator' },
+      { label: 'Find', accelerator: 'CmdOrCtrl+F', click: () => sendEditorCommand('find') },
+      { label: 'Replace', accelerator: 'CmdOrCtrl+H', click: () => sendEditorCommand('replace') },
+      { label: 'Go to Line', accelerator: 'CmdOrCtrl+G', click: () => sendEditorCommand('gotoLine') }
+    ]},
+    { label: 'View', submenu: [
+      { role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'togglefullscreen' }
+    ]}
+  ];
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1450, height: 920, minWidth: 980, minHeight: 650,
@@ -72,6 +101,7 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  installApplicationMenu();
   createWindow();
   pluginSystem.setWindow(win);
   const pluginsDir = path.join(__dirname, '..', 'plugins');
