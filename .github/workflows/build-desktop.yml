@@ -1,0 +1,65 @@
+name: Build Nidavellir desktop app
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - feat/vscode-parity-ai-collaboration
+    paths:
+      - 'src/**'
+      - 'plugins/**'
+      - 'package.json'
+      - '.github/workflows/build-desktop.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm install
+      - name: Run tests
+        run: npm test
+      - name: Build Windows installer
+        run: npm run dist:win
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nidavellir-Windows-Installer
+          path: dist/*.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  linux-package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm install
+      - name: Run tests
+        run: npm test
+      - name: Build Linux AppImage
+        run: npm run dist:linux
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nidavellir-Linux-AppImage
+          path: dist/*.AppImage
+          if-no-files-found: error
+          retention-days: 14
