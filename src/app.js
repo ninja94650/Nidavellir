@@ -5,6 +5,8 @@ const $ = id => document.getElementById(id);
 
 let editor = null, currentPath = null, currentName = 'main.js', currentLanguage = 'javascript';
 let monacoReady = false, isRunning = false;
+// Preserve New File requests made while Monaco is still loading.
+let pendingNewDocument = null;
 let diffEditorInstance = null, proposedCode = '';
 
 const languageMap = {
@@ -41,7 +43,8 @@ require.config({ paths: { vs: '../node_modules/monaco-editor/min/vs' } });
 require(['vs/editor/editor.main'], () => {
   monacoReady = true;
   editor = monaco.editor.create($('editor'), {
-    value: welcome, language: 'javascript', theme: 'vs-dark', automaticLayout: true,
+    value: pendingNewDocument ? pendingNewDocument.content : welcome,
+    language: pendingNewDocument ? pendingNewDocument.language : 'javascript', theme: 'vs-dark', automaticLayout: true,
     fontSize: 13, minimap: { enabled: false }, fontFamily: 'Consolas, "Cascadia Code", monospace',
     scrollBeyondLastLine: false, tabSize: 2, padding: { top: 14 }, wordWrap: 'on'
   });
@@ -49,11 +52,27 @@ require(['vs/editor/editor.main'], () => {
     $('selectionHint').textContent = 'Current file will be included';
     if ($('findBar') && !$('findBar').hidden) collectFindMatches();
   });
-  setStatus('Ready · Unsaved welcome example');
+  if (pendingNewDocument) {
+    $('tabs').querySelector('.tab').textContent = pendingNewDocument.name;
+    showLanguage(pendingNewDocument.language);
+    setStatus('New unsaved file');
+    editor.focus();
+    pendingNewDocument = null;
+  } else {
+    setStatus('Ready · Unsaved welcome example');
+  }
   initPluginUI();
 }, () => {
   $('editor').hidden = true; $('fallbackEditor').hidden = false;
-  $('plainEditor').value = welcome;
+  $('plainEditor').value = pendingNewDocument ? pendingNewDocument.content : welcome;
+  if (pendingNewDocument) {
+    $('tabs').querySelector('.tab').textContent = pendingNewDocument.name;
+    currentName = pendingNewDocument.name;
+    currentLanguage = pendingNewDocument.language;
+    $('languageStatus').textContent = currentLanguage;
+    setStatus('New unsaved file · basic editor mode');
+    pendingNewDocument = null;
+  }
   setStatus('Monaco unavailable · basic editor mode');
   initPluginUI();
 });
@@ -125,11 +144,32 @@ $('saveBtn').onclick = async () => {
     if (f) { currentPath = f.filePath; currentName = f.name; $('tabs').querySelector('.tab').textContent = currentName; setStatus('Saved · ' + currentPath); }
   } catch (e) { addOutput('stderr', e.message); }
 };
-$('newFileBtn').onclick = () => {
-  currentPath = null; currentName = 'untitled.js';
-  setValue('// Start coding here\n', 'javascript'); showLanguage('javascript');
-  $('tabs').querySelector('.tab').textContent = 'untitled.js'; setStatus('New unsaved file');
-};
+function createNewFile() {
+  // Start a clean untitled document; never reuse the previous file path.
+  currentPath = null;
+  currentName = 'untitled.js';
+  currentLanguage = 'javascript';
+  const documentState = { name: currentName, language: currentLanguage, content: '// Start coding here\n' };
+  $('tabs').querySelector('.tab').textContent = currentName;
+  $('languageStatus').textContent = currentLanguage;
+  setStatus('New unsaved file');
+
+  if (monacoReady && editor) {
+    setValue(documentState.content, documentState.language);
+    showLanguage(documentState.language);
+    editor.focus();
+    editor.setPosition({ lineNumber: 1, column: 1 });
+    return;
+  }
+  if (!$('fallbackEditor').hidden) {
+    $('plainEditor').value = documentState.content;
+    $('plainEditor').focus();
+    return;
+  }
+  // Monaco's loader is asynchronous; apply the request when it finishes.
+  pendingNewDocument = documentState;
+}
+$('newFileBtn').onclick = createNewFile;
 
 /* ─────────────────────────────────────────────
    Safe runner with kill support
