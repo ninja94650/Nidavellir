@@ -1286,3 +1286,6 @@ input:focus, textarea:focus, select:focus, .composer textarea:focus {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+
+/* Respect hidden state for collapsible workspace regions. */
+.sidebar[hidden], .ai-panel[hidden], .panel[hidden] { display: none !important; }
