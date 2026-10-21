@@ -168,6 +168,17 @@ ipcMain.handle('file:save', async (_event, payload) => {
   filePath = path.resolve(filePath);
   if (userChosePath) approvedRoots.add(path.dirname(filePath));
   else if (!await isWithinApprovedRoot(filePath)) throw new Error('Save denied: choose a file through the Nidavellir file picker first.');
+  // New files must never overwrite an existing path. Existing documents may
+  // still be saved back to their own path after they have been opened explicitly.
+  if (userChosePath) {
+    try {
+      await fs.lstat(filePath);
+      throw new Error('A file with that name already exists. Choose a different filename.');
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+
   // Do not follow a symlink at the destination when saving editor content.
   try {
     const destinationStat = await fs.lstat(filePath);
