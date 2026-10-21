@@ -35,7 +35,7 @@ test('runner executes an editor snapshot without overwriting the source file', a
 
 test('runner rejects unsupported languages and oversized source before execution', async () => {
   const runner = createSafeRunner(() => {});
-  await assert.rejects(() => runner.run({ language: 'java', content: 'class A {}' }), /Supported run targets/);
+  await assert.rejects(() => runner.run({ language: 'kotlin', content: 'class A {}' }), /Supported run targets/);
   await assert.rejects(() => runner.run({ language: 'javascript', content: 'x'.repeat(MAX_SOURCE_BYTES + 1) }), /2 MB run limit/);
 });
 
