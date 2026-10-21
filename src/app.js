@@ -8,7 +8,7 @@ let monacoReady = false, isRunning = false;
 let diffEditorInstance = null, proposedCode = '';
 
 const languageMap = {
-  js:'javascript',mjs:'javascript',cjs:'javascript',py:'python',cpp:'cpp',c:'c',
+  js:'javascript',mjs:'javascript',cjs:'javascript',py:'python',cpp:'cpp',c:'c',java:'java',go:'go',rs:'rust',rb:'ruby',php:'php',sh:'bash',ps1:'powershell',
   h:'c',hpp:'cpp',java:'java',html:'html',css:'css',json:'json',md:'markdown',
   txt:'plaintext',ts:'typescript',tsx:'typescript',jsx:'javascript',rs:'rust',go:'go'
 };
@@ -29,7 +29,7 @@ const welcome = `// Welcome to Nidavellir
 // • Auto test generation — generate and save tests automatically
 // • Diff review — review and apply AI-proposed code changes
 //
-// Supported run targets: JavaScript (Node.js), Python, C, and C++.
+// Run support: JavaScript, Python, C/C++, Java, Go, Rust, Ruby, PHP, Bash, and PowerShell (when their toolchains are installed).
 // Tip: AI suggestions can now be reviewed in a diff view before applying.
 `;
 
@@ -140,8 +140,8 @@ $('runBtn').onclick = async () => {
   if (isRunning) { window.forge.killRun(); return; }
 
   const lang = currentLanguage;
-  if (!['javascript','python','cpp','c'].includes(lang)) {
-    addOutput('stderr', `Run is not configured for ${lang}. Supported: JavaScript, Python, C, C++.`); return;
+  if (!['javascript','python','cpp','c','java','go','rust','ruby','php','bash','powershell'].includes(lang)) {
+    addOutput('stderr', `Run is not configured for ${lang}. Supported run targets: JavaScript, Python, C/C++, Java, Go, Rust, Ruby, PHP, Bash, and PowerShell.`); return;
   }
 
   $('terminal').innerHTML = '';
@@ -215,6 +215,29 @@ document.addEventListener('click', e => {
    ───────────────────────────────────────────── */
 
 $('clearOutputBtn').onclick = () => { $('terminal').innerHTML = ''; };
+
+$('terminalStartBtn').onclick = async () => {
+  try {
+    const result = await window.forge.terminalStart({ cwd: currentPath ? currentPath.replace(/[\\/][^\\/]*$/, '') : null });
+    if (result?.cwd) addOutput('info', `Integrated terminal started in ${result.cwd}`);
+    $('terminalCommand').focus();
+  } catch (e) { addOutput('stderr', e.message); }
+};
+$('terminalStopBtn').onclick = async () => {
+  try { await window.forge.terminalStop(); } catch (e) { addOutput('stderr', e.message); }
+};
+$('terminalCommandForm').onsubmit = async e => {
+  e.preventDefault();
+  const input = $('terminalCommand'), command = input.value;
+  if (!command.trim()) return;
+  addOutput('info', `$ ${command}`);
+  input.value = '';
+  try {
+    const result = await window.forge.terminalWrite(command + '\\n');
+    if (!result?.running) addOutput('stderr', 'Terminal is not running. Click Start shell first.');
+  } catch (err) { addOutput('stderr', err.message); }
+};
+window.forge.onTerminalOutput(({ type, text }) => addOutput(type, text));
 document.querySelectorAll('.panel-tab').forEach(b => b.onclick = () => {
   document.querySelectorAll('.panel-tab').forEach(x => x.classList.toggle('active', x === b));
   $('terminal').hidden = b.dataset.panel !== 'terminal';
