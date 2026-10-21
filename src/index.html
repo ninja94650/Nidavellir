@@ -89,11 +89,14 @@
             <button class="panel-tab" data-panel="problems">PROBLEMS</button>
           </div>
           <div class="panel-head-actions">
+            <button id="terminalStartBtn" class="subtle">Start shell</button>
+            <button id="terminalStopBtn" class="subtle">Stop shell</button>
             <button id="runHistoryBtn" class="subtle">History</button>
             <button id="clearOutputBtn" class="subtle">Clear</button>
           </div>
         </div>
-        <div id="terminal" class="terminal"><div class="term-line muted">Welcome to Nidavellir. Run code to see output here.</div></div>
+        <div id="terminal" class="terminal"><div class="term-line muted">Welcome to Nidavellir. Run code to see output here, or start the integrated shell. Shell commands run with your user permissions.</div></div>
+        <form id="terminalCommandForm" class="terminal-command-form"><span class="terminal-prompt">$</span><input id="terminalCommand" autocomplete="off" spellcheck="false" placeholder="Type a shell command after clicking Start shell…" aria-label="Terminal command"><button type="submit">Send</button></form>
         <div id="problems" class="terminal" hidden><div class="term-line muted">Compiler and runtime errors will appear in Terminal / Output.</div></div>
         <!-- Run history dropdown -->
         <div id="runHistoryDropdown" class="run-history" hidden>
