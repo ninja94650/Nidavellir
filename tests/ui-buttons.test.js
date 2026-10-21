@@ -38,7 +38,7 @@ const assert = require('node:assert/strict');
       terminalStart: async p => { record('terminalStart', p); return { cwd: '/tmp/project' }; },
       terminalWrite: async s => { record('terminalWrite', s); return { running: true }; },
       terminalStop: async () => { record('terminalStop'); return { stopped: true }; },
-      askAI: async p => { record('askAI', p); return 'Suggested change:\\n' + String.fromCharCode(96).repeat(3) + 'javascript\\nconst fixed = true;\\n' + String.fromCharCode(96).repeat(3); },
+      askAI: async p => { record('askAI', p); return 'Suggested change:\n' + String.fromCharCode(96).repeat(3) + 'javascript\nconst fixed = true;\n' + String.fromCharCode(96).repeat(3); },
       synthesize: async p => { record('synthesize', p); return 'Combined recommendation.'; },
       generateTests: async p => { record('generateTests', p); return 'console.assert(true);'; },
       setKey: async p => { record('setKey', { provider: p.provider, key: '***' }); state.keys[p.provider] = true; },
