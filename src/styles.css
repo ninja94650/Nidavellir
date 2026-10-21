@@ -814,3 +814,89 @@ button.primary:hover {
   animation: pulse-run 1.5s ease-in-out infinite;
   color: #ffb347;
 }
+
+
+/* ── Nidavellir Studio visual refresh ── */
+:root {
+  --bg: #101116;
+  --panel: #171820;
+  --panel2: #20212a;
+  --border: #2a2b36;
+  --text: #ececf4;
+  --muted: #9293a3;
+  --accent: #a78bfa;
+  --accent2: #8b5cf6;
+  --green: #4ade80;
+}
+body { background: var(--bg); color: var(--text); font-family: Inter, "Segoe UI", Arial, sans-serif; }
+.app { min-width: 0; background: var(--bg); }
+.topbar { background: #15161d; border-color: var(--border); }
+.brand .logo { background: linear-gradient(135deg,#a78bfa,#6d4aff); box-shadow: 0 5px 18px #8b5cf633; border-radius: 9px; }
+.top-actions button, button {
+  transition: background-color .16s ease, border-color .16s ease, color .16s ease, transform .16s ease;
+}
+.top-actions button, .beginner-card button, .quick-actions button, .composer button, .panel-head-actions button, .modal button {
+  border-radius: 7px;
+}
+.top-actions button:hover, .quick-actions button:hover, .panel-head-actions button:hover { border-color: #75639e; }
+.workspace { min-height: 0; }
+.activity { background: #14151c; border-right: 1px solid var(--border); }
+.activity button { border-radius: 8px; margin: 3px 0; }
+.activity button.active, .activity button:hover { color: #e9ddff; background: #302943; }
+.sidebar { background: #181920; border-right-color: var(--border); }
+.side-heading { color: #b6b6c5; letter-spacing: 1px; }
+.file-tree .tree-item:hover, .file-tree button:hover { background: #252630; }
+.beginner-card { border: 1px solid #34303f; background: linear-gradient(145deg,#24202f,#1d1e27); border-radius: 10px; }
+.main-area { background: #13141b; }
+.welcome-strip {
+  display:flex; align-items:center; justify-content:space-between; gap:16px;
+  padding:17px 22px; min-height:104px; flex:none;
+  border-bottom:1px solid var(--border);
+  background:radial-gradient(ellipse at 75% 0%,#35234b55,transparent 48%),#171820;
+}
+.welcome-strip .eyebrow { color:#b49bff; font-size:9px; letter-spacing:1.5px; font-weight:750; margin-bottom:7px; }
+.welcome-strip h1 { margin:0 0 5px; font-size:22px; letter-spacing:-.7px; line-height:1.2; }
+.welcome-strip h1 span { background:linear-gradient(90deg,#c4b5fd,#67e8f9); background-clip:text; -webkit-background-clip:text; color:transparent; }
+.welcome-strip p { margin:0; color:#999aaa; font-size:11px; }
+.welcome-actions { display:flex; gap:8px; flex:none; }
+.soft-button { border:1px solid var(--border); background:#23232e; color:#d8d8e3; padding:8px 11px; }
+.soft-button:hover { border-color:#75639e; background:#302943; }
+.tabs { background:#171820; border-bottom-color:var(--border); }
+.tab { border-radius:0; }
+.tab.active { background:#13141b; border-top-color:var(--accent); }
+.editor-wrap { background:#13141b; }
+#editor { background:#13141b; }
+.panel { background:#15161d; border-top-color:var(--border); }
+.panel-head { background:#171820; border-bottom-color:var(--border); }
+.panel-tab.active { color:#ddd5ff; border-bottom-color:var(--accent); }
+.terminal { background:#13141b; }
+.ai-panel { background:#181920; border-left-color:var(--border); }
+.ai-title { border-bottom-color:var(--border); }
+.sparkle { color:#d9c6ff; }
+.provider-row { gap:6px; }
+.provider-row label { border:1px solid #30313d; border-radius:6px; background:#20212a; padding:6px 7px; }
+.provider-row label:has(input:checked) { border-color:#66518f; background:#302943; }
+.quick-actions button { background:#20212a; border-color:#30313d; color:#c7c7d5; }
+.quick-actions button:hover { border-color:#8b5cf6; color:#eee5ff; }
+.chat { background:#181920; }
+.welcome-chat { border:1px solid #302a3d; border-radius:10px; background:#201d29; }
+.composer { border-color:#3a354a; background:#20212a; border-radius:9px; }
+.composer:focus-within { border-color:#8b5cf6; box-shadow:0 0 0 2px #8b5cf61c; }
+.composer textarea { color:#ededf5; }
+.statusbar { background:#6d4bd8; color:#f4efff; }
+.modal { border:1px solid #393443; border-radius:14px; box-shadow:0 25px 90px #0009; }
+input, textarea, select { accent-color:#8b5cf6; }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline:2px solid #a78bfa; outline-offset:2px; }
+@media (max-width: 1200px) {
+  .welcome-strip { padding:14px 16px; }
+  .welcome-strip h1 { font-size:19px; }
+}
+@media (max-width: 980px) {
+  .welcome-actions { display:none; }
+  .app { min-width:0; }
+}
+@media (max-width: 720px) {
+  .welcome-strip { min-height:84px; }
+  .welcome-strip h1 { font-size:17px; }
+  .welcome-strip p { font-size:10px; }
+}
