@@ -13,8 +13,7 @@
   },
   "devDependencies": {
     "electron": "^38.0.0",
-    "electron-builder": "^26.0.12",
-    "monaco-editor": "0.52.2"
+    "electron-builder": "^26.0.12"
   },
   "build": {
     "appId": "dev.nidavellir.ide",
@@ -55,5 +54,8 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Nidavellir"
     }
+  },
+  "dependencies": {
+    "monaco-editor": "0.52.2"
   }
 }
