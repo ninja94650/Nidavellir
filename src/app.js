@@ -180,6 +180,10 @@ function createNewFile() {
   $('newFileName').select();
 }
 
+// Wire the Explorer action to the filename/type dialog. The welcome banner
+// delegates to this button, so this handler also fixes both entry points.
+$('newFileBtn').addEventListener('click', createNewFile);
+
 function createNewDocument(name, language) {
   const starterCode = language === 'cpp'
     ? '#include <iostream>\n\nint main() {\n    std::cout << "Hello, Nidavellir!\\n";\n    return 0;\n}\n'
