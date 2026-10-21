@@ -11,6 +11,23 @@ const pluginSystem = require('./plugins');
 let win;
 const keyCache = {};
 const allowedProviders = new Set(['openai', 'gemini', 'claude']);
+const approvedRoots = new Set();
+const MAX_FILE_BYTES = 2 * 1024 * 1024;
+const MAX_SAVE_BYTES = 5 * 1024 * 1024;
+
+function isWithinApprovedRoot(filePath) {
+  const resolved = path.resolve(filePath);
+  for (const root of approvedRoots) {
+    const relative = path.relative(root, resolved);
+    if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) return true;
+  }
+  return false;
+}
+
+function validateTextPayload(value, maxBytes, label) {
+  if (typeof value !== 'string') throw new Error(`${label} must be text.`);
+  if (Buffer.byteLength(value, 'utf8') > maxBytes) throw new Error(`${label} exceeds the size limit.`);
+}
 const modelDefaults = {
   openai: 'gpt-4.1-mini',
   gemini: 'gemini-2.5-flash',
@@ -65,20 +82,28 @@ ipcMain.handle('file:open', async () => {
     ]
   });
   if (result.canceled || !result.filePaths[0]) return null;
-  const filePath = result.filePaths[0];
+  const filePath = path.resolve(result.filePaths[0]);
+  approvedRoots.add(path.dirname(filePath));
+  const stat = await fs.stat(filePath);
+  if (!stat.isFile() || stat.size > MAX_FILE_BYTES) throw new Error('File must be a regular file no larger than 2 MB.');
   const content = await fs.readFile(filePath, 'utf8');
   pluginSystem.notifyPlugins('fileOpen', { filePath, fileName: path.basename(filePath), content });
   return { filePath, content };
 });
 
 ipcMain.handle('file:save', async (_event, payload) => {
+  if (!payload || typeof payload !== 'object') throw new Error('Invalid save request.');
+  validateTextPayload(payload.content, MAX_SAVE_BYTES, 'File content');
   let filePath = payload.filePath;
   if (!filePath) {
     const result = await dialog.showSaveDialog(win, { defaultPath: payload.name || 'untitled.js' });
     if (result.canceled || !result.filePath) return null;
     filePath = result.filePath;
   }
-  await fs.writeFile(filePath, payload.content, 'utf8');
+  filePath = path.resolve(filePath);
+  if (typeof filePath !== 'string' || filePath.length > 4096) throw new Error('Invalid file path.');
+  approvedRoots.add(path.dirname(filePath));
+  await fs.writeFile(filePath, payload.content, { encoding: 'utf8', mode: 0o600 });
   const saved = { filePath, name: path.basename(filePath) };
   pluginSystem.notifyPlugins('fileSave', { filePath, fileName: saved.name, content: payload.content });
   return saved;
@@ -87,7 +112,8 @@ ipcMain.handle('file:save', async (_event, payload) => {
 ipcMain.handle('file:open-folder', async () => {
   const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
   if (result.canceled || !result.filePaths[0]) return null;
-  const folder = result.filePaths[0];
+  const folder = path.resolve(result.filePaths[0]);
+  approvedRoots.add(folder);
   async function tree(dir, depth = 0) {
     if (depth > 3) return [];
     const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -104,7 +130,11 @@ ipcMain.handle('file:open-folder', async () => {
 });
 
 ipcMain.handle('file:read-path', async (_event, filePath) => {
+  if (typeof filePath !== 'string' || filePath.length > 4096) throw new Error('Invalid file path.');
   const resolved = path.resolve(filePath);
+  if (!isWithinApprovedRoot(resolved)) throw new Error('Access denied: open a file or folder through the Nidavellir file picker first.');
+  const stat = await fs.stat(resolved);
+  if (!stat.isFile() || stat.size > MAX_FILE_BYTES) throw new Error('File must be a regular file no larger than 2 MB.');
   const content = await fs.readFile(resolved, 'utf8');
   pluginSystem.notifyPlugins('fileOpen', { filePath: resolved, fileName: path.basename(resolved), content });
   return { filePath: resolved, content };
@@ -116,11 +146,15 @@ ipcMain.handle('file:read-path', async (_event, filePath) => {
 
 // Legacy handler — delegates to safe runner
 ipcMain.handle('runner:run', async (_event, payload) => {
+  validateTextPayload(payload?.content, 2 * 1024 * 1024, 'Source code');
+  if (payload?.filePath && !isWithinApprovedRoot(payload.filePath)) throw new Error('Run denied: source path is outside an approved folder.');
   return runner.run(payload);
 });
 
 // Enhanced safe runner with state events and plugin hooks
 ipcMain.handle('runner:run-safe', async (_event, payload) => {
+  validateTextPayload(payload?.content, 2 * 1024 * 1024, 'Source code');
+  if (payload?.filePath && !isWithinApprovedRoot(payload.filePath)) throw new Error('Run denied: source path is outside an approved folder.');
   sendRunnerState(true);
   try {
     pluginSystem.notifyPlugins('beforeRun', {
@@ -271,6 +305,20 @@ ipcMain.handle('plugins:init', async () => {
   await pluginSystem.initPluginSystem(pluginsDir);
 });
 ipcMain.handle('plugins:list', () => pluginSystem.getPlugins());
-ipcMain.handle('plugins:toggle', (_event, { name, enabled }) => pluginSystem.setPluginEnabled(name, enabled));
+ipcMain.handle('plugins:toggle', async (_event, payload) => {
+  if (!payload || typeof payload.name !== 'string' || typeof payload.enabled !== 'boolean') throw new Error('Invalid plugin toggle request.');
+  if (payload.enabled) {
+    const answer = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: ['Cancel', 'Enable plugin'],
+      defaultId: 0, cancelId: 0,
+      title: 'Enable trusted plugin?',
+      message: 'Plugins execute JavaScript with Nidavellir’s operating-system permissions.',
+      detail: `Only enable plugins whose source you have reviewed and trust. A plugin can read or modify files and access resources available to this app. This confirmation is not a sandbox.\n\nPlugin: ${payload.name}`
+    });
+    if (answer.response !== 1) return false;
+  }
+  return pluginSystem.setPluginEnabled(payload.name, payload.enabled);
+});
 ipcMain.handle('plugins:quick-actions', () => pluginSystem.getQuickActions());
 ipcMain.handle('plugins:status-items', () => pluginSystem.getStatusItems());
