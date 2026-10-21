@@ -583,3 +583,17 @@ $('languageStatus').onclick = () => {
 };
 
 setStatus('Ready · No file open');
+
+
+/* ── Studio welcome actions ── */
+const newFileBannerBtn = $('newFileBannerBtn');
+if (newFileBannerBtn) {
+  newFileBannerBtn.addEventListener('click', () => $('newFileBtn').click());
+}
+const focusAiBannerBtn = $('focusAiBannerBtn');
+if (focusAiBannerBtn) {
+  focusAiBannerBtn.addEventListener('click', () => {
+    $('aiPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    $('promptInput').focus();
+  });
+}
