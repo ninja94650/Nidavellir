@@ -3,8 +3,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { createSafeRunner, MAX_SOURCE_BYTES } = require('../src/safe-runner');
+const { createSafeRunner, MAX_SOURCE_BYTES, LANGUAGES } = require('../src/safe-runner');
 const plugins = require('../src/plugins');
+
+test('runner exposes common language runtimes and compiler targets', () => {
+  for (const language of ['javascript', 'python', 'c', 'cpp', 'java', 'go', 'rust', 'ruby', 'php', 'bash', 'powershell']) {
+    assert.equal(typeof LANGUAGES[language], 'string', `missing run target: ${language}`);
+  }
+});
 
 test('runner executes an editor snapshot without overwriting the source file', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'nidavellir-test-'));
