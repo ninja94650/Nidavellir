@@ -10,7 +10,10 @@ const MAX_HISTORY = 10;
 const MAX_OUTPUT_BYTES = 512 * 1024;
 const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
 const DEFAULT_TIMEOUT = 30_000;
-const LANGUAGES = Object.freeze({ javascript: '.js', python: '.py', cpp: '.cpp', c: '.c' });
+const LANGUAGES = Object.freeze({
+  javascript: '.js', python: '.py', cpp: '.cpp', c: '.c', java: '.java',
+  go: '.go', rust: '.rs', ruby: '.rb', php: '.php', bash: '.sh', powershell: '.ps1'
+});
 
 function safeEnvironment() {
   // Do not pass API tokens and the full parent-process environment to project code.
@@ -50,7 +53,7 @@ function createSafeRunner(sendOutputFn) {
     if (running) throw new Error('A process is already running. Stop it first.');
     if (!payload || typeof payload !== 'object') throw new Error('Invalid run request.');
     const { language, content, filePath } = payload;
-    if (!Object.hasOwn(LANGUAGES, language)) throw new Error('Supported run targets: JavaScript, Python, C, and C++.');
+    if (!Object.hasOwn(LANGUAGES, language)) throw new Error('Supported run targets: JavaScript, Python, C, C++, Java, Go, Rust, Ruby, PHP, Bash, and PowerShell.');
     if (typeof content !== 'string') throw new Error('Source code must be text.');
     if (Buffer.byteLength(content, 'utf8') > MAX_SOURCE_BYTES) throw new Error('Source file exceeds the 2 MB run limit.');
     if (filePath != null && (typeof filePath !== 'string' || filePath.length > 4096)) throw new Error('Invalid source file path.');
@@ -67,23 +70,43 @@ function createSafeRunner(sendOutputFn) {
     try {
       // Never write editor contents back to the user's original source file.
       await fs.writeFile(source, content, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
-      if (language === 'c' || language === 'cpp') {
+      if (['c', 'cpp', 'rust', 'java'].includes(language)) {
         const binary = path.join(tempDir, process.platform === 'win32' ? 'program.exe' : 'program');
-        const compiler = language === 'cpp' ? 'g++' : 'gcc';
+        const compiler = ({ c: 'gcc', cpp: 'g++', rust: 'rustc', java: 'javac' })[language];
         out('info', 'Safety note: project code runs with your account permissions. Only run code you trust; this is not an OS sandbox.');
         out('info', `Compiling a temporary snapshot with ${compiler}…`);
-        const includeArgs = filePath ? ['-I', originalDir] : [];
-        const compile = await execProcess(compiler, [source, ...includeArgs, '-o', binary], tempDir, timeoutMs, out, setChild);
+        const includeArgs = filePath && ['c', 'cpp'].includes(language) ? ['-I', originalDir] : [];
+        const compileArgs = language === 'java'
+          ? [source, '-d', tempDir]
+          : language === 'rust'
+            ? [source, '-o', binary]
+            : [source, ...includeArgs, '-o', binary];
+        const compile = await execProcess(compiler, compileArgs, tempDir, timeoutMs, out, setChild);
         if (compile.code !== 0) {
           out('stderr', compile.stderr || compile.stdout || 'Compilation failed.');
           recordHistory(fileName, language, compile.code, Date.now() - startTime);
           return { code: compile.code, durationMs: Date.now() - startTime };
         }
-        command = binary; args = [];
+        if (language === 'java') {
+          command = 'java';
+          args = ['-cp', tempDir, path.basename(source, '.java')];
+        } else { command = binary; args = []; }
       } else if (language === 'javascript') {
         command = process.execPath; args = [source];
-      } else {
+      } else if (language === 'python') {
         command = process.platform === 'win32' ? 'python' : 'python3'; args = [source];
+      } else if (language === 'go') {
+        command = 'go'; args = ['run', source];
+      } else if (language === 'ruby') {
+        command = 'ruby'; args = [source];
+      } else if (language === 'php') {
+        command = 'php'; args = [source];
+      } else if (language === 'bash') {
+        command = process.platform === 'win32' ? 'bash' : (process.env.SHELL || '/bin/bash');
+        args = [source];
+      } else {
+        command = process.platform === 'win32' ? 'powershell.exe' : 'pwsh';
+        args = ['-NoProfile', '-NonInteractive', '-File', source];
       }
 
       out('info', 'Safety note: project code runs with your account permissions. Only run code you trust; this is not an OS sandbox.');
