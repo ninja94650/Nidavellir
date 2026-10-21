@@ -22,6 +22,24 @@ function safeEnvironment() {
   return env;
 }
 
+function terminateProcessTree(child, signal = 'SIGTERM') {
+  if (!child || !child.pid) return;
+  if (process.platform === 'win32') {
+    try { child.kill(signal); } catch {}
+    if (signal === 'SIGKILL') {
+      try {
+        const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+          shell: false, windowsHide: true, stdio: 'ignore', env: safeEnvironment()
+        });
+        killer.unref?.();
+      } catch {}
+    }
+    return;
+  }
+  try { process.kill(-child.pid, signal); }
+  catch { try { child.kill(signal); } catch {} }
+}
+
 function createSafeRunner(sendOutputFn) {
   let currentChild = null;
   let running = false;
@@ -98,7 +116,7 @@ function createSafeRunner(sendOutputFn) {
       };
       try {
         child = spawn(command, args, {
-          cwd, shell: false, windowsHide: true, env: safeEnvironment(),
+          cwd, shell: false, windowsHide: true, detached: process.platform !== 'win32', env: safeEnvironment(),
           stdio: ['ignore', 'pipe', 'pipe']
         });
         setChildRef(child);
@@ -107,8 +125,8 @@ function createSafeRunner(sendOutputFn) {
       }
       const timer = setTimeout(() => {
         output('stderr', `\nProcess killed — exceeded ${timeoutMs / 1000}s timeout.`);
-        child.kill('SIGTERM');
-        hardKill = setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 1500);
+        terminateProcessTree(child, 'SIGTERM');
+        hardKill = setTimeout(() => terminateProcessTree(child, 'SIGKILL'), 1500);
         hardKill.unref?.();
       }, timeoutMs);
       timer.unref?.();
