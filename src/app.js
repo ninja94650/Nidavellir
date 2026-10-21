@@ -39,7 +39,17 @@ const welcome = `// Welcome to Nidavellir
    Monaco editor setup
    ───────────────────────────────────────────── */
 
-require.config({ paths: { vs: '../node_modules/monaco-editor/min/vs' } });
+// Monaco workers need an absolute workerMain URL: relative importScripts paths
+// break when Chromium creates the worker from a blob URL (including CI/browser preview).
+const monacoBaseUrl = new URL('../node_modules/monaco-editor/min/', window.location.href).href;
+window.MonacoEnvironment = {
+  getWorkerUrl: function () {
+    const workerMain = monacoBaseUrl + 'vs/base/worker/workerMain.js';
+    const bootstrap = 'self.MonacoEnvironment = { baseUrl: ' + JSON.stringify(monacoBaseUrl) + ' }; importScripts(' + JSON.stringify(workerMain) + ');';
+    return 'data:text/javascript;charset=utf-8,' + encodeURIComponent(bootstrap);
+  }
+};
+require.config({ paths: { vs: monacoBaseUrl + 'vs' } });
 require(['vs/editor/editor.main'], () => {
   monacoReady = true;
   editor = monaco.editor.create($('editor'), {
