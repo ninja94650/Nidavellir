@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, safeStorage, dialog } = require('electron')
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const os = require('node:os');
+const { spawn } = require('node:child_process');
 
 const { createSafeRunner } = require('./safe-runner');
 const { synthesizeResponses } = require('./coordinator');
@@ -55,6 +56,26 @@ function sendRunnerState(running) {
 
 /* ─── safe runner instance ─── */
 const runner = createSafeRunner(sendOutput);
+let terminalProcess = null;
+let terminalOutputBytes = 0;
+function sendTerminalOutput(type, text) {
+  if (!win || win.isDestroyed()) return;
+  const value = String(text);
+  terminalOutputBytes += Buffer.byteLength(value, 'utf8');
+  if (terminalOutputBytes > 2 * 1024 * 1024) {
+    win.webContents.send('terminal:output', { type: 'stderr', text: '\\n[Terminal output limit reached; shell stopped.]' });
+    stopIntegratedTerminal();
+    return;
+  }
+  win.webContents.send('terminal:output', { type, text: value });
+}
+function stopIntegratedTerminal() {
+  if (!terminalProcess) return false;
+  const child = terminalProcess;
+  terminalProcess = null;
+  try { child.kill('SIGTERM'); } catch {}
+  return true;
+}
 
 /* ─── window ─── */
 function sendEditorCommand(command) {
@@ -107,7 +128,8 @@ app.whenReady().then(async () => {
   const pluginsDir = path.join(__dirname, '..', 'plugins');
   await pluginSystem.initPluginSystem(pluginsDir);
 });
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('before-quit', () => { stopIntegratedTerminal(); });
+app.on('window-all-closed', () => { stopIntegratedTerminal(); if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 
 /* ═══════════════════════════════════════════════════════════
@@ -234,6 +256,45 @@ ipcMain.handle('runner:run-safe', async (_event, payload) => {
 
 ipcMain.handle('runner:kill', () => runner.kill());
 ipcMain.handle('runner:history', () => runner.getHistory());
+
+/* Integrated terminal: explicit user-launched shell, scoped to an approved project folder. */
+ipcMain.handle('terminal:start', async (_event, payload = {}) => {
+  if (terminalProcess && !terminalProcess.killed) throw new Error('The integrated shell is already running.');
+  let cwd = payload.cwd;
+  if (cwd == null || cwd === '') cwd = [...approvedRoots].at(-1);
+  if (typeof cwd !== 'string' || cwd.length > 4096) throw new Error('Open a project folder or file before starting the terminal.');
+  cwd = path.resolve(cwd);
+  if (!await isWithinApprovedRoot(cwd)) throw new Error('Terminal denied: open the project folder through Nidavellir first.');
+  const stat = await fs.stat(cwd);
+  if (!stat.isDirectory()) throw new Error('Terminal working directory must be a folder.');
+  const command = process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : (process.env.SHELL || '/bin/bash');
+  const args = process.platform === 'win32' ? ['/Q'] : ['--noprofile', '--norc', '-i'];
+  terminalOutputBytes = 0;
+  const child = spawn(command, args, {
+    cwd, env: process.env, shell: false, windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe']
+  });
+  terminalProcess = child;
+  child.stdout.on('data', chunk => sendTerminalOutput('stdout', chunk.toString()));
+  child.stderr.on('data', chunk => sendTerminalOutput('stderr', chunk.toString()));
+  child.on('error', error => {
+    sendTerminalOutput('stderr', error.message);
+    if (terminalProcess === child) terminalProcess = null;
+  });
+  child.on('close', code => {
+    sendTerminalOutput('muted', `\\n[Shell exited with code ${code ?? 1}]\\n`);
+    if (terminalProcess === child) terminalProcess = null;
+  });
+  sendTerminalOutput('info', `\\n[Shell started: ${command} — ${cwd}]\\n[Commands execute with your operating-system user permissions.]\\n`);
+  return { running: true, cwd };
+});
+ipcMain.handle('terminal:write', (_event, input) => {
+  if (typeof input !== 'string' || input.length > 8192 || input.includes('\\0')) throw new Error('Invalid terminal input (maximum 8,192 characters).');
+  if (!terminalProcess || terminalProcess.killed || !terminalProcess.stdin.writable) return { running: false };
+  terminalProcess.stdin.write(input);
+  return { running: true };
+});
+ipcMain.handle('terminal:stop', () => ({ stopped: stopIntegratedTerminal() }));
 
 /* ═══════════════════════════════════════════════════════════
    AI — KEY STORAGE
