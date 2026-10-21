@@ -569,46 +569,158 @@ document.addEventListener('keydown', e => {
 });
 
 /* ─────────────────────────────────────────────
-   Native application menu commands
+   Unified Find / Replace bar (Monaco + fallback editor)
    ───────────────────────────────────────────── */
+let findMatches = [];
+let activeFindMatch = -1;
+
+function editorText() { return getValue(); }
+function findOptions() {
+  return { query: $('findInput').value, matchCase: $('findMatchCase').checked };
+}
+function collectFindMatches() {
+  const { query, matchCase } = findOptions();
+  const source = editorText();
+  findMatches = [];
+  activeFindMatch = -1;
+  if (!query) { $('findCount').textContent = 'Type to search'; return; }
+  const haystack = matchCase ? source : source.toLocaleLowerCase();
+  const needle = matchCase ? query : query.toLocaleLowerCase();
+  let offset = 0;
+  while (offset <= haystack.length - needle.length) {
+    const index = haystack.indexOf(needle, offset);
+    if (index < 0) break;
+    findMatches.push({ start: index, end: index + needle.length });
+    offset = index + Math.max(needle.length, 1);
+  }
+  $('findCount').textContent = findMatches.length ? `1 of ${findMatches.length}` : 'No results';
+}
+function selectFindMatch(index) {
+  if (!findMatches.length) { $('findCount').textContent = 'No results'; return false; }
+  activeFindMatch = (index + findMatches.length) % findMatches.length;
+  const match = findMatches[activeFindMatch];
+  if (monacoReady && editor) {
+    const model = editor.getModel();
+    const start = model.getPositionAt(match.start), end = model.getPositionAt(match.end);
+    editor.setSelection(new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column));
+    editor.revealRangeInCenter(editor.getSelection());
+    editor.focus();
+  } else {
+    const field = $('plainEditor');
+    field.focus();
+    field.setSelectionRange(match.start, match.end);
+  }
+  $('findCount').textContent = `${activeFindMatch + 1} of ${findMatches.length}`;
+  return true;
+}
+function openFindBar(mode = 'find') {
+  $('findBar').hidden = false;
+  $('replaceRow').hidden = mode !== 'replace';
+  if (monacoReady && editor) {
+    const selection = editor.getModel().getValueInRange(editor.getSelection());
+    if (selection && !$('findInput').value) $('findInput').value = selection;
+  } else {
+    const field = $('plainEditor');
+    const selection = field.value.slice(field.selectionStart, field.selectionEnd);
+    if (selection && !$('findInput').value) $('findInput').value = selection;
+  }
+  collectFindMatches();
+  $('findInput').focus();
+  $('findInput').select();
+}
+function closeFindBar() {
+  $('findBar').hidden = true;
+  if (monacoReady && editor) editor.focus();
+  else $('plainEditor').focus();
+}
+function replaceCurrentMatch() {
+  const query = $('findInput').value;
+  if (!query) return;
+  if (activeFindMatch < 0 || !findMatches[activeFindMatch]) {
+    collectFindMatches();
+    if (!selectFindMatch(0)) return;
+  }
+  const match = findMatches[activeFindMatch];
+  const replacementText = $('replaceInput').value;
+  if (monacoReady && editor) {
+    const model = editor.getModel();
+    const start = model.getPositionAt(match.start), end = model.getPositionAt(match.end);
+    editor.executeEdits('find-replace', [{ range: new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column), text: replacementText, forceMoveMarkers: true }]);
+  } else {
+    const field = $('plainEditor');
+    field.setRangeText(replacementText, match.start, match.end, 'select');
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  collectFindMatches();
+  if (findMatches.length) selectFindMatch(Math.min(activeFindMatch, findMatches.length - 1));
+}
+function replaceAllMatches() {
+  const query = $('findInput').value;
+  if (!query) return;
+  const { matchCase } = findOptions();
+  const source = editorText();
+  const needle = matchCase ? query : query.toLocaleLowerCase();
+  const haystack = matchCase ? source : source.toLocaleLowerCase();
+  const ranges = [];
+  let offset = 0;
+  while (offset <= haystack.length - needle.length) {
+    const index = haystack.indexOf(needle, offset);
+    if (index < 0) break;
+    ranges.push({ start: index, end: index + query.length });
+    offset = index + Math.max(query.length, 1);
+  }
+  if (!ranges.length) { collectFindMatches(); return; }
+  const replacementText = $('replaceInput').value;
+  if (monacoReady && editor) {
+    const model = editor.getModel();
+    editor.executeEdits('find-replace-all', ranges.map(match => {
+      const start = model.getPositionAt(match.start), end = model.getPositionAt(match.end);
+      return { range: new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column), text: replacementText, forceMoveMarkers: true };
+    }));
+  } else {
+    const field = $('plainEditor');
+    let result = source;
+    for (let i = ranges.length - 1; i >= 0; i--) result = result.slice(0, ranges[i].start) + replacementText + result.slice(ranges[i].end);
+    field.value = result;
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  collectFindMatches();
+  setStatus(`Replaced ${ranges.length} occurrence${ranges.length === 1 ? '' : 's'}`);
+}
+$('findInput').addEventListener('input', () => { collectFindMatches(); if (findMatches.length) selectFindMatch(0); });
+$('findMatchCase').addEventListener('change', () => { collectFindMatches(); if (findMatches.length) selectFindMatch(0); });
+$('findNext').onclick = () => { if (!findMatches.length) collectFindMatches(); selectFindMatch(activeFindMatch + 1); };
+$('findPrevious').onclick = () => { if (!findMatches.length) collectFindMatches(); selectFindMatch(activeFindMatch <= 0 ? findMatches.length - 1 : activeFindMatch - 1); };
+$('replaceOne').onclick = replaceCurrentMatch;
+$('replaceAll').onclick = replaceAllMatches;
+$('findClose').onclick = closeFindBar;
+$('findInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); selectFindMatch(activeFindMatch + (e.shiftKey ? -1 : 1)); }
+  if (e.key === 'Escape') { e.preventDefault(); closeFindBar(); }
+});
+$('replaceInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); replaceCurrentMatch(); }
+  if (e.key === 'Escape') { e.preventDefault(); closeFindBar(); }
+});
+
 window.forge.onEditorCommand(command => {
   if (command === 'new') { $('newFileBtn').click(); return; }
   if (command === 'open') { $('openBtn').click(); return; }
   if (command === 'save') { $('saveBtn').click(); return; }
-  if (monacoReady && editor) {
-    const actions = {
-      find: 'actions.find',
-      replace: 'editor.action.startFindReplaceAction',
-      gotoLine: 'editor.action.gotoLine'
-    };
-    editor.focus();
-    editor.trigger('application-menu', actions[command]);
-    return;
-  }
-  const field = $('plainEditor');
-  field.focus();
-  if (command === 'find') {
-    const term = prompt('Find text:');
-    if (!term) return;
-    const index = field.value.indexOf(term, field.selectionStart);
-    const found = index >= 0 ? index : field.value.indexOf(term);
-    if (found >= 0) { field.setSelectionRange(found, found + term.length); }
-    else setStatus('Text not found');
-  } else if (command === 'replace') {
-    const term = prompt('Find text:');
-    if (!term) return;
-    const replacement = prompt('Replace with:', '');
-    if (replacement === null) return;
-    const index = field.value.indexOf(term);
-    if (index < 0) { setStatus('Text not found'); return; }
-    field.setRangeText(replacement, index, index + term.length, 'select');
-    field.dispatchEvent(new Event('input', { bubbles: true }));
-  } else if (command === 'gotoLine') {
+  if (command === 'find') { openFindBar('find'); return; }
+  if (command === 'replace') { openFindBar('replace'); return; }
+  if (command === 'gotoLine') {
+    if (monacoReady && editor) {
+      editor.focus();
+      editor.trigger('application-menu', 'editor.action.gotoLine');
+      return;
+    }
+    const field = $('plainEditor');
     const line = Number.parseInt(prompt('Go to line:', '1'), 10);
     if (!Number.isInteger(line) || line < 1) return;
     const lines = field.value.split('\\n');
     const offset = lines.slice(0, Math.min(line - 1, lines.length)).reduce((sum, value) => sum + value.length + 1, 0);
-    field.setSelectionRange(offset, offset);
+    field.focus(); field.setSelectionRange(offset, offset);
   }
 });
 
