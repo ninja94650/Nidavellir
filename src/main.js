@@ -95,14 +95,16 @@ ipcMain.handle('file:save', async (_event, payload) => {
   if (!payload || typeof payload !== 'object') throw new Error('Invalid save request.');
   validateTextPayload(payload.content, MAX_SAVE_BYTES, 'File content');
   let filePath = payload.filePath;
+  const userChosePath = !filePath;
   if (!filePath) {
     const result = await dialog.showSaveDialog(win, { defaultPath: payload.name || 'untitled.js' });
     if (result.canceled || !result.filePath) return null;
     filePath = result.filePath;
   }
-  filePath = path.resolve(filePath);
   if (typeof filePath !== 'string' || filePath.length > 4096) throw new Error('Invalid file path.');
-  approvedRoots.add(path.dirname(filePath));
+  filePath = path.resolve(filePath);
+  if (userChosePath) approvedRoots.add(path.dirname(filePath));
+  else if (!isWithinApprovedRoot(filePath)) throw new Error('Save denied: choose a file through the Nidavellir file picker first.');
   await fs.writeFile(filePath, payload.content, { encoding: 'utf8', mode: 0o600 });
   const saved = { filePath, name: path.basename(filePath) };
   pluginSystem.notifyPlugins('fileSave', { filePath, fileName: saved.name, content: payload.content });
