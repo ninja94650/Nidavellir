@@ -22,7 +22,7 @@ const assert = require('node:assert/strict');
       terminalStart: async p => { record('terminalStart', p); return { cwd: '/tmp/project' }; },
       terminalWrite: async s => { record('terminalWrite', s); return { running: true }; },
       terminalStop: async () => { record('terminalStop'); return { stopped: true }; },
-      askAI: async p => { record('askAI', p); return 'Suggested change: const fixed = true;'; },
+      askAI: async p => { record('askAI', p); return 'Suggested change:\\n' + String.fromCharCode(96).repeat(3) + 'javascript\\nconst fixed = true;\\n' + String.fromCharCode(96).repeat(3); },
       synthesize: async p => { record('synthesize', p); return 'Combined recommendation.'; },
       generateTests: async p => { record('generateTests', p); return 'console.assert(true);'; },
       setKey: async p => { record('setKey', { provider: p.provider, key: '***' }); state.keys[p.provider] = true; },
@@ -65,6 +65,7 @@ const assert = require('node:assert/strict');
   await check('Explorer toggle', async () => { const before = await page.locator('.sidebar').evaluate(e => e.hidden); await click('#explorerBtn'); assert.notEqual(await page.locator('.sidebar').evaluate(e => e.hidden), before); await click('#explorerBtn'); });
   await check('Focus AI + welcome Ask AI', async () => { await click('#focusAiBtn'); assert.equal(await page.locator('#promptInput').evaluate(e => document.activeElement === e), true); await click('#focusAiBannerBtn'); assert.equal(await page.locator('#promptInput').evaluate(e => document.activeElement === e), true); });
   await check('Find next/previous/replace/close', async () => {
+    await click('#openBtn');
     await page.evaluate(() => window.__uiState.editorCommand('find'));
     await page.locator('#findInput').fill('alpha'); assert.match(await page.locator('#findCount').textContent(), /2/);
     await click('#findNext'); await click('#findPrevious');
@@ -86,6 +87,15 @@ const assert = require('node:assert/strict');
   await check('Ask team', async () => { await page.locator('#useGemini').uncheck(); await page.locator('#useClaude').uncheck(); await page.locator('#promptInput').fill('Explain test'); await click('#askBtn'); await called('askAI'); });
   await check('AI quick prompts', async () => { for (const label of ['Explain code', 'Find bugs', 'Fix error', 'Write tests']) { await page.locator('.quick-actions button').filter({ hasText: label }).first().click(); } await called('askAI'); });
   await check('Generate tests', async () => { await click('.quick-actions button[data-action="generate-tests"]'); await called('generateTests'); });
+  await check('Diff review apply/copy/dismiss', async () => {
+    await page.locator('#useOpenAI').check(); await page.locator('#useGemini').uncheck(); await page.locator('#useClaude').uncheck();
+    await page.locator('#promptInput').fill('propose a code fix'); await click('#askBtn');
+    const review = page.getByRole('button', { name: /Review & Apply/ }).first(); await review.waitFor({ timeout: 5000 }); await review.click();
+    await page.locator('#diffOverlay').waitFor({ state: 'visible', timeout: 5000 });
+    await click('#diffCopy'); await click('#diffDismiss');
+    await review.click(); await page.locator('#diffOverlay').waitFor({ state: 'visible', timeout: 5000 }); await click('#diffApply');
+    assert.equal(await page.locator('#diffOverlay').isVisible(), false);
+  });
   await check('Language status picker', async () => { await click('#languageStatus'); assert.ok(await page.locator('#languageStatus').textContent()); });
   await check('Plugin quick action', async () => { const b = page.locator('.plugin-qa'); if (await b.count()) { await b.click(); await called('askAI'); } });
   const inventory = await page.locator('button:visible').evaluateAll(bs => bs.map(b => ({ label: (b.innerText || b.getAttribute('aria-label') || b.title || '').trim(), id: b.id, type: b.type })));
