@@ -22,7 +22,7 @@ function sendToRenderer(channel, data) {
 
 function setWindow(win) { winRef = win; }
 
-/* ───── per-plugin sandboxed API ───── */
+/* ───── per-plugin API facade (NOT a security sandbox) ───── */
 
 function createPluginAPI(pluginName) {
   const plugin = plugins.get(pluginName);
