@@ -352,6 +352,13 @@ document.querySelectorAll('.panel-tab').forEach(b => b.onclick = () => {
   $('problems').hidden = b.dataset.panel !== 'problems';
 });
 $('focusTerminalBtn').onclick = () => { document.querySelector('[data-panel="terminal"]').click(); };
+$('explorerBtn').onclick = () => {
+  const sidebar = document.querySelector('.sidebar');
+  const isHidden = sidebar.hidden;
+  sidebar.hidden = !isHidden;
+  $('explorerBtn').classList.toggle('active', isHidden);
+  setStatus(isHidden ? 'Explorer shown' : 'Explorer hidden');
+};
 $('focusAiBtn').onclick = () => $('promptInput').focus();
 
 /* ─────────────────────────────────────────────
