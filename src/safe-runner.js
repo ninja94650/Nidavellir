@@ -166,7 +166,7 @@ function createSafeRunner(sendOutputFn) {
       };
       child.stdout.on('data', chunk => collect('stdout', chunk));
       child.stderr.on('data', chunk => collect('stderr', chunk));
-      child.on('error', error => finish({ code: 127, stdout, stderr: stderr || error.message }));
+      child.on('error', error => { output('stderr', error.message); finish({ code: 127, stdout, stderr: stderr || error.message }); });
       child.on('close', code => finish({ code: code ?? 1, stdout, stderr }));
     });
   }
