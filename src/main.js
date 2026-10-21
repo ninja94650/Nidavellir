@@ -146,6 +146,18 @@ ipcMain.handle('file:save', async (_event, payload) => {
   filePath = path.resolve(filePath);
   if (userChosePath) approvedRoots.add(path.dirname(filePath));
   else if (!await isWithinApprovedRoot(filePath)) throw new Error('Save denied: choose a file through the Nidavellir file picker first.');
+  // Do not follow a symlink at the destination when saving editor content.
+  try {
+    const destinationStat = await fs.lstat(filePath);
+    if (destinationStat.isSymbolicLink() || !destinationStat.isFile()) {
+      throw new Error('Save denied: destination must be a regular file, not a symlink or special file.');
+    }
+    if (!userChosePath && !await isWithinApprovedRoot(filePath)) {
+      throw new Error('Save denied: destination resolves outside the approved folder.');
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
   await fs.writeFile(filePath, payload.content, { encoding: 'utf8', mode: 0o600 });
   const saved = { filePath, name: path.basename(filePath) };
   pluginSystem.notifyPlugins('fileSave', { filePath, fileName: saved.name, content: payload.content });
@@ -197,7 +209,7 @@ ipcMain.handle('runner:run', async (_event, payload) => {
 // Enhanced safe runner with state events and plugin hooks
 ipcMain.handle('runner:run-safe', async (_event, payload) => {
   validateTextPayload(payload?.content, 2 * 1024 * 1024, 'Source code');
-  if (payload?.filePath && !isWithinApprovedRoot(payload.filePath)) throw new Error('Run denied: source path is outside an approved folder.');
+  if (payload?.filePath && !await isWithinApprovedRoot(payload.filePath)) throw new Error('Run denied: source path is outside an approved folder.');
   sendRunnerState(true);
   try {
     pluginSystem.notifyPlugins('beforeRun', {
