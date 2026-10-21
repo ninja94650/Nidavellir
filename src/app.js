@@ -167,7 +167,7 @@ const newFileTypes = {
 function updateNewFilePreview() {
   const rawName = $('newFileName').value.trim();
   const type = newFileTypes[$('newFileType').value] || newFileTypes.cpp;
-  const baseName = rawName.replace(/\\.[^.]+$/, '');
+  const baseName = rawName.replace(/\.[^.]+$/, '');
   $('newFilePreview').textContent = (baseName || 'untitled') + type.extension;
 }
 
@@ -181,11 +181,10 @@ function createNewFile() {
 }
 
 function createNewDocument(name, language) {
-  const type = Object.values(newFileTypes).find(item => item.language === language) || newFileTypes.cpp;
   const starterCode = language === 'cpp'
-    ? '#include <iostream>\\n\\nint main() {\\n    std::cout << "Hello, Nidavellir!\\\\n";\\n    return 0;\\n}\\n'
+    ? '#include <iostream>\n\nint main() {\n    std::cout << "Hello, Nidavellir!\\n";\n    return 0;\n}\n'
     : language === 'c'
-      ? '#include <stdio.h>\\n\\nint main(void) {\\n    printf("Hello, Nidavellir!\\\\n");\\n    return 0;\\n}\\n'
+      ? '#include <stdio.h>\n\nint main(void) {\n    printf("Hello, Nidavellir!\\n");\n    return 0;\n}\n'
       : '';
   const documentState = { name, language, content: starterCode };
   currentPath = null;
@@ -220,14 +219,14 @@ $('newFileModal').addEventListener('click', event => {
 $('newFileForm').addEventListener('submit', event => {
   event.preventDefault();
   const rawName = $('newFileName').value.trim();
-  if (!rawName || /[\\\\/<>:"|?*\\x00-\\x1f]/.test(rawName) || rawName === '.' || rawName === '..') {
+  if (!rawName || /[\\\/<>:"|?*\x00-\x1f]/.test(rawName) || rawName === '.' || rawName === '..') {
     $('newFileName').setCustomValidity('Enter a valid filename without folder paths or reserved characters.');
     $('newFileName').reportValidity();
     return;
   }
   $('newFileName').setCustomValidity('');
   const type = newFileTypes[$('newFileType').value] || newFileTypes.cpp;
-  const baseName = rawName.replace(/\\.[^.]+$/, '').trim();
+  const baseName = rawName.replace(/\.[^.]+$/, '').trim();
   if (!baseName || baseName === '.' || baseName === '..') {
     $('newFileName').setCustomValidity('Enter a valid filename.');
     $('newFileName').reportValidity();
@@ -237,7 +236,6 @@ $('newFileForm').addEventListener('submit', event => {
   $('newFileModal').hidden = true;
   createNewDocument(name, type.language);
 });
-$('newFileBtn').onclick = createNewFile;
 
 /* ─────────────────────────────────────────────
    Safe runner with kill support
