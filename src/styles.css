@@ -312,6 +312,16 @@ button.primary:hover {
 .term-line.stderr { color: var(--red); }
 .term-line.info   { color: #b5aaff; }
 .term-line.muted  { color: #78839a; }
+.terminal-command-form {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  border-top: 1px solid var(--border); background: rgba(10, 14, 20, .92);
+}
+.terminal-prompt { color: var(--accent); font: 700 13px Consolas, monospace; }
+.terminal-command-form input {
+  flex: 1; min-width: 0; color: var(--text); background: transparent;
+  border: 0; outline: none; font: 12px Consolas, monospace; padding: 7px 4px;
+}
+.terminal-command-form button { padding: 6px 12px; font-size: 11px; }
 
 /* ── AI panel ── */
 .ai-panel {
