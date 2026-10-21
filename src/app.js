@@ -25,7 +25,7 @@ const welcome = `// Welcome to Nidavellir
 // What's new in v0.2:
 // • Plugin system — extend the IDE with custom plugins
 // • AI Coordinator — synthesizes answers from all assistants
-// • Safe runner — kill button, run history, resource limits
+// • Runner safeguards — temporary snapshots, timeout/output caps, process-tree stop; not a security sandbox
 // • Auto test generation — generate and save tests automatically
 // • Diff review — review and apply AI-proposed code changes
 //
