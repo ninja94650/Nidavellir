@@ -5,6 +5,8 @@ Nidavellir currently supports local JavaScript plugins loaded from the applicati
 ## Principles
 
 - Plugins are executable code. A manifest is metadata, not a sandbox.
+- Newly discovered plugins start disabled. Enabling a plugin prompts for confirmation because its code runs with the app process's operating-system permissions.
+- The confirmation prompt is not isolation: do not enable code you have not reviewed. A future extension-host process with explicit OS restrictions is still required for a real security boundary.
 - Install only plugins you trust. Review source code before enabling a third-party plugin.
 - Do not put API keys or other secrets in plugin files, manifests, logs, or source control.
 - Plugins should request the narrowest capability they need and explain why.
