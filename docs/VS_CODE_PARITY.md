@@ -15,9 +15,11 @@ Nidavellir is an independent Electron coding environment. This document tracks t
 ## Feature roadmap
 
 ### P0 — Security and reliability
-- [ ] Validate every IPC payload and constrain file operations to user-selected workspaces where applicable.
-- [ ] Add path traversal tests, file-size limits, cancellation, and error reporting.
-- [ ] Treat plugin code and project code as untrusted; document that a Node/Electron plugin is not a security sandbox.
+- [x] Add basic validation and size limits to file/run IPC payloads; constrain reads, saves, and run paths to user-approved folders with real-path checks.
+- [x] Add regression tests for source-file overwrite, oversized/unsupported runner inputs, disabled-by-default plugins, and plugin entrypoint traversal.
+- [x] Treat plugin code and project code as untrusted; document that a Node/Electron plugin is not a security sandbox.
+- [ ] Add a true OS-level execution sandbox with CPU/memory/process-tree limits and network/filesystem policy; current runner hardening is defense-in-depth, not isolation.
+- [ ] Move plugins into a separate restricted extension-host process with permissioned IPC; current plugins still execute in the main process after explicit consent.
 - [ ] Keep API keys out of renderer state, logs, source control, and AI prompts.
 - [ ] Add automated dependency, lint, unit, and packaging checks in CI.
 - [ ] Require explicit user review before applying generated edits or running commands with side effects.
