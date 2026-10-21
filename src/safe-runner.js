@@ -39,6 +39,7 @@ function createSafeRunner(sendOutputFn) {
 
     const timeoutMs = Math.min(Math.max(Number.isFinite(Number(payload.timeout)) ? Number(payload.timeout) : DEFAULT_TIMEOUT, 1000), 120_000);
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nidavellir-run-'));
+    running = true;
     const ext = LANGUAGES[language];
     const fileName = filePath ? path.basename(filePath) : 'main' + ext;
     const source = path.join(tempDir, fileName.endsWith(ext) ? fileName : 'main' + ext);
@@ -67,7 +68,6 @@ function createSafeRunner(sendOutputFn) {
       }
 
       out('info', `Running temporary snapshot of ${fileName}…`);
-      running = true;
       const result = await execProcess(command, args, originalDir, timeoutMs, out, setChild);
       const durationMs = Date.now() - startTime;
       recordHistory(fileName, language, result.code, durationMs);
@@ -84,12 +84,13 @@ function createSafeRunner(sendOutputFn) {
 
   function execProcess(command, args, cwd, timeoutMs, output, setChildRef) {
     return new Promise(resolve => {
-      let settled = false, outputBytes = 0, stdout = '', stderr = '';
+      let settled = false, outputBytes = 0, stdout = '', stderr = '', hardKill = null;
       let child;
       const finish = result => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        if (hardKill) clearTimeout(hardKill);
         if (currentChild === child) currentChild = null;
         resolve(result);
       };
@@ -105,7 +106,7 @@ function createSafeRunner(sendOutputFn) {
       const timer = setTimeout(() => {
         output('stderr', `\nProcess killed — exceeded ${timeoutMs / 1000}s timeout.`);
         child.kill('SIGTERM');
-        const hardKill = setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 1500);
+        hardKill = setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 1500);
         hardKill.unref?.();
       }, timeoutMs);
       timer.unref?.();
