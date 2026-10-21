@@ -37,7 +37,7 @@ const welcome = `// Welcome to Nidavellir
    Monaco editor setup
    ───────────────────────────────────────────── */
 
-require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs' } });
+require.config({ paths: { vs: '../node_modules/monaco-editor/min/vs' } });
 require(['vs/editor/editor.main'], () => {
   monacoReady = true;
   editor = monaco.editor.create($('editor'), {
@@ -51,7 +51,7 @@ require(['vs/editor/editor.main'], () => {
 }, () => {
   $('editor').hidden = true; $('fallbackEditor').hidden = false;
   $('plainEditor').value = welcome;
-  setStatus('Monaco CDN unavailable · basic editor mode');
+  setStatus('Monaco unavailable · basic editor mode');
   initPluginUI();
 });
 
@@ -566,6 +566,50 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); $('saveBtn').click(); }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); $('openBtn').click(); }
   if (e.key === 'F5') { $('runBtn').click(); }
+});
+
+/* ─────────────────────────────────────────────
+   Native application menu commands
+   ───────────────────────────────────────────── */
+window.forge.onEditorCommand(command => {
+  if (command === 'new') { $('newFileBtn').click(); return; }
+  if (command === 'open') { $('openBtn').click(); return; }
+  if (command === 'save') { $('saveBtn').click(); return; }
+  if (monacoReady && editor) {
+    const actions = {
+      find: 'actions.find',
+      replace: 'editor.action.startFindReplaceAction',
+      gotoLine: 'editor.action.gotoLine'
+    };
+    editor.focus();
+    editor.trigger('application-menu', actions[command]);
+    return;
+  }
+  const field = $('plainEditor');
+  field.focus();
+  if (command === 'find') {
+    const term = prompt('Find text:');
+    if (!term) return;
+    const index = field.value.indexOf(term, field.selectionStart);
+    const found = index >= 0 ? index : field.value.indexOf(term);
+    if (found >= 0) { field.setSelectionRange(found, found + term.length); }
+    else setStatus('Text not found');
+  } else if (command === 'replace') {
+    const term = prompt('Find text:');
+    if (!term) return;
+    const replacement = prompt('Replace with:', '');
+    if (replacement === null) return;
+    const index = field.value.indexOf(term);
+    if (index < 0) { setStatus('Text not found'); return; }
+    field.setRangeText(replacement, index, index + term.length, 'select');
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  } else if (command === 'gotoLine') {
+    const line = Number.parseInt(prompt('Go to line:', '1'), 10);
+    if (!Number.isInteger(line) || line < 1) return;
+    const lines = field.value.split('\\n');
+    const offset = lines.slice(0, Math.min(line - 1, lines.length)).reduce((sum, value) => sum + value.length + 1, 0);
+    field.setSelectionRange(offset, offset);
+  }
 });
 
 /* ─────────────────────────────────────────────
