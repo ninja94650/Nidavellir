@@ -6,6 +6,7 @@
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { EventEmitter } = require('node:events');
+const fsPath = require('node:path');
 
 const plugins = new Map();        // name → { manifest, mainPath, dirPath, module, enabled, hookEntries }
 const hooks = new EventEmitter();
@@ -112,18 +113,21 @@ async function initPluginSystem(pluginsDir) {
     try {
       const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
       if (!manifest.name || !manifest.main) continue;
-      const mainPath = path.join(pluginDir, manifest.main);
+      if (typeof manifest.main !== 'string' || path.isAbsolute(manifest.main)) continue;
+      const mainPath = path.resolve(pluginDir, manifest.main);
+      const relMain = path.relative(path.resolve(pluginDir), mainPath);
+      if (!relMain || relMain.startsWith('..') || path.isAbsolute(relMain)) continue;
       await fs.access(mainPath);
+      // Third-party plugin code runs with the app's OS permissions. Never auto-run it.
       plugins.set(manifest.name, {
         manifest, mainPath, dirPath: pluginDir,
-        module: null, enabled: manifest.enabled !== false, hookEntries: []
+        module: null, enabled: false, hookEntries: []
       });
     } catch { /* skip invalid plugins */ }
   }
 
-  for (const [name, plugin] of plugins) {
-    if (plugin.enabled) activatePlugin(name);
-  }
+  // Plugins remain disabled until the user explicitly enables them in the UI.
+  // Enabling is a trust decision; this is not a process sandbox.
 }
 
 function getPlugins() {
