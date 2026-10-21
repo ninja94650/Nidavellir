@@ -4,6 +4,12 @@ Nidavellir is an independent Electron desktop coding environment with a Monaco e
 
 > **Scope note:** Nidavellir is not yet feature-equivalent to Visual Studio Code. See [the parity roadmap](docs/VS_CODE_PARITY.md) for implemented foundations, planned work, security priorities, and completion criteria.
 
+## Studio interface
+
+The current Electron interface uses the Nidavellir Studio visual direction: a dark editor workspace, welcome banner, file explorer, AI workbench for configured providers, diff-review workflow, and terminal/output panel. The welcome actions connect to the existing New File and AI Workbench controls; the interface is styled in `src/styles.css` and the actual app remains wired to its Electron preload/backend APIs.
+
+The separately supplied HTML/CSS/JavaScript mockup was used as a visual reference, not copied over the working Electron frontend, because its mock file contents and simulated AI/run actions would replace real project integrations with placeholders.
+
 ## Current features
 
 - Electron desktop app with Monaco editor and a plain-text fallback.
