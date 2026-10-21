@@ -191,7 +191,19 @@ ipcMain.handle('file:save', async (_event, payload) => {
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  await fs.writeFile(filePath, payload.content, { encoding: 'utf8', mode: 0o600 });
+  try {
+    await fs.writeFile(filePath, payload.content, {
+      encoding: 'utf8',
+      mode: 0o600,
+      // wx is atomic and refuses a file created between the duplicate check and write.
+      flag: userChosePath ? 'wx' : 'w'
+    });
+  } catch (error) {
+    if (userChosePath && error.code === 'EEXIST') {
+      throw new Error('A file with that name already exists. Choose a different filename.');
+    }
+    throw error;
+  }
   const saved = { filePath, name: path.basename(filePath) };
   pluginSystem.notifyPlugins('fileSave', { filePath, fileName: saved.name, content: payload.content });
   return saved;
