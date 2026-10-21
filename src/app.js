@@ -45,7 +45,10 @@ require(['vs/editor/editor.main'], () => {
     fontSize: 13, minimap: { enabled: false }, fontFamily: 'Consolas, "Cascadia Code", monospace',
     scrollBeyondLastLine: false, tabSize: 2, padding: { top: 14 }, wordWrap: 'on'
   });
-  editor.onDidChangeModelContent(() => { $('selectionHint').textContent = 'Current file will be included'; });
+  editor.onDidChangeModelContent(() => {
+    $('selectionHint').textContent = 'Current file will be included';
+    if ($('findBar') && !$('findBar').hidden) collectFindMatches();
+  });
   setStatus('Ready · Unsaved welcome example');
   initPluginUI();
 }, () => {
@@ -688,6 +691,9 @@ function replaceAllMatches() {
   collectFindMatches();
   setStatus(`Replaced ${ranges.length} occurrence${ranges.length === 1 ? '' : 's'}`);
 }
+$('plainEditor').addEventListener('input', () => {
+  if ($('findBar') && !$('findBar').hidden) collectFindMatches();
+});
 $('findInput').addEventListener('input', () => { collectFindMatches(); if (findMatches.length) selectFindMatch(0); });
 $('findMatchCase').addEventListener('change', () => { collectFindMatches(); if (findMatches.length) selectFindMatch(0); });
 $('findNext').onclick = () => { if (!findMatches.length) collectFindMatches(); selectFindMatch(activeFindMatch + 1); };
