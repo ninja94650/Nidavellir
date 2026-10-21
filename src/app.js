@@ -233,7 +233,7 @@ $('terminalCommandForm').onsubmit = async e => {
   addOutput('info', `$ ${command}`);
   input.value = '';
   try {
-    const result = await window.forge.terminalWrite(command + '\\n');
+    const result = await window.forge.terminalWrite(command + String.fromCharCode(10));
     if (!result?.running) addOutput('stderr', 'Terminal is not running. Click Start shell first.');
   } catch (err) { addOutput('stderr', err.message); }
 };
