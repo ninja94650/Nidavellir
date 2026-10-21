@@ -1156,3 +1156,34 @@ input:focus, textarea:focus, select:focus { outline-color: var(--accent); }
   .find-field { flex-basis: 100%; }
   .find-count { flex: 1; }
 }
+
+
+/* New-file name/type dialog */
+.new-file-modal .provider-setting { margin: 14px 0; }
+.new-file-modal .provider-setting input,
+.new-file-modal .provider-setting select {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 7px;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(2, 10, 14, .9);
+  color: var(--text);
+  font-size: 14px;
+}
+.new-file-modal .provider-setting small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.new-file-preview {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(110, 230, 255, .06);
+  color: var(--accent);
+  font-family: Consolas, "Cascadia Code", monospace;
+  overflow-wrap: anywhere;
+}
