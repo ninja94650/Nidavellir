@@ -15,11 +15,22 @@ const approvedRoots = new Set();
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_SAVE_BYTES = 5 * 1024 * 1024;
 
-function isWithinApprovedRoot(filePath) {
+async function isWithinApprovedRoot(filePath) {
+  if (typeof filePath !== 'string' || filePath.length > 4096) return false;
   const resolved = path.resolve(filePath);
   for (const root of approvedRoots) {
-    const relative = path.relative(root, resolved);
-    if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) return true;
+    try {
+      const realRoot = await fs.realpath(root);
+      let realTarget;
+      try { realTarget = await fs.realpath(resolved); }
+      catch {
+        // Permit a new save target only when its existing parent is inside the approved root.
+        const realParent = await fs.realpath(path.dirname(resolved));
+        realTarget = path.join(realParent, path.basename(resolved));
+      }
+      const relative = path.relative(realRoot, realTarget);
+      if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) return true;
+    } catch {}
   }
   return false;
 }
@@ -104,7 +115,7 @@ ipcMain.handle('file:save', async (_event, payload) => {
   if (typeof filePath !== 'string' || filePath.length > 4096) throw new Error('Invalid file path.');
   filePath = path.resolve(filePath);
   if (userChosePath) approvedRoots.add(path.dirname(filePath));
-  else if (!isWithinApprovedRoot(filePath)) throw new Error('Save denied: choose a file through the Nidavellir file picker first.');
+  else if (!await isWithinApprovedRoot(filePath)) throw new Error('Save denied: choose a file through the Nidavellir file picker first.');
   await fs.writeFile(filePath, payload.content, { encoding: 'utf8', mode: 0o600 });
   const saved = { filePath, name: path.basename(filePath) };
   pluginSystem.notifyPlugins('fileSave', { filePath, fileName: saved.name, content: payload.content });
@@ -134,7 +145,7 @@ ipcMain.handle('file:open-folder', async () => {
 ipcMain.handle('file:read-path', async (_event, filePath) => {
   if (typeof filePath !== 'string' || filePath.length > 4096) throw new Error('Invalid file path.');
   const resolved = path.resolve(filePath);
-  if (!isWithinApprovedRoot(resolved)) throw new Error('Access denied: open a file or folder through the Nidavellir file picker first.');
+  if (!await isWithinApprovedRoot(resolved)) throw new Error('Access denied: open a file or folder through the Nidavellir file picker first.');
   const stat = await fs.stat(resolved);
   if (!stat.isFile() || stat.size > MAX_FILE_BYTES) throw new Error('File must be a regular file no larger than 2 MB.');
   const content = await fs.readFile(resolved, 'utf8');
@@ -149,7 +160,7 @@ ipcMain.handle('file:read-path', async (_event, filePath) => {
 // Legacy handler — delegates to safe runner
 ipcMain.handle('runner:run', async (_event, payload) => {
   validateTextPayload(payload?.content, 2 * 1024 * 1024, 'Source code');
-  if (payload?.filePath && !isWithinApprovedRoot(payload.filePath)) throw new Error('Run denied: source path is outside an approved folder.');
+  if (payload?.filePath && !await isWithinApprovedRoot(payload.filePath)) throw new Error('Run denied: source path is outside an approved folder.');
   return runner.run(payload);
 });
 
