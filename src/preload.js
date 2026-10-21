@@ -30,4 +30,7 @@ contextBridge.exposeInMainWorld('forge', {
   onRunnerOutput:       cb => ipcRenderer.on('runner:output',         (_e, v) => cb(v)),
   onRunnerState:        cb => ipcRenderer.on('runner:state',          (_e, v) => cb(v)),
   onPluginStatusUpdate: cb => ipcRenderer.on('plugins:status-update', (_e, v) => cb(v)),
+  onEditorCommand: cb => ipcRenderer.on('editor:command', (_e, command) => {
+    if (['new', 'open', 'save', 'find', 'replace', 'gotoLine'].includes(command)) cb(command);
+  }),
 });
