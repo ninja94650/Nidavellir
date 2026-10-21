@@ -185,4 +185,4 @@ function createSafeRunner(sendOutputFn) {
   return { run, kill, getHistory: () => [...history], isRunning: () => running };
 }
 
-module.exports = { createSafeRunner, MAX_SOURCE_BYTES, MAX_OUTPUT_BYTES };
+module.exports = { createSafeRunner, MAX_SOURCE_BYTES, MAX_OUTPUT_BYTES, LANGUAGES };
