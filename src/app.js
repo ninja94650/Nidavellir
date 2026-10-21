@@ -598,7 +598,7 @@ function collectFindMatches() {
   }
   $('findCount').textContent = findMatches.length ? `1 of ${findMatches.length}` : 'No results';
 }
-function selectFindMatch(index) {
+function selectFindMatch(index, focusEditor = true) {
   if (!findMatches.length) { $('findCount').textContent = 'No results'; return false; }
   activeFindMatch = (index + findMatches.length) % findMatches.length;
   const match = findMatches[activeFindMatch];
@@ -607,10 +607,10 @@ function selectFindMatch(index) {
     const start = model.getPositionAt(match.start), end = model.getPositionAt(match.end);
     editor.setSelection(new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column));
     editor.revealRangeInCenter(editor.getSelection());
-    editor.focus();
+    if (focusEditor) editor.focus();
   } else {
     const field = $('plainEditor');
-    field.focus();
+    if (focusEditor) field.focus();
     field.setSelectionRange(match.start, match.end);
   }
   $('findCount').textContent = `${activeFindMatch + 1} of ${findMatches.length}`;
@@ -694,8 +694,8 @@ function replaceAllMatches() {
 $('plainEditor').addEventListener('input', () => {
   if ($('findBar') && !$('findBar').hidden) collectFindMatches();
 });
-$('findInput').addEventListener('input', () => { collectFindMatches(); if (findMatches.length) selectFindMatch(0); });
-$('findMatchCase').addEventListener('change', () => { collectFindMatches(); if (findMatches.length) selectFindMatch(0); });
+$('findInput').addEventListener('input', () => { collectFindMatches(); if (findMatches.length) selectFindMatch(0, false); });
+$('findMatchCase').addEventListener('change', () => { collectFindMatches(); if (findMatches.length) selectFindMatch(0, false); });
 $('findNext').onclick = () => { if (!findMatches.length) collectFindMatches(); selectFindMatch(activeFindMatch + 1); };
 $('findPrevious').onclick = () => { if (!findMatches.length) collectFindMatches(); selectFindMatch(activeFindMatch <= 0 ? findMatches.length - 1 : activeFindMatch - 1); };
 $('replaceOne').onclick = replaceCurrentMatch;
@@ -725,7 +725,7 @@ window.forge.onEditorCommand(command => {
     const field = $('plainEditor');
     const line = Number.parseInt(prompt('Go to line:', '1'), 10);
     if (!Number.isInteger(line) || line < 1) return;
-    const lines = field.value.split('\\n');
+    const lines = field.value.split('\n');
     const offset = lines.slice(0, Math.min(line - 1, lines.length)).reduce((sum, value) => sum + value.length + 1, 0);
     field.focus(); field.setSelectionRange(offset, offset);
   }
