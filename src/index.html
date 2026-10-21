@@ -49,6 +49,22 @@
         </div>
       </section>
       <div class="tabs" id="tabs"><div class="tab active">welcome.md</div><div class="tab-spacer"></div><span class="status-pill" id="statusPill">READY</span></div>
+      <div class="find-bar" id="findBar" hidden>
+        <div class="find-row">
+          <label class="find-field"><span>Find</span><input id="findInput" type="text" autocomplete="off" placeholder="Search in current file"></label>
+          <label class="find-case"><input id="findMatchCase" type="checkbox"> Match case</label>
+          <span id="findCount" class="find-count" aria-live="polite">Type to search</span>
+          <button id="findPrevious" type="button" title="Previous match">↑</button>
+          <button id="findNext" type="button" title="Next match">↓</button>
+          <button id="findClose" type="button" title="Close find bar">✕</button>
+        </div>
+        <div class="find-row" id="replaceRow" hidden>
+          <label class="find-field"><span>Replace</span><input id="replaceInput" type="text" autocomplete="off" placeholder="Replace with"></label>
+          <span class="find-spacer"></span>
+          <button id="replaceOne" type="button">Replace</button>
+          <button id="replaceAll" type="button">Replace all</button>
+        </div>
+      </div>
       <div class="editor-wrap">
         <div id="editor"></div>
         <div id="fallbackEditor" hidden><textarea id="plainEditor" spellcheck="false"></textarea></div>
