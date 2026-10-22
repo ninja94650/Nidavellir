@@ -49,6 +49,7 @@ function createSafeRunner(sendOutputFn) {
   let currentChild = null;
   let running = false;
   let acceptsInput = false;
+  let pendingInput = '';
   const history = [];
   function out(type, text) { sendOutputFn(type, String(text)); }
 
@@ -64,6 +65,7 @@ function createSafeRunner(sendOutputFn) {
     const timeoutMs = Math.min(Math.max(Number.isFinite(Number(payload.timeout)) ? Number(payload.timeout) : DEFAULT_TIMEOUT, 1000), 120_000);
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nidavellir-run-'));
     running = true;
+    pendingInput = '';
     const ext = LANGUAGES[language];
     const fileName = filePath ? path.basename(filePath) : 'main' + ext;
     const source = path.join(tempDir, fileName.endsWith(ext) ? fileName : 'main' + ext);
@@ -126,12 +128,22 @@ function createSafeRunner(sendOutputFn) {
     } finally {
       running = false;
       acceptsInput = false;
+      pendingInput = '';
       currentChild = null;
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }
   }
 
-  function setChild(child) { currentChild = child; }
+  function setChild(child) {
+    currentChild = child;
+    // Keep input typed during compilation/startup and deliver it as soon as the
+    // actual program's stdin pipe exists. This avoids dropping early keystrokes.
+    if (acceptsInput && pendingInput && child.stdin && child.stdin.writable && !child.stdin.destroyed) {
+      const queued = pendingInput;
+      pendingInput = '';
+      try { child.stdin.write(queued); } catch {}
+    }
+  }
 
   function execProcess(command, args, cwd, timeoutMs, output, setChildRef, extraEnv = {}, interactive = false) {
     return new Promise(resolve => {
@@ -181,8 +193,14 @@ function createSafeRunner(sendOutputFn) {
   }
 
   function writeInput(text) {
-    if (!acceptsInput || !currentChild || !currentChild.stdin || currentChild.stdin.destroyed || !currentChild.stdin.writable) return false;
-    if (typeof text !== 'string' || text.length > 16_384) return false;
+    if (typeof text !== 'string' || text.length > 16_384 || !running) return false;
+    // While compiling or between process creation and stdin attachment, retain
+    // a small bounded buffer instead of silently dropping terminal input.
+    if (!acceptsInput || !currentChild || !currentChild.stdin || currentChild.stdin.destroyed || !currentChild.stdin.writable) {
+      if (pendingInput.length + text.length > 16_384) return false;
+      pendingInput += text;
+      return true;
+    }
     try { return currentChild.stdin.write(text); } catch { return false; }
   }
 
