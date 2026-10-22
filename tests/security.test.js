@@ -98,7 +98,7 @@ test('C++ runner delivers queued terminal input to std::cin', async t => {
       '  std::cout << "total cost: " << price * quantity << "\\n";',
       '  return 0;',
       '}'
-    ].join('\\n')
+    ].join('\n')
   });
 
   try {
@@ -106,7 +106,7 @@ test('C++ runner delivers queued terminal input to std::cin', async t => {
       await new Promise(resolve => setTimeout(resolve, 1));
     }
     assert.equal(runner.isRunning(), true, 'C++ runner should enter startup');
-    assert.equal(runner.writeInput('2.5\\n3\\n'), true, 'input entered during compilation should queue');
+    assert.equal(runner.writeInput('2.5\n3\n'), true, 'input entered during compilation should queue');
     const result = await pending;
     assert.equal(result.code, 0);
     assert.ok(output.some(item => item.text.includes('total cost: 7.5')), 'C++ program should read both values and print the correct total');
