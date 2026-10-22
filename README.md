@@ -46,7 +46,7 @@ Merge reviewed changes into `main`, then from a clean checkout of `main`, run:
 npm run release
 ```
 
-The command runs tests, increments the patch version, creates the matching `vX.Y.Z` tag and pushes it. The release workflow verifies the version and publishes the platform installers with electron-updater metadata to GitHub Releases. Installed copies use this metadata to fetch future updates. Do not publish a tag until CI passes.
+The first merge of version 0.4.0 into `main` automatically creates the matching `v0.4.0` tag and publishes a GitHub Release with update metadata. For subsequent releases, from a clean checkout of `main`, run `npm run release`; it runs tests, increments the patch version, and pushes the commit and tag. The tag workflow then publishes Windows and Linux packages and their updater metadata. Installed copies use this metadata to fetch future updates. Wait for tests/builds to pass before considering a release ready.
 
 ## Features and limitations
 
