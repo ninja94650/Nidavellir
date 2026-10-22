@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('forge', {
   run:         payload  => ipcRenderer.invoke('runner:run', payload),
   runSafe:     payload  => ipcRenderer.invoke('runner:run-safe', payload),
   killRun:     ()       => ipcRenderer.invoke('runner:kill'),
+  writeRunInput: text => ipcRenderer.invoke('runner:input', text),
   runHistory:  ()       => ipcRenderer.invoke('runner:history'),
   terminalStart: payload => ipcRenderer.invoke('terminal:start', payload),
   terminalWrite: text => ipcRenderer.invoke('terminal:write', text),
