@@ -47,6 +47,8 @@ function createSafeRunner(sendOutputFn) {
   let currentChild = null;
   let running = false;
   let acceptsInput = false;
+  let pendingInput = '';
+  const MAX_PENDING_INPUT = 16_384;
   const history = [];
   function out(type, text) { sendOutputFn(type, String(text)); }
 
@@ -62,6 +64,7 @@ function createSafeRunner(sendOutputFn) {
     const timeoutMs = Math.min(Math.max(Number.isFinite(Number(payload.timeout)) ? Number(payload.timeout) : DEFAULT_TIMEOUT, 1000), 120_000);
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nidavellir-run-'));
     running = true;
+    pendingInput = '';
     const ext = LANGUAGES[language];
     const fileName = filePath ? path.basename(filePath) : 'main' + ext;
     const source = path.join(tempDir, fileName.endsWith(ext) ? fileName : 'main' + ext);
@@ -121,12 +124,28 @@ function createSafeRunner(sendOutputFn) {
     } finally {
       running = false;
       acceptsInput = false;
+      pendingInput = '';
       currentChild = null;
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }
   }
 
-  function setChild(child) { currentChild = child; }
+  function setChild(child) {
+    currentChild = child;
+    // Input typed while compilation is finishing is delivered as soon as the
+    // interactive program's stdin pipe exists. Compiler stdin is ignored.
+    if (pendingInput && acceptsInput && child?.stdin && !child.stdin.destroyed && child.stdin.writable) {
+      const queued = pendingInput;
+      pendingInput = '';
+      try {
+        if (!child.stdin.write(queued)) {
+          // The stream accepted the chunk into its backpressure buffer; do not replay it.
+        }
+      } catch {
+        pendingInput = queued;
+      }
+    }
+  }
 
   function execProcess(command, args, cwd, timeoutMs, output, setChildRef, extraEnv = {}, interactive = false) {
     return new Promise(resolve => {
@@ -175,8 +194,12 @@ function createSafeRunner(sendOutputFn) {
   }
 
   function writeInput(text) {
-    if (!acceptsInput || !currentChild || !currentChild.stdin || currentChild.stdin.destroyed || !currentChild.stdin.writable) return false;
-    if (typeof text !== 'string' || text.length > 16_384) return false;
+    if (typeof text !== 'string' || text.length > MAX_PENDING_INPUT || !running) return false;
+    if (!acceptsInput || !currentChild || !currentChild.stdin || currentChild.stdin.destroyed || !currentChild.stdin.writable) {
+      if (pendingInput.length + text.length > MAX_PENDING_INPUT) return false;
+      pendingInput += text;
+      return true;
+    }
     try { return currentChild.stdin.write(text); } catch { return false; }
   }
 
