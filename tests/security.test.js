@@ -67,6 +67,25 @@ test('runner forwards interactive stdin to a running JavaScript program', async 
   }
 });
 
+test('runner buffers input typed before the child process attaches stdin', async () => {
+  const output = [];
+  const runner = createSafeRunner((type, text) => output.push({ type, text }));
+  const pending = runner.run({
+    language: 'javascript',
+    content: 'process.stdin.setEncoding("utf8"); process.stdin.once("data", data => { console.log("received:" + data.trim()); process.exit(0); });'
+  });
+  try {
+    // The process may not exist yet at this point; early input must not be lost.
+    assert.equal(runner.writeInput('early input\\n'), true);
+    const result = await pending;
+    assert.equal(result.code, 0);
+    assert.ok(output.some(item => item.text.includes('received:early input')), 'queued input should reach the program');
+  } finally {
+    if (runner.isRunning()) runner.kill();
+    await pending.catch(() => {});
+  }
+});
+
 test('runner rejects unsupported languages and oversized source before execution', async () => {
   const runner = createSafeRunner(() => {});
   await assert.rejects(() => runner.run({ language: 'kotlin', content: 'class A {}' }), /Supported run targets/);
