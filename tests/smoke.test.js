@@ -111,7 +111,7 @@ test('automatic update release workflow publishes required platform metadata', (
   assert.equal(pkg.build.publish[0].provider, 'github');
   assert.match(workflow, /tags:[\s\S]*'v\*'/);
   assert.match(workflow, /contents: write/);
-  assert.match(workflow, /tag=\"v\\$\{version\}\"/);
+  assert.ok(workflow.includes('tag="v${version}"'));
   assert.match(workflow, /electron-builder --win nsis --publish always/);
   assert.match(workflow, /electron-builder --linux AppImage --publish never/);
   assert.match(workflow, /gh release upload/);
