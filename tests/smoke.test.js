@@ -89,7 +89,7 @@ test('plugin system module exports expected API', () => {
 
 test('package.json is configured for the installable 0.4 release', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-  assert.strictEqual(pkg.version, '0.4.1');
+  assert.strictEqual(pkg.version, '0.4.2');
   assert.equal(pkg.build.publish[0].owner, 'ninja94650');
   assert.equal(pkg.build.publish[0].repo, 'Nidavellir');
   assert.ok(pkg.dependencies['electron-updater']);
@@ -111,6 +111,7 @@ test('automatic update release workflow publishes required platform metadata', (
   assert.equal(pkg.build.publish[0].provider, 'github');
   assert.match(workflow, /tags:[\s\S]*'v\*'/);
   assert.match(workflow, /contents: write/);
+  assert.match(workflow, /tag=\"v\\$\{version\}\"/);
   assert.match(workflow, /electron-builder --win nsis --publish always/);
   assert.match(workflow, /electron-builder --linux AppImage --publish never/);
   assert.match(workflow, /gh release upload/);

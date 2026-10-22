@@ -16,7 +16,7 @@ async function harness({ packaged = true, dialogResponse = 1 } = {}) {
   const win = { isDestroyed: () => false, webContents: { send: (channel, value) => messages.push({ channel, value }) } };
   let intervalMs = 0, cleared = false;
   const dialog = { showMessageBox: async () => ({ response: dialogResponse }) };
-  const app = { isPackaged: packaged, getPath: () => directory, getVersion: () => '0.4.1' };
+  const app = { isPackaged: packaged, getPath: () => directory, getVersion: () => '0.4.2' };
   const service = createUpdater({ app, autoUpdater: emitter, dialog, getWindow: () => win,
     setIntervalFn: (_callback, ms) => { intervalMs = ms; return { unref() {} }; }, clearIntervalFn: () => { cleared = true; } });
   return { app, service, directory, emitter, messages, dialog, get intervalMs() { return intervalMs; }, get cleared() { return cleared; } };
@@ -38,11 +38,11 @@ test('installed builds check updates and stage downloads automatically', async (
   assert.equal(h.intervalMs, UPDATE_INTERVAL_MS);
   assert.equal(h.emitter.autoDownload, true);
   assert.equal(h.emitter.autoInstallOnAppQuit, true);
-  h.emitter.emit('update-available', { version: '0.4.1' });
+  h.emitter.emit('update-available', { version: '0.4.2' });
   assert.equal(h.service.getStatus().state, 'downloading');
   h.emitter.emit('download-progress', { percent: 27.8 });
   assert.equal(h.service.getStatus().progress, 28);
-  h.emitter.emit('update-downloaded', { version: '0.4.1' });
+  h.emitter.emit('update-downloaded', { version: '0.4.2' });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.service.getStatus().state, 'ready');
   assert.ok(h.messages.some(item => item.channel === 'updates:status'));

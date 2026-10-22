@@ -1,3 +1,8 @@
+# 0.4.2
+
+- Fixes release-tag interpolation and ensures platform manifests are added to the same release as the Windows installer.
+- Keeps persistent user plugins, local Monaco assets, and the in-app automatic updater.
+
 # 0.4.1
 
 - Keeps user-installed plugins in the persistent user profile so app updates do not overwrite them; adds Plugins > Open User Plugins Folder.
