@@ -1,3 +1,8 @@
+# 0.4.5
+
+- Fixes terminal input being dropped when entered during compilation or process startup.
+- Adds a C++ `std::cin` regression test for queued interactive input.
+
 # 0.4.4
 
 - Keeps automatic update checks available even when user plugin initialization fails.
