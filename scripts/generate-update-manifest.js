@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 
 async function generateUpdateManifest(platform, version, artifactPath, outputPath) {
-  if (!['linux'].includes(platform)) throw new Error('This script currently generates the Linux updater manifest only.');
+  if (!['windows', 'linux'].includes(platform)) throw new Error('Platform must be windows or linux.');
   if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) throw new Error('Invalid semantic app version.');
   const artifactName = path.basename(artifactPath);
   const data = await fs.readFile(artifactPath);

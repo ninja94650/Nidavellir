@@ -1,3 +1,8 @@
+# 0.4.3
+
+- Builds both platform installers without per-platform release uploads, then publishes a single unified GitHub Release with verified Windows and Linux update manifests.
+- Retains persistent user plugins and the automatic update workflow.
+
 # 0.4.2
 
 - Fixes release-tag interpolation and ensures platform manifests are added to the same release as the Windows installer.

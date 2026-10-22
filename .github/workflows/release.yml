@@ -68,7 +68,7 @@ jobs:
             fi
           fi
 
-  publish-windows:
+  build-windows:
     if: needs.verify.outputs.publish == 'true'
     needs: verify
     runs-on: windows-latest
@@ -81,14 +81,21 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install
-      - name: Build and publish Windows installer and update manifest
-        run: npx electron-builder --win nsis --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build Windows installer without publishing a separate release
+        run: npx electron-builder --win nsis --publish never
+      - name: Save Windows release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nidavellir-Windows-${{ needs.verify.outputs.version }}
+          path: |
+            dist/*.exe
+            dist/*.exe.blockmap
+          if-no-files-found: error
+          retention-days: 1
 
-  publish-linux:
+  build-linux:
     if: needs.verify.outputs.publish == 'true'
-    needs: [verify, publish-windows]
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -99,12 +106,52 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install
-      - name: Build Linux AppImage without creating a second GitHub Release
+      - name: Build Linux AppImage without publishing a separate release
         run: npx electron-builder --linux AppImage --publish never
-      - name: Generate Linux update manifest
+      - name: Save Linux release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nidavellir-Linux-${{ needs.verify.outputs.version }}
+          path: dist/*.AppImage
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-release:
+    if: needs.verify.outputs.publish == 'true'
+    needs: [verify, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: Nidavellir-Windows-${{ needs.verify.outputs.version }}
+          path: artifacts/windows
+      - name: Download Linux AppImage
+        uses: actions/download-artifact@v4
+        with:
+          name: Nidavellir-Linux-${{ needs.verify.outputs.version }}
+          path: artifacts/linux
+      - name: Assemble installers and generate verified update metadata
         shell: bash
-        run: node scripts/generate-update-manifest.js linux "${{ needs.verify.outputs.version }}" "dist/Nidavellir-${{ needs.verify.outputs.version }}.AppImage" "dist/latest-linux.yml"
-      - name: Add Linux assets to the existing version release
-        run: gh release upload "${{ needs.verify.outputs.tag }}" "dist/Nidavellir-${{ needs.verify.outputs.version }}.AppImage" "dist/latest-linux.yml" --clobber
+        run: |
+          set -euo pipefail
+          version="${{ needs.verify.outputs.version }}"
+          mkdir -p release-assets
+          cp artifacts/windows/* release-assets/
+          cp artifacts/linux/* release-assets/
+          node scripts/generate-update-manifest.js windows "$version" "release-assets/Nidavellir-Setup-$version.exe" "release-assets/latest.yml"
+          node scripts/generate-update-manifest.js linux "$version" "release-assets/Nidavellir-$version.AppImage" "release-assets/latest-linux.yml"
+          test -s "release-assets/Nidavellir-Setup-$version.exe"
+          test -s "release-assets/Nidavellir-$version.AppImage"
+          test -s release-assets/latest.yml
+          test -s release-assets/latest-linux.yml
+      - name: Create one GitHub Release with all installers and update manifests
+        run: gh release create "${{ needs.verify.outputs.tag }}" release-assets/* --verify-tag --title "Nidavellir ${{ needs.verify.outputs.version }}" --notes-file CHANGELOG.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
