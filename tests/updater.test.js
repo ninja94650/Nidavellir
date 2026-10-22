@@ -18,7 +18,7 @@ async function harness({ packaged = true, dialogResponse = 1 } = {}) {
   const dialog = { showMessageBox: async () => ({ response: dialogResponse }) };
   const app = { isPackaged: packaged, getPath: () => directory, getVersion: () => '0.4.0' };
   const service = createUpdater({ app, autoUpdater: emitter, dialog, getWindow: () => win,
-    setIntervalFn: ms => { intervalMs = ms; return { unref() {} }; }, clearIntervalFn: () => { cleared = true; } });
+    setIntervalFn: (_callback, ms) => { intervalMs = ms; return { unref() {} }; }, clearIntervalFn: () => { cleared = true; } });
   return { app, service, directory, emitter, messages, dialog, get intervalMs() { return intervalMs; }, get cleared() { return cleared; } };
 }
 
