@@ -136,7 +136,7 @@
     <span id="pluginStatusItems"></span>
     <span id="languageStatus">JavaScript</span>
     <button id="updateStatus" class="update-status" type="button" title="Check for updates">Preparing updates…</button>
-    <span>Nidavellir 0.4.0</span>
+    <span>Nidavellir 0.4.1</span>
   </footer>
 </div>
 
@@ -203,7 +203,8 @@
   <section class="modal">
     <div class="modal-title"><div><h2>Plugin Manager</h2><p>Enable or disable installed plugins.</p></div><button id="closePlugins" class="close">×</button></div>
     <div id="pluginList" class="plugin-list"></div>
-    <div class="modal-note">Plugins are loaded from the <code>plugins/</code> folder. Each plugin needs a <code>plugin.json</code> manifest and a JavaScript entry point.</div>
+    <div class="modal-actions"><button id="openUserPluginsFolder" type="button">Open User Plugins Folder</button></div>
+    <div class="modal-note">Your plugins are stored in your user profile and survive Nidavellir updates. Each plugin needs a <code>plugin.json</code> manifest and a JavaScript entry point. Plugins execute with your user permissions; enable only code you trust.</div>
   </section>
 </div>
 

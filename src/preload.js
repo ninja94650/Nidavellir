@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('forge', {
   togglePlugin:       payload => ipcRenderer.invoke('plugins:toggle', payload),
   pluginQuickActions: ()      => ipcRenderer.invoke('plugins:quick-actions'),
   pluginStatusItems:  ()      => ipcRenderer.invoke('plugins:status-items'),
+  openUserPluginsFolder: ()   => ipcRenderer.invoke('plugins:open-user-folder'),
 
   // ── automatic updates ──
   checkForUpdates: () => ipcRenderer.invoke('updates:check'),

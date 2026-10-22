@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, safeStorage, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage, dialog, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const os = require('node:os');
@@ -9,6 +9,7 @@ const { synthesizeResponses } = require('./coordinator');
 const pluginSystem = require('./plugins');
 const { autoUpdater } = require('electron-updater');
 const { createUpdater } = require('./updater');
+const { prepareUserPluginsDir } = require('./user-plugins');
 
 /* ─── globals ─── */
 let win;
@@ -133,7 +134,7 @@ app.whenReady().then(async () => {
   installApplicationMenu();
   createWindow();
   pluginSystem.setWindow(win);
-  const pluginsDir = path.join(__dirname, '..', 'plugins');
+  const pluginsDir = await prepareUserPluginsDir(app.getPath('userData'), path.join(__dirname, '..', 'plugins'));
   await pluginSystem.initPluginSystem(pluginsDir);
   updateService = createUpdater({ app, autoUpdater, dialog, getWindow: () => win });
   await updateService.initialize();
@@ -463,8 +464,14 @@ ipcMain.handle('ai:generate-tests', async (_event, { code, language, fileName })
    ═══════════════════════════════════════════════════════════ */
 
 ipcMain.handle('plugins:init', async () => {
-  const pluginsDir = path.join(__dirname, '..', 'plugins');
+  const pluginsDir = await prepareUserPluginsDir(app.getPath('userData'), path.join(__dirname, '..', 'plugins'));
   await pluginSystem.initPluginSystem(pluginsDir);
+});
+ipcMain.handle('plugins:open-user-folder', async () => {
+  const pluginsDir = await prepareUserPluginsDir(app.getPath('userData'), path.join(__dirname, '..', 'plugins'));
+  const error = await shell.openPath(pluginsDir);
+  if (error) throw new Error(error);
+  return { path: pluginsDir };
 });
 ipcMain.handle('plugins:list', () => pluginSystem.getPlugins());
 ipcMain.handle('plugins:toggle', async (_event, payload) => {

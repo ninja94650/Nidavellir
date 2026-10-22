@@ -22,7 +22,9 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     outputs:
-      publish: ${{ steps.tag.outputs.publish }}
+      publish: ${{ steps.release_info.outputs.publish }}
+      tag: ${{ steps.release_info.outputs.tag }}
+      version: ${{ steps.release_info.outputs.version }}
     steps:
       - name: Check out source
         uses: actions/checkout@v5
@@ -34,15 +36,17 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install
-      - name: Run tests
+      - name: Run tests before tagging
         run: npm test
       - name: Verify version and select release
-        id: tag
+        id: release_info
         shell: bash
         run: |
           set -euo pipefail
           version="$(node -p "require('./package.json').version")"
-          tag="v${version}"
+          tag="v\${version}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             if [[ "$GITHUB_REF_NAME" != "$tag" ]]; then
               echo "Tag $GITHUB_REF_NAME does not match package version $version"
@@ -52,7 +56,7 @@ jobs:
           else
             git fetch --tags origin
             if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
-              echo "Version $tag already has a release; skipping duplicate publish."
+              echo "Version $tag already has a tag; no duplicate release will be published."
               echo "publish=false" >> "$GITHUB_OUTPUT"
             else
               git config user.name "github-actions[bot]"
@@ -71,15 +75,13 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
           node-version: 22
       - name: Install dependencies
         run: npm install
-      - name: Build and publish Windows installer and update metadata
+      - name: Build and publish Windows installer and update manifest
         run: npx electron-builder --win nsis --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -91,15 +93,18 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
           node-version: 22
       - name: Install dependencies
         run: npm install
-      - name: Build and publish Linux AppImage and update metadata
-        run: npx electron-builder --linux AppImage --publish always
+      - name: Build Linux AppImage without creating a second GitHub Release
+        run: npx electron-builder --linux AppImage --publish never
+      - name: Generate Linux update manifest
+        shell: bash
+        run: node scripts/generate-update-manifest.js linux "${{ needs.verify.outputs.version }}" "dist/Nidavellir-${{ needs.verify.outputs.version }}.AppImage" "dist/latest-linux.yml"
+      - name: Add Linux assets to the existing version release
+        run: gh release upload "${{ needs.verify.outputs.tag }}" "dist/Nidavellir-${{ needs.verify.outputs.version }}.AppImage" "dist/latest-linux.yml" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

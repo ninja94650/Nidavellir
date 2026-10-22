@@ -640,13 +640,22 @@ $('closePlugins').onclick = () => {
 $('pluginModal').addEventListener('click', e => {
   if (e.target === $('pluginModal')) { $('pluginModal').hidden = true; refreshPluginIntegrations(); }
 });
+$('openUserPluginsFolder').onclick = async () => {
+  try {
+    await window.forge.openUserPluginsFolder();
+    setStatus('Opened user plugins folder');
+  } catch (error) {
+    setStatus('Could not open user plugins folder');
+    addOutput('error', error && error.message ? error.message : 'Could not open the folder.');
+  }
+};
 
 async function refreshPluginList() {
   const plugins = await window.forge.listPlugins();
   const list = $('pluginList');
   list.innerHTML = '';
   if (!plugins.length) {
-    list.innerHTML = '<div class="plugin-list-empty">No plugins installed. Add plugin folders to <code>plugins/</code>.</div>';
+    list.innerHTML = '<div class="plugin-list-empty">No plugins installed yet. Use <strong>Open User Plugins Folder</strong> to add a plugin folder.</div>';
     return;
   }
   for (const p of plugins) {

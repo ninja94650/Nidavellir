@@ -1,3 +1,9 @@
+# 0.4.1
+
+- Keeps user-installed plugins in the persistent user profile so app updates do not overwrite them; adds Plugins > Open User Plugins Folder.
+- Corrects release publishing so each version has one GitHub Release containing the Windows installer, Windows update manifest, Linux AppImage, and Linux update manifest.
+- Upgrades Electron to the stable 45.x line and preserves all current editor, runner, AI-provider, and updater behavior.
+
 # 0.4.0
 
 - Adds a per-user Windows installer with GitHub Releases-based automatic updates.

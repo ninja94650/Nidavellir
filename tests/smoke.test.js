@@ -88,10 +88,11 @@ test('plugin system module exports expected API', () => {
 
 test('package.json is configured for the installable 0.4 release', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-  assert.strictEqual(pkg.version, '0.4.0');
+  assert.strictEqual(pkg.version, '0.4.1');
   assert.equal(pkg.build.publish[0].owner, 'ninja94650');
   assert.equal(pkg.build.publish[0].repo, 'Nidavellir');
   assert.ok(pkg.dependencies['electron-updater']);
+  assert.match(pkg.devDependencies.electron, /^\^45\./);
 });
 
 
@@ -110,5 +111,37 @@ test('automatic update release workflow publishes required platform metadata', (
   assert.match(workflow, /tags:[\s\S]*'v\*'/);
   assert.match(workflow, /contents: write/);
   assert.match(workflow, /electron-builder --win nsis --publish always/);
-  assert.match(workflow, /electron-builder --linux AppImage --publish always/);
+  assert.match(workflow, /electron-builder --linux AppImage --publish never/);
+  assert.match(workflow, /gh release upload/);
+  assert.match(workflow, /generate-update-manifest\.js/);
+});
+
+
+test('persistent user plugins are wired through the main process and preload', () => {
+  const main = fs.readFileSync(path.join(root, 'src/main.js'), 'utf8');
+  const preload = fs.readFileSync(path.join(root, 'src/preload.js'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'src/index.html'), 'utf8');
+  assert.match(main, /prepareUserPluginsDir/);
+  assert.match(main, /plugins:open-user-folder/);
+  assert.match(preload, /openUserPluginsFolder/);
+  assert.match(html, /Open User Plugins Folder/);
+});
+
+
+test('Linux update manifest contains a verifiable artifact checksum and size', async t => {
+  const { generateUpdateManifest } = require('../scripts/generate-update-manifest');
+  const crypto = require('node:crypto');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'nidavellir-manifest-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const artifact = path.join(tmp, 'Nidavellir-0.4.1.AppImage');
+  const output = path.join(tmp, 'latest-linux.yml');
+  const bytes = Buffer.from('test AppImage bytes');
+  fs.writeFileSync(artifact, bytes);
+  const result = await generateUpdateManifest('linux', '0.4.1', artifact, output);
+  const yaml = fs.readFileSync(output, 'utf8');
+  assert.equal(result.size, bytes.length);
+  assert.equal(result.sha512, crypto.createHash('sha512').update(bytes).digest('base64'));
+  assert.match(yaml, /version: 0\.4\.1/);
+  assert.match(yaml, /path: Nidavellir-0\.4\.1\.AppImage/);
+  assert.match(yaml, new RegExp('sha512: ' + result.sha512.replace(/[.*+?^\${}()|[\]\\]/g, '\\$&')));
 });
