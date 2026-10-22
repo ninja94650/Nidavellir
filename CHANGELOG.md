@@ -1,3 +1,9 @@
+# 0.4.4
+
+- Keeps automatic update checks available even when user plugin initialization fails.
+- Shows a non-fatal startup warning for plugin failures and reconnects plugins after the app window is recreated.
+- Adds regression coverage for startup ordering and retrying updates after network errors.
+
 # 0.4.3
 
 - Builds both platform installers without per-platform release uploads, then publishes a single unified GitHub Release with verified Windows and Linux update manifests.

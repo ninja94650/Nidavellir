@@ -44,6 +44,29 @@ test('JavaScript runner sets Electron Node mode for the child process', async ()
   assert.ok(output.some(item => item.text.includes('1')), 'child process should receive ELECTRON_RUN_AS_NODE=1');
 });
 
+
+test('runner forwards interactive stdin to a running JavaScript program', async () => {
+  const output = [];
+  const runner = createSafeRunner((type, text) => output.push({ type, text }));
+  const pending = runner.run({
+    language: 'javascript',
+    content: 'process.stdin.setEncoding("utf8"); console.log("READY FOR INPUT"); process.stdin.once("data", data => { console.log("received:" + data.trim()); process.exit(0); });'
+  });
+  try {
+    for (let i = 0; i < 100 && !output.some(item => item.text.includes('READY FOR INPUT')); i++) {
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert.ok(output.some(item => item.text.includes('READY FOR INPUT')), 'program should start and request input');
+    assert.equal(runner.writeInput('hello from terminal\\n'), true);
+    const result = await pending;
+    assert.equal(result.code, 0);
+    assert.ok(output.some(item => item.text.includes('received:hello from terminal')), 'program should receive typed input');
+  } finally {
+    if (runner.isRunning()) runner.kill();
+    await pending.catch(() => {});
+  }
+});
+
 test('runner rejects unsupported languages and oversized source before execution', async () => {
   const runner = createSafeRunner(() => {});
   await assert.rejects(() => runner.run({ language: 'kotlin', content: 'class A {}' }), /Supported run targets/);

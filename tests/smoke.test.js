@@ -89,7 +89,7 @@ test('plugin system module exports expected API', () => {
 
 test('package.json is configured for the installable 0.4 release', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-  assert.strictEqual(pkg.version, '0.4.3');
+  assert.match(pkg.version, /^0\.4\.\d+$/, 'package version must remain in the 0.4 release line');
   assert.equal(pkg.build.publish[0].owner, 'ninja94650');
   assert.equal(pkg.build.publish[0].repo, 'Nidavellir');
   assert.ok(pkg.dependencies['electron-updater']);
@@ -147,4 +147,16 @@ test('Linux update manifest contains a verifiable artifact checksum and size', a
   assert.match(yaml, /version: 0\.4\.3/);
   assert.match(yaml, /path: Nidavellir-0\.4\.3\.AppImage/);
   assert.match(yaml, new RegExp('sha512: ' + result.sha512.replace(/[.*+?^\${}()|[\]\\]/g, '\\$&')));
+});
+
+
+test('updater starts before plugins and plugin startup failures are non-fatal', () => {
+  const source = fs.readFileSync(path.join(root, 'src/main.js'), 'utf8');
+  const updaterStart = source.indexOf('updateService = createUpdater');
+  const pluginInit = source.indexOf('await pluginSystem.initPluginSystem');
+  assert.ok(updaterStart >= 0, 'updater initialization must exist');
+  assert.ok(pluginInit >= 0, 'plugin initialization must exist');
+  assert.ok(updaterStart < pluginInit, 'updater must initialize before user plugins');
+  assert.match(source, /\[plugins\] Failed to initialize:/, 'plugin initialization failures must be logged');
+  assert.match(source, /pluginSystem\.setWindow\(win\)/, 'plugin system must receive the current window');
 });

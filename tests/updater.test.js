@@ -65,3 +65,17 @@ test('automatic update preference persists across restarts', async () => {
   second.dispose(); h.service.dispose();
   await fs.rm(h.directory, { recursive: true, force: true });
 });
+
+
+test('network errors leave update checks retryable', async () => {
+  const h = await harness();
+  await h.service.initialize();
+  const initialChecks = h.emitter.checks;
+  h.emitter.emit('error', new Error('network unavailable'));
+  assert.equal(h.service.getStatus().state, 'error');
+  assert.match(h.service.getStatus().error, /network unavailable/);
+  await h.service.checkNow();
+  assert.equal(h.emitter.checks, initialChecks + 1);
+  h.service.dispose();
+  await fs.rm(h.directory, { recursive: true, force: true });
+});
