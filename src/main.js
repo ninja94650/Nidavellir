@@ -134,14 +134,41 @@ app.whenReady().then(async () => {
   installApplicationMenu();
   createWindow();
   pluginSystem.setWindow(win);
-  const pluginsDir = await prepareUserPluginsDir(app.getPath('userData'), path.join(__dirname, '..', 'plugins'));
-  await pluginSystem.initPluginSystem(pluginsDir);
+
+  // Start the updater before loading user plugins. A broken or slow plugin must
+  // never prevent the installed app from checking for security and bug-fix updates.
   updateService = createUpdater({ app, autoUpdater, dialog, getWindow: () => win });
-  await updateService.initialize();
+  void updateService.initialize().catch(error => {
+    console.error('[updater] Failed to initialize:', error);
+  });
+
+  // Plugins are user-controlled code. Fail gracefully so a broken plugin does
+  // not prevent the editor, terminal, or update service from opening.
+  try {
+    const pluginsDir = await prepareUserPluginsDir(app.getPath('userData'), path.join(__dirname, '..', 'plugins'));
+    await pluginSystem.initPluginSystem(pluginsDir);
+  } catch (error) {
+    console.error('[plugins] Failed to initialize:', error);
+    if (win && !win.isDestroyed()) {
+      void dialog.showMessageBox(win, {
+        type: 'warning',
+        title: 'Plugin startup issue',
+        message: 'Nidavellir opened, but plugins could not be initialized.',
+        detail: 'The editor and automatic update service remain available. Check the application logs for details.',
+        buttons: ['OK'],
+        noLink: true
+      }).catch(() => {});
+    }
+  }
 });
 app.on('before-quit', () => { stopIntegratedTerminal(); if (updateService) updateService.dispose(); });
 app.on('window-all-closed', () => { stopIntegratedTerminal(); if (process.platform !== 'darwin') app.quit(); });
-app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createWindow();
+    pluginSystem.setWindow(win);
+  }
+});
 
 
 ipcMain.handle('updates:check', async () => updateService ? updateService.checkNow() : { state: 'starting', message: 'Update service is starting.', enabled: true });
