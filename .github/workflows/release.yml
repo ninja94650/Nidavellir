@@ -86,7 +86,7 @@ jobs:
 
   publish-linux:
     if: needs.verify.outputs.publish == 'true'
-    needs: publish-windows
+    needs: [verify, publish-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
