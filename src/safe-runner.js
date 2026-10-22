@@ -10,6 +10,8 @@ const MAX_HISTORY = 10;
 const MAX_OUTPUT_BYTES = 512 * 1024;
 const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
 const DEFAULT_TIMEOUT = 30_000;
+// Compilers may be slow on first launch or on large projects; keep compile time separate from runtime.
+const DEFAULT_COMPILE_TIMEOUT = 90_000;
 const LANGUAGES = Object.freeze({
   javascript: '.js', python: '.py', cpp: '.cpp', c: '.c', java: '.java',
   go: '.go', rust: '.rs', ruby: '.rb', php: '.php', bash: '.sh', powershell: '.ps1'
@@ -82,9 +84,12 @@ function createSafeRunner(sendOutputFn) {
           : language === 'rust'
             ? [source, '-o', binary]
             : [source, ...includeArgs, '-o', binary];
-        const compile = await execProcess(compiler, compileArgs, tempDir, timeoutMs, out, setChild);
+        const compile = await execProcess(compiler, compileArgs, tempDir, Math.max(timeoutMs, DEFAULT_COMPILE_TIMEOUT), out, setChild);
         if (compile.code !== 0) {
-          out('stderr', compile.stderr || compile.stdout || 'Compilation failed.');
+          const diagnostics = [compile.stderr, compile.stdout].filter(Boolean).join('\n').trim();
+          if (diagnostics) out('stderr', diagnostics);
+          else if (compile.timedOut) out('stderr', `The ${compiler} compiler exceeded its ${Math.max(timeoutMs, DEFAULT_COMPILE_TIMEOUT) / 1000}s compilation limit. Check that the compiler installation is healthy and that no compiler process is waiting for input.`);
+          else out('stderr', `Compilation failed (compiler exit code ${compile.code}) without diagnostic output.`);
           recordHistory(fileName, language, compile.code, Date.now() - startTime);
           return { code: compile.code, durationMs: Date.now() - startTime };
         }
@@ -130,7 +135,7 @@ function createSafeRunner(sendOutputFn) {
 
   function execProcess(command, args, cwd, timeoutMs, output, setChildRef, extraEnv = {}, interactive = false) {
     return new Promise(resolve => {
-      let settled = false, outputBytes = 0, stdout = '', stderr = '', hardKill = null;
+      let settled = false, timedOut = false, outputBytes = 0, stdout = '', stderr = '', hardKill = null;
       let child;
       const finish = result => {
         if (settled) return;
@@ -138,7 +143,7 @@ function createSafeRunner(sendOutputFn) {
         clearTimeout(timer);
         if (hardKill) clearTimeout(hardKill);
         if (currentChild === child) currentChild = null;
-        resolve(result);
+        resolve({ ...result, timedOut });
       };
       try {
         child = spawn(command, args, {
@@ -150,7 +155,8 @@ function createSafeRunner(sendOutputFn) {
         resolve({ code: 127, stdout: '', stderr: e.message }); return;
       }
       const timer = setTimeout(() => {
-        output('stderr', `\nProcess killed — exceeded ${timeoutMs / 1000}s timeout.`);
+        timedOut = true;
+        output('stderr', `\nProcess killed — exceeded ${timeoutMs / 1000}s ${interactive ? 'runtime' : 'compiler/process'} timeout.`);
         terminateProcessTree(child, 'SIGTERM');
         hardKill = setTimeout(() => terminateProcessTree(child, 'SIGKILL'), 1500);
         hardKill.unref?.();
