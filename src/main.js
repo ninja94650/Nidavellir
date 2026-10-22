@@ -324,6 +324,10 @@ ipcMain.handle('runner:run-safe', async (_event, payload) => {
   }
 });
 
+ipcMain.handle('runner:input', (_event, text) => {
+  if (typeof text !== 'string' || text.length > 16_384) throw new Error('Input must be text no longer than 16 KB.');
+  return { accepted: runner.writeInput(text) };
+});
 ipcMain.handle('runner:kill', () => runner.kill());
 ipcMain.handle('runner:history', () => runner.getHistory());
 
