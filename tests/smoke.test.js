@@ -89,7 +89,7 @@ test('plugin system module exports expected API', () => {
 
 test('package.json is configured for the installable 0.4 release', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-  assert.match(pkg.version, /^0\\.4\\.\\d+$/, 'package version must remain in the 0.4 release line');
+  assert.match(pkg.version, /^0\.4\.\d+$/, 'package version must remain in the 0.4 release line');
   assert.equal(pkg.build.publish[0].owner, 'ninja94650');
   assert.equal(pkg.build.publish[0].repo, 'Nidavellir');
   assert.ok(pkg.dependencies['electron-updater']);
