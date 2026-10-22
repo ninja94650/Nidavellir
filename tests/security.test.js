@@ -53,11 +53,17 @@ test('runner forwards interactive stdin to a running JavaScript program', async 
     content: 'process.stdin.setEncoding("utf8"); console.log("READY FOR INPUT"); process.stdin.once("data", data => { console.log("received:" + data.trim()); process.exit(0); });'
   });
   try {
+    // Send input as soon as the runner reports active, before the child has
+    // necessarily attached its stdin pipe. This covers the startup race.
+    for (let i = 0; i < 100 && !runner.isRunning(); i++) {
+      await new Promise(resolve => setTimeout(resolve, 1));
+    }
+    assert.equal(runner.isRunning(), true, 'runner should enter startup');
+    assert.equal(runner.writeInput('hello from terminal\\n'), true, 'early input should be queued');
     for (let i = 0; i < 100 && !output.some(item => item.text.includes('READY FOR INPUT')); i++) {
       await new Promise(resolve => setTimeout(resolve, 20));
     }
     assert.ok(output.some(item => item.text.includes('READY FOR INPUT')), 'program should start and request input');
-    assert.equal(runner.writeInput('hello from terminal\\n'), true);
     const result = await pending;
     assert.equal(result.code, 0);
     assert.ok(output.some(item => item.text.includes('received:hello from terminal')), 'program should receive typed input');
