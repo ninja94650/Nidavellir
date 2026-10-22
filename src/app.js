@@ -293,12 +293,14 @@ window.forge.onRunnerState(({ running }) => {
     btn.classList.add('kill-btn');
     $('statusPill').textContent = 'RUNNING';
     $('statusPill').classList.add('status-running');
+    $('terminalCommand').placeholder = 'Program is running — type input and press Enter…';
   } else {
     btn.textContent = '▶ Run';
     btn.classList.add('primary');
     btn.classList.remove('kill-btn');
     $('statusPill').textContent = 'READY';
     $('statusPill').classList.remove('status-running');
+    $('terminalCommand').placeholder = 'Type a shell command after clicking Start shell…';
   }
 });
 
@@ -355,9 +357,15 @@ $('terminalCommandForm').onsubmit = async e => {
   e.preventDefault();
   const input = $('terminalCommand'), command = input.value;
   if (!command.trim()) return;
-  addOutput('info', `$ ${command}`);
   input.value = '';
   try {
+    if (isRunning) {
+      const result = await window.forge.writeRunInput(command + String.fromCharCode(10));
+      if (!result?.accepted) addOutput('stderr', 'The running program is not accepting input right now.');
+      else addOutput('info', `› ${command}`);
+      return;
+    }
+    addOutput('info', `$ ${command}`);
     const result = await window.forge.terminalWrite(command + String.fromCharCode(10));
     if (!result?.running) addOutput('stderr', 'Terminal is not running. Click Start shell first.');
   } catch (err) { addOutput('stderr', err.message); }
