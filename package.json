@@ -26,7 +26,7 @@
     "electron-updater": "^6.3.9"
   },
   "devDependencies": {
-    "electron": "^38.0.0",
+    "electron": "^45.0.0",
     "electron-builder": "^26.0.12",
     "monaco-editor": "0.52.2",
     "playwright": "^1.56.1"
