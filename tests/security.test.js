@@ -75,7 +75,12 @@ test('runner buffers input typed before the child process attaches stdin', async
     content: 'process.stdin.setEncoding("utf8"); process.stdin.once("data", data => { console.log("received:" + data.trim()); process.exit(0); });'
   });
   try {
-    // The process may not exist yet at this point; early input must not be lost.
+    // Wait until the runner has entered startup/compile, but before the child
+    // process exists. Input typed in this window must be queued rather than lost.
+    for (let i = 0; i < 100 && !runner.isRunning(); i++) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    assert.equal(runner.isRunning(), true, 'runner should enter startup');
     assert.equal(runner.writeInput('early input\\n'), true);
     const result = await pending;
     assert.equal(result.code, 0);
