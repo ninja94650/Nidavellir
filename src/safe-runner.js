@@ -111,7 +111,7 @@ function createSafeRunner(sendOutputFn) {
 
       out('info', 'Safety note: project code runs with your account permissions. Only run code you trust; this is not an OS sandbox.');
       out('info', `Running temporary snapshot of ${fileName}…`);
-      const result = await execProcess(command, args, originalDir, timeoutMs, out, setChild);
+      const result = await execProcess(command, args, originalDir, timeoutMs, out, setChild, language === 'javascript' ? { ELECTRON_RUN_AS_NODE: '1' } : undefined);
       const durationMs = Date.now() - startTime;
       recordHistory(fileName, language, result.code, durationMs);
       out('exit', `Process exited with code ${result.code}`);
@@ -125,7 +125,7 @@ function createSafeRunner(sendOutputFn) {
 
   function setChild(child) { currentChild = child; }
 
-  function execProcess(command, args, cwd, timeoutMs, output, setChildRef) {
+  function execProcess(command, args, cwd, timeoutMs, output, setChildRef, extraEnv = {}) {
     return new Promise(resolve => {
       let settled = false, outputBytes = 0, stdout = '', stderr = '', hardKill = null;
       let child;
@@ -139,7 +139,7 @@ function createSafeRunner(sendOutputFn) {
       };
       try {
         child = spawn(command, args, {
-          cwd, shell: false, windowsHide: true, detached: process.platform !== 'win32', env: safeEnvironment(),
+          cwd, shell: false, windowsHide: true, detached: process.platform !== 'win32', env: { ...safeEnvironment(), ...extraEnv },
           stdio: ['ignore', 'pipe', 'pipe']
         });
         setChildRef(child);
