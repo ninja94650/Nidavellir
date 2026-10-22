@@ -46,7 +46,10 @@ window.MonacoEnvironment = {
   getWorkerUrl: function () {
     const workerMain = monacoBaseUrl + 'vs/base/worker/workerMain.js';
     const bootstrap = 'self.MonacoEnvironment = { baseUrl: ' + JSON.stringify(monacoBaseUrl) + ' }; importScripts(' + JSON.stringify(workerMain) + ');';
-    return 'data:text/javascript;charset=utf-8,' + encodeURIComponent(bootstrap);
+    // The renderer CSP allows blob: workers, not data: workers. A Blob URL also
+    // keeps the bootstrap same-origin-compatible while importScripts loads the
+    // bundled worker entry point from the local app resources.
+    return URL.createObjectURL(new Blob([bootstrap], { type: 'text/javascript' }));
   }
 };
 require.config({ paths: { vs: monacoBaseUrl + 'vs' } });
