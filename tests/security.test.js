@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { createSafeRunner, MAX_SOURCE_BYTES, LANGUAGES } = require('../src/safe-runner');
 const plugins = require('../src/plugins');
 
@@ -67,6 +68,48 @@ test('runner forwards interactive stdin to a running JavaScript program', async 
     const result = await pending;
     assert.equal(result.code, 0);
     assert.ok(output.some(item => item.text.includes('received:hello from terminal')), 'program should receive typed input');
+  } finally {
+    if (runner.isRunning()) runner.kill();
+    await pending.catch(() => {});
+  }
+});
+
+test('C++ runner delivers queued terminal input to std::cin', async t => {
+  const compiler = spawnSync('g++', ['--version'], { stdio: 'ignore', shell: false });
+  if (compiler.error || compiler.status !== 0) {
+    t.skip('g++ is not installed in this test environment');
+    return;
+  }
+
+  const output = [];
+  const runner = createSafeRunner((type, text) => output.push({ type, text }));
+  const pending = runner.run({
+    language: 'cpp',
+    filePath: path.join(os.tmpdir(), 'test.cpp'),
+    content: [
+      '#include <iostream>',
+      'int main() {',
+      '  double price = 0;',
+      '  int quantity = 0;',
+      '  std::cout << "enter price of item:\\n" << std::flush;',
+      '  if (!(std::cin >> price)) return 2;',
+      '  std::cout << "enter number of item:\\n" << std::flush;',
+      '  if (!(std::cin >> quantity)) return 3;',
+      '  std::cout << "total cost: " << price * quantity << "\\n";',
+      '  return 0;',
+      '}'
+    ].join('\\n')
+  });
+
+  try {
+    for (let i = 0; i < 200 && !runner.isRunning(); i++) {
+      await new Promise(resolve => setTimeout(resolve, 1));
+    }
+    assert.equal(runner.isRunning(), true, 'C++ runner should enter startup');
+    assert.equal(runner.writeInput('2.5\\n3\\n'), true, 'input entered during compilation should queue');
+    const result = await pending;
+    assert.equal(result.code, 0);
+    assert.ok(output.some(item => item.text.includes('total cost: 7.5')), 'C++ program should read both values and print the correct total');
   } finally {
     if (runner.isRunning()) runner.kill();
     await pending.catch(() => {});
