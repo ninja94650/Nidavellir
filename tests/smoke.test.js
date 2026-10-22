@@ -157,6 +157,6 @@ test('updater starts before plugins and plugin startup failures are non-fatal', 
   assert.ok(updaterStart >= 0, 'updater initialization must exist');
   assert.ok(pluginInit >= 0, 'plugin initialization must exist');
   assert.ok(updaterStart < pluginInit, 'updater must initialize before user plugins');
-  assert.match(source, /\\[plugins\\] Failed to initialize:/, 'plugin initialization failures must be logged');
-  assert.match(source, /pluginSystem\\.setWindow\\(win\\)/, 'plugin system must receive the current window');
+  assert.match(source, /\[plugins\] Failed to initialize:/, 'plugin initialization failures must be logged');
+  assert.match(source, /pluginSystem\.setWindow\(win\)/, 'plugin system must receive the current window');
 });
