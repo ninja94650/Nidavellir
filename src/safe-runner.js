@@ -46,6 +46,7 @@ function terminateProcessTree(child, signal = 'SIGTERM') {
 function createSafeRunner(sendOutputFn) {
   let currentChild = null;
   let running = false;
+  let acceptsInput = false;
   const history = [];
   function out(type, text) { sendOutputFn(type, String(text)); }
 
@@ -111,13 +112,15 @@ function createSafeRunner(sendOutputFn) {
 
       out('info', 'Safety note: project code runs with your account permissions. Only run code you trust; this is not an OS sandbox.');
       out('info', `Running temporary snapshot of ${fileName}…`);
-      const result = await execProcess(command, args, originalDir, timeoutMs, out, setChild, language === 'javascript' ? { ELECTRON_RUN_AS_NODE: '1' } : undefined);
+      acceptsInput = true;
+      const result = await execProcess(command, args, originalDir, timeoutMs, out, setChild, language === 'javascript' ? { ELECTRON_RUN_AS_NODE: '1' } : undefined, true);
       const durationMs = Date.now() - startTime;
       recordHistory(fileName, language, result.code, durationMs);
       out('exit', `Process exited with code ${result.code}`);
       return { code: result.code, durationMs };
     } finally {
       running = false;
+      acceptsInput = false;
       currentChild = null;
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }
@@ -125,7 +128,7 @@ function createSafeRunner(sendOutputFn) {
 
   function setChild(child) { currentChild = child; }
 
-  function execProcess(command, args, cwd, timeoutMs, output, setChildRef, extraEnv = {}) {
+  function execProcess(command, args, cwd, timeoutMs, output, setChildRef, extraEnv = {}, interactive = false) {
     return new Promise(resolve => {
       let settled = false, outputBytes = 0, stdout = '', stderr = '', hardKill = null;
       let child;
@@ -140,7 +143,7 @@ function createSafeRunner(sendOutputFn) {
       try {
         child = spawn(command, args, {
           cwd, shell: false, windowsHide: true, detached: process.platform !== 'win32', env: { ...safeEnvironment(), ...extraEnv },
-          stdio: ['ignore', 'pipe', 'pipe']
+          stdio: [interactive ? 'pipe' : 'ignore', 'pipe', 'pipe']
         });
         setChildRef(child);
       } catch (e) {
@@ -171,6 +174,12 @@ function createSafeRunner(sendOutputFn) {
     });
   }
 
+  function writeInput(text) {
+    if (!acceptsInput || !currentChild || !currentChild.stdin || currentChild.stdin.destroyed || !currentChild.stdin.writable) return false;
+    if (typeof text !== 'string' || text.length > 16_384) return false;
+    try { return currentChild.stdin.write(text); } catch { return false; }
+  }
+
   function kill() {
     if (!currentChild) return false;
     try { currentChild.kill('SIGTERM'); } catch {}
@@ -182,7 +191,7 @@ function createSafeRunner(sendOutputFn) {
     history.unshift({ timestamp: new Date().toISOString(), fileName, language, exitCode, durationMs });
     if (history.length > MAX_HISTORY) history.pop();
   }
-  return { run, kill, getHistory: () => [...history], isRunning: () => running };
+  return { run, kill, writeInput, getHistory: () => [...history], isRunning: () => running };
 }
 
 module.exports = { createSafeRunner, MAX_SOURCE_BYTES, MAX_OUTPUT_BYTES, LANGUAGES };
