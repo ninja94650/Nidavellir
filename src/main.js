@@ -366,8 +366,9 @@ async function callProvider(provider, key, userPrompt, systemPrompt, model) {
     body = { model: model || modelDefaults.openai, messages: [{ role: 'system', content: sys }, { role: 'user', content: prompt }] };
   } else if (provider === 'gemini') {
     const m = model || modelDefaults.gemini;
-    url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent?key=${encodeURIComponent(key)}`;
-    headers = { 'Content-Type': 'application/json' };
+    // Keep credentials out of URLs, which can be retained in logs and diagnostics.
+    url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent`;
+    headers = { 'Content-Type': 'application/json', 'x-goog-api-key': key };
     body = { systemInstruction: { parts: [{ text: sys }] }, contents: [{ role: 'user', parts: [{ text: prompt }] }] };
   } else {
     url = 'https://api.anthropic.com/v1/messages';
@@ -375,7 +376,10 @@ async function callProvider(provider, key, userPrompt, systemPrompt, model) {
     body = { model: model || modelDefaults.claude, max_tokens: 4096, system: sys, messages: [{ role: 'user', content: prompt }] };
   }
 
-  const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+  const response = await fetch(url, {
+    method: 'POST', headers, body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000)
+  });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error?.message || data?.message || `${provider} API request failed (${response.status}). Check the key, model, network, and provider billing.`);
   if (provider === 'openai') return data.choices?.[0]?.message?.content || 'No text returned.';
