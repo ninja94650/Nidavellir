@@ -1289,3 +1289,13 @@ input:focus, textarea:focus, select:focus, .composer textarea:focus {
 
 /* Respect hidden state for collapsible workspace regions. */
 .sidebar[hidden], .ai-panel[hidden], .panel[hidden] { display: none !important; }
+
+
+.update-status { border: 1px solid rgba(110, 230, 255, .22); border-radius: 999px; padding: 3px 10px; background: rgba(6, 20, 28, .5); color: #bdeff8; font: inherit; font-size: 11px; line-height: 1.3; cursor: pointer; white-space: nowrap; }
+.update-status:hover:not(:disabled) { border-color: rgba(110, 230, 255, .65); box-shadow: 0 0 14px rgba(24, 185, 215, .12); }
+.update-status:disabled { opacity: .72; cursor: default; }
+.update-status[data-state="ready"] { color: #a8ffc9; border-color: rgba(85, 222, 139, .45); }
+.update-status[data-state="error"] { color: #ffc0b8; border-color: rgba(244, 119, 106, .4); }
+.update-setting .updates-toggle { display: flex; align-items: center; gap: 9px; flex-direction: row; cursor: pointer; }
+.update-setting .updates-toggle input { width: auto; flex: 0 0 auto; margin: 0; }
+.update-setting small { display: block; margin-top: 5px; }

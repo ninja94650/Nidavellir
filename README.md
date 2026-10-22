@@ -1,81 +1,67 @@
 # Nidavellir
 
-Nidavellir is an independent Electron desktop coding environment with a Monaco editor, local plugin hooks, a safe-runner workflow, and an AI workbench for configured providers.
+Nidavellir is an independent Electron desktop coding environment with a Monaco editor, project runner, plugin hooks, and an AI workbench for configured providers. It is not a clone of Visual Studio Code; see the roadmap for planned gaps.
 
-> **Scope note:** Nidavellir is not yet feature-equivalent to Visual Studio Code. See [the parity roadmap](docs/VS_CODE_PARITY.md) for implemented foundations, planned work, security priorities, and completion criteria.
+## Install once, update automatically
 
-## Studio interface
+1. Download the Windows installer from GitHub Releases and install Nidavellir once.
+2. Installed builds check for updates at launch and every four hours. Available updates download in the background and Nidavellir asks you to restart to finish installation. A staged update also installs when you quit.
+3. Use Help > Check for Updates or click the update status in the bottom bar. Automatic updates can be disabled in Settings.
 
-The current Electron interface uses the Nidavellir Studio visual direction: a dark editor workspace, welcome banner, file explorer, AI workbench for configured providers, diff-review workflow, and terminal/output panel. The welcome actions connect to the existing New File and AI Workbench controls; the interface is styled in `src/styles.css` and the actual app remains wired to its Electron preload/backend APIs.
+After the first install, normal future releases should not require manual installer downloads. This requires internet access and a published GitHub Release. The repository must remain public for updater access without a token.
 
-The separately supplied HTML/CSS/JavaScript mockup was used as a visual reference, not copied over the working Electron frontend, because its mock file contents and simulated AI/run actions would replace real project integrations with placeholders.
+### Platform notes
 
-## Current features
-
-- Electron desktop app with Monaco editor and a plain-text fallback.
-- Open files and folders, browse a project tree, and save edits.
-- Run supported project code from a temporary snapshot so Run does not overwrite the source file; includes source-size, timeout, output, and process-tree stop safeguards (not a security sandbox).
-- Configure OpenAI, Google Gemini, and Anthropic Claude API keys; keys are stored using Electron `safeStorage` where available.
-- Ask configured AI providers for help, synthesize responses, generate tests, and review proposed changes before applying them.
-- Discover local JavaScript plugins from `plugins/`; they start disabled and require explicit confirmation before activation.
-- Example plugins and Node.js smoke tests.
-
-## Requirements
-
-- Node.js (current LTS recommended)
-- npm
-- A supported desktop OS for Electron
-- Optional: API keys for the AI providers you intend to use
-- Optional: runtimes/compilers for the languages you want to execute
+- Windows: per-user NSIS installer supports automatic updates. The unsigned first install may trigger a Windows SmartScreen warning.
+- Linux: AppImage supports electron-updater. Keep the AppImage in a writable location and install the AppImage/FUSE runtime requirements.
+- macOS: automatic updates require a code-signed and notarized app. Unsigned builds must be replaced manually.
 
 ## Run from source
 
-```bash
+Requires Node.js 22 or newer and npm.
+
+```sh
 npm install
 npm start
-```
-
-Run tests:
-
-```bash
 npm test
 ```
 
-Create a local unpacked build:
+`npm install` copies Monaco into `src/vendor/monaco`, allowing packaged builds to load the editor locally instead of relying on a CDN.
 
-```bash
-npm run dist:dir
-```
+## Build locally
 
-Build an installable desktop package for your operating system:
-
-```bash
-# Windows installer (.exe)
+```sh
 npm run dist:win
-
-# Linux AppImage
 npm run dist:linux
-
-# macOS disk image (.dmg)
 npm run dist:mac
 ```
 
-On Windows, open PowerShell in the cloned repository folder and run `npm install`, then `npm start` to launch the app. To create an installer, run `npm run dist:win`; the installer is written to `dist/\`. The GitHub Actions workflow also builds a Windows installer and Linux AppImage, runs the existing test suite, and publishes the generated files as downloadable workflow artifacts when successful. A workflow must finish successfully before those artifacts are available.
+Build artifacts are written to `dist/`. These local commands build installers but do not publish updates.
 
-The application is a desktop app; opening the repository in a browser does not run the Electron application. Monaco currently loads from a CDN, so an internet connection is needed for the full editor unless you vendor Monaco locally.
+## Publish an update
 
-## AI providers and costs
+Merge reviewed changes into `main`, then from a clean checkout of `main`, run:
 
-Each provider must be configured by the user with its own valid API key and may require account access, billing, and an available model. Nidavellir does not grant access to every commercial AI model or third-party IDE extension automatically. Enable only providers you are authorized to use. AI calls may send the prompt and selected code to that provider; do not include secrets or files you do not intend to share.
+```sh
+npm run release
+```
 
-## Plugin trust and security
+The command runs tests, increments the patch version, creates the matching `vX.Y.Z` tag and pushes it. The release workflow verifies the version and publishes the platform installers with electron-updater metadata to GitHub Releases. Installed copies use this metadata to fetch future updates. Do not publish a tag until CI passes.
 
-Plugins are executable JavaScript and should be treated as trusted code. The current plugin API is intentionally small, but loading a plugin in the Electron main process is **not** a security sandbox. Install only reviewed plugins. See [plugin development and trust guidance](plugins/README.md).
+## Features and limitations
 
-Project execution also has risks. The runner passes a reduced environment, disables shell invocation, and bounds source size, runtime, and captured output, but project code still runs with your account's permissions and may access files or the network available to you. Use an OS sandbox or isolated VM for untrusted code. Temporary snapshots may not resolve relative imports exactly like the original file. Review code before running it and keep backups or use Git.
+- Electron desktop interface with Monaco, file open/save, project explorer, and plain-text fallback.
+- Project runner supports common language runtimes when installed. Timeouts and output caps are safeguards, not an OS sandbox.
+- OpenAI, Gemini, and Claude integrations require your own API keys; API use may cost money.
+- Plugins execute with your account's OS permissions. Enable only plugins whose source you trust.
+- This branch does not include every feature described in the separate v0.3 upgrade report; the full report's referenced source ZIP was not included in this merge.
+
+## Security
+
+- API keys are encrypted through Electron `safeStorage` where supported.
+- The renderer is isolated from Node APIs and uses a content security policy.
+- Do not run untrusted code or install untrusted plugins.
 
 ## Roadmap
 
-The planned path toward a fuller development studio includes multi-tab editing, command palette and keybindings, workspace search, language-server support, debugging, Git UI, terminal/task integration, a more complete extension host, stronger IPC validation, and coordinated multi-agent workflows. These are goals, not claims that all are already implemented.
-
-See [docs/VS_CODE_PARITY.md](docs/VS_CODE_PARITY.md).
+Integrated terminal experience (xterm.js/node-pty), debugger (DAP), language servers, extension compatibility, split editors, and multi-root workspaces.

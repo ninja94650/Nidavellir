@@ -6,12 +6,17 @@ on:
     branches:
       - main
       - feat/vscode-parity-ai-collaboration
+      - v0.4-installable
     paths:
       - 'src/**'
       - 'plugins/**'
       - 'package.json'
       - 'tests/**'
+      - 'scripts/**'
+      - 'README.md'
+      - 'CHANGELOG.md'
       - '.github/workflows/build-desktop.yml'
+      - '.github/workflows/release.yml'
 
 permissions:
   contents: read

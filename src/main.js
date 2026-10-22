@@ -7,9 +7,12 @@ const { spawn } = require('node:child_process');
 const { createSafeRunner } = require('./safe-runner');
 const { synthesizeResponses } = require('./coordinator');
 const pluginSystem = require('./plugins');
+const { autoUpdater } = require('electron-updater');
+const { createUpdater } = require('./updater');
 
 /* ─── globals ─── */
 let win;
+let updateService = null;
 const keyCache = {};
 const allowedProviders = new Set(['openai', 'gemini', 'claude']);
 const approvedRoots = new Set();
@@ -101,6 +104,11 @@ function installApplicationMenu() {
     ]},
     { label: 'View', submenu: [
       { role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'togglefullscreen' }
+    ]},
+    { label: 'Help', submenu: [
+      { label: 'Check for Updates…', click: () => { if (updateService) void updateService.checkNow(); } },
+      { type: 'separator' },
+      { label: 'About Nidavellir', click: () => dialog.showMessageBox(win, { type: 'info', title: 'About Nidavellir', message: 'Nidavellir ' + app.getVersion(), detail: 'An independent AI-assisted desktop coding environment.' }) }
     ]}
   ];
   const menu = Menu.buildFromTemplate(template);
@@ -127,10 +135,21 @@ app.whenReady().then(async () => {
   pluginSystem.setWindow(win);
   const pluginsDir = path.join(__dirname, '..', 'plugins');
   await pluginSystem.initPluginSystem(pluginsDir);
+  updateService = createUpdater({ app, autoUpdater, dialog, getWindow: () => win });
+  await updateService.initialize();
 });
-app.on('before-quit', () => { stopIntegratedTerminal(); });
+app.on('before-quit', () => { stopIntegratedTerminal(); if (updateService) updateService.dispose(); });
 app.on('window-all-closed', () => { stopIntegratedTerminal(); if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+
+
+ipcMain.handle('updates:check', async () => updateService ? updateService.checkNow() : { state: 'starting', message: 'Update service is starting.', enabled: true });
+ipcMain.handle('updates:status', () => updateService ? updateService.getStatus() : { state: 'starting', message: 'Update service is starting.', enabled: true });
+ipcMain.handle('updates:set-enabled', async (_event, enabled) => {
+  if (typeof enabled !== 'boolean') throw new Error('Update preference must be a boolean.');
+  if (!updateService) throw new Error('Update service is not ready.');
+  return updateService.setEnabled(enabled);
+});
 
 /* ═══════════════════════════════════════════════════════════
    FILE IPC

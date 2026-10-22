@@ -41,7 +41,7 @@ const welcome = `// Welcome to Nidavellir
 
 // Monaco workers need an absolute workerMain URL: relative importScripts paths
 // break when Chromium creates the worker from a blob URL (including CI/browser preview).
-const monacoBaseUrl = new URL('../node_modules/monaco-editor/min/', window.location.href).href;
+const monacoBaseUrl = new URL('vendor/monaco/', window.location.href).href
 window.MonacoEnvironment = {
   getWorkerUrl: function () {
     const workerMain = monacoBaseUrl + 'vs/base/worker/workerMain.js';
@@ -914,4 +914,44 @@ if (focusAiBannerBtn) {
     $('aiPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     $('promptInput').focus();
   });
+}
+
+
+/* ── Automatic updates ── */
+function renderUpdateStatus(update) {
+  if (!update) return;
+  const button = $('updateStatus');
+  const enabled = $('updatesEnabled');
+  const labels = { starting: 'Preparing updates…', checking: 'Checking for updates…', downloading: 'Downloading update…', ready: 'Restart to update', 'up-to-date': 'Up to date', disabled: 'Updates disabled', development: 'Updates: installed app only', error: 'Update check failed' };
+  button.textContent = update.state === 'downloading' && typeof update.progress === 'number'
+    ? 'Downloading ' + update.progress + '%'
+    : (labels[update.state] || update.message || 'Update status');
+  button.dataset.state = update.state || 'idle';
+  button.title = update.error || update.message || 'Click to check for updates';
+  button.disabled = update.state === 'development';
+  if (enabled && typeof update.enabled === 'boolean') enabled.checked = update.enabled;
+}
+if (window.forge && typeof window.forge.getUpdateStatus === 'function') {
+  window.forge.onUpdateStatus(renderUpdateStatus);
+  window.forge.getUpdateStatus().then(renderUpdateStatus).catch(() => {});
+  $('updateStatus').addEventListener('click', async () => {
+    $('updateStatus').disabled = true;
+    try { renderUpdateStatus(await window.forge.checkForUpdates()); }
+    catch { renderUpdateStatus({ state: 'error', message: 'Update check failed.' }); }
+    finally {
+      const current = await window.forge.getUpdateStatus().catch(() => null);
+      if (current) renderUpdateStatus(current); else $('updateStatus').disabled = false;
+    }
+  });
+  $('updatesEnabled').addEventListener('change', async () => {
+    const checkbox = $('updatesEnabled'); checkbox.disabled = true;
+    try { renderUpdateStatus(await window.forge.setUpdatesEnabled(checkbox.checked)); }
+    catch { checkbox.checked = !checkbox.checked; $('updateStatus').title = 'Could not save the update preference.'; }
+    finally { checkbox.disabled = false; }
+  });
+} else {
+  $('updateStatus').textContent = 'Updates: installed app only';
+  $('updateStatus').title = 'Automatic updates are available only in packaged desktop builds.';
+  $('updateStatus').disabled = true;
+  $('updatesEnabled').disabled = true;
 }

@@ -8,7 +8,7 @@ const root = path.resolve(__dirname, '..');
 test('project has core app files', () => {
   for (const f of [
     'package.json', 'src/main.js', 'src/preload.js',
-    'src/index.html', 'src/app.js', 'src/styles.css', 'README.md'
+    'src/index.html', 'src/app.js', 'src/styles.css', 'src/updater.js', 'scripts/copy-monaco.js', 'README.md'
   ]) {
     assert.ok(fs.existsSync(path.join(root, f)), `missing ${f}`);
   }
@@ -86,7 +86,29 @@ test('plugin system module exports expected API', () => {
   }
 });
 
-test('package.json version is 0.2.0', () => {
+test('package.json is configured for the installable 0.4 release', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-  assert.strictEqual(pkg.version, '0.2.0');
+  assert.strictEqual(pkg.version, '0.4.0');
+  assert.equal(pkg.build.publish[0].owner, 'ninja94650');
+  assert.equal(pkg.build.publish[0].repo, 'Nidavellir');
+  assert.ok(pkg.dependencies['electron-updater']);
+});
+
+
+test('packaged app loads Monaco from local vendor paths', () => {
+  const html = fs.readFileSync(path.join(root, 'src/index.html'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'src/app.js'), 'utf8');
+  assert.match(html, /vendor\/monaco\/vs\/loader\.js/);
+  assert.match(app, /new URL\('vendor\/monaco\/'/);
+  assert.doesNotMatch(html, /node_modules\/monaco-editor/);
+});
+
+test('automatic update release workflow publishes required platform metadata', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const workflow = fs.readFileSync(path.join(root, '.github/workflows/release.yml'), 'utf8');
+  assert.equal(pkg.build.publish[0].provider, 'github');
+  assert.match(workflow, /tags:[\s\S]*'v\*'/);
+  assert.match(workflow, /contents: write/);
+  assert.match(workflow, /electron-builder --win nsis --publish onTag/);
+  assert.match(workflow, /electron-builder --linux AppImage --publish onTag/);
 });

@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Rajdhani:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
-<script src="../node_modules/monaco-editor/min/vs/loader.js"></script>
+<script src="vendor/monaco/vs/loader.js"></script>
 </head>
 <body>
 <div class="app">
@@ -135,7 +135,8 @@
     <span id="statusText">Ready · No file open</span>
     <span id="pluginStatusItems"></span>
     <span id="languageStatus">JavaScript</span>
-    <span>Nidavellir 0.2.0</span>
+    <button id="updateStatus" class="update-status" type="button" title="Check for updates">Preparing updates…</button>
+    <span>Nidavellir 0.4.0</span>
   </footer>
 </div>
 
@@ -190,7 +191,8 @@
     <div class="provider-setting"><label for="openaiKey">OpenAI API key <span id="openaiState">Not checked</span></label><input id="openaiKey" type="password" placeholder="sk-…"><small>For GPT models. Get a key from the OpenAI developer platform.</small></div>
     <div class="provider-setting"><label for="geminiKey">Google Gemini API key <span id="geminiState">Not checked</span></label><input id="geminiKey" type="password" placeholder="API key"><small>Get a key from Google AI Studio.</small></div>
     <div class="provider-setting"><label for="claudeKey">Anthropic Claude API key <span id="claudeState">Not checked</span></label><input id="claudeKey" type="password" placeholder="sk-ant-…"><small>Get a key from Anthropic Console.</small></div>
-    <div class="modal-note">Nidavellir is an independent starter project, not an official product of OpenAI, Google, Anthropic, or Microsoft. Each provider requires its own API key and may require billing. Do not share your keys.</div>
+    <div class="provider-setting update-setting"><label class="updates-toggle" for="updatesEnabled"><input id="updatesEnabled" type="checkbox" checked> Automatically download and install updates</label><small>Installed builds check at launch and every four hours. Available updates download in the background.</small></div>
+    <div class="modal-note">Nidavellir is an independent project, not an official product of OpenAI, Google, Anthropic, or Microsoft. Each AI provider requires its own key and may require billing. Automatic updates require internet access and a published GitHub Release.</div>
     <div class="modal-actions"><button id="checkKeysBtn">Check saved keys</button><button id="saveKeysBtn" class="primary">Save keys securely</button></div>
     <div id="settingsMessage" class="settings-message"></div>
   </section>

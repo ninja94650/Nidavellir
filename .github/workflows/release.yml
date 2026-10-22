@@ -1,0 +1,62 @@
+name: Publish Nidavellir releases
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Verify tag matches package version
+        shell: bash
+        run: |
+          node -e "const p=require('./package.json'); const tag=process.env.GITHUB_REF_NAME; if (tag !== 'v'+p.version) { console.error('Tag '+tag+' does not match package version '+p.version); process.exit(1); }"
+      - name: Run tests
+        run: npm test
+
+  publish-windows:
+    needs: verify
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Build and publish Windows installer and update metadata
+        run: npx electron-builder --win nsis --publish onTag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-linux:
+    needs: publish-windows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Build and publish Linux AppImage and update metadata
+        run: npx electron-builder --linux AppImage --publish onTag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
