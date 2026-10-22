@@ -33,6 +33,17 @@ test('runner executes an editor snapshot without overwriting the source file', a
   }
 });
 
+test('JavaScript runner sets Electron Node mode for the child process', async () => {
+  const output = [];
+  const runner = createSafeRunner((type, text) => output.push({ type, text }));
+  const result = await runner.run({
+    language: 'javascript',
+    content: 'console.log(process.env.ELECTRON_RUN_AS_NODE || "missing");'
+  });
+  assert.equal(result.code, 0);
+  assert.ok(output.some(item => item.text.includes('1')), 'child process should receive ELECTRON_RUN_AS_NODE=1');
+});
+
 test('runner rejects unsupported languages and oversized source before execution', async () => {
   const runner = createSafeRunner(() => {});
   await assert.rejects(() => runner.run({ language: 'kotlin', content: 'class A {}' }), /Supported run targets/);
