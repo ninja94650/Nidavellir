@@ -34,6 +34,7 @@ const assert = require('node:assert/strict');
       readPath: async filePath => { record('readPath', filePath); return { filePath, content: 'alpha alpha\n' }; },
       runSafe: async p => { record('runSafe', p); state.runner?.({ running: true }); await new Promise(r => setTimeout(r, 10)); state.runner?.({ running: false }); return { durationMs: 10, code: 0 }; },
       killRun: async () => { record('killRun'); state.runner?.({ running: false }); },
+      writeRunInput: async text => { record('writeRunInput', text); return { accepted: true }; },
       runHistory: async () => { record('runHistory'); return [{ fileName: 'main.js', language: 'javascript', exitCode: 0, durationMs: 10, timestamp: Date.now() }]; },
       terminalStart: async p => { record('terminalStart', p); return { cwd: '/tmp/project' }; },
       terminalWrite: async s => { record('terminalWrite', s); return { running: true }; },
@@ -74,6 +75,7 @@ const assert = require('node:assert/strict');
   await check('Clear output', async () => { await page.locator('#terminal').evaluate(e => e.innerHTML = '<div>test</div>'); await click('#clearOutputBtn'); assert.equal(await page.locator('#terminal').textContent(), ''); });
   await check('Start shell', async () => { await click('#terminalStartBtn'); await called('terminalStart'); });
   await check('Terminal send', async () => { await page.locator('#terminalCommand').fill('echo test'); await click('#terminalCommandForm button[type="submit"]'); await called('terminalWrite'); });
+  await check('Interactive program input', async () => { await page.evaluate(() => window.__uiState.runner({ running: true })); await page.locator('#terminalCommand').fill('42'); await click('#terminalCommandForm button[type="submit"]'); await called('writeRunInput'); assert.ok((await page.evaluate(() => window.__uiCalls)).some(c => c.name === 'writeRunInput' && c.payload === '42\\n')); await page.evaluate(() => window.__uiState.runner({ running: false })); });
   await check('Stop shell', async () => { await click('#terminalStopBtn'); await called('terminalStop'); });
   await check('Problems tab', async () => { await click('[data-panel="problems"]'); assert.equal(await page.locator('#problems').isVisible(), true); });
   await check('Terminal tab + focus button', async () => { await click('[data-panel="terminal"]'); await click('#focusTerminalBtn'); assert.equal(await page.locator('[data-panel="terminal"]').getAttribute('class').then(v => v.includes('active')), true); });
