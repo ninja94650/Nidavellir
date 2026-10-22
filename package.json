@@ -1,16 +1,35 @@
 {
   "name": "nidavellir-ide",
-  "version": "0.2.0",
-  "description": "Nidavellir — a beginner-friendly AI-assisted desktop coding environment",
+  "version": "0.4.0",
+  "description": "Nidavellir — an AI-assisted desktop coding environment",
+  "author": "ninja94650",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ninja94650/Nidavellir.git"
+  },
   "main": "src/main.js",
   "scripts": {
+    "copy:monaco": "node scripts/copy-monaco.js",
+    "postinstall": "npm run copy:monaco",
+    "prestart": "npm run copy:monaco",
     "start": "electron .",
-    "test": "node --test tests/*.test.js",
-    "dist:dir": "electron-builder --dir"
+    "test": "node --test tests/security.test.js tests/smoke.test.js tests/updater.test.js",
+    "test:ui": "node tests/ui-buttons.test.js",
+    "dist:dir": "npm run copy:monaco && electron-builder --dir",
+    "dist:win": "npm run copy:monaco && electron-builder --win nsis --publish never",
+    "dist:linux": "npm run copy:monaco && electron-builder --linux AppImage --publish never",
+    "dist:mac": "npm run copy:monaco && electron-builder --mac dmg zip --publish never",
+    "release": "npm test && npm version patch -m \"Release v%s\" && git push --follow-tags"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
   },
   "devDependencies": {
-    "electron": "^38.0.0",
-    "electron-builder": "^26.0.12"
+    "electron": "^45.0.0",
+    "electron-builder": "^26.0.12",
+    "monaco-editor": "0.52.2",
+    "playwright": "^1.56.1"
   },
   "build": {
     "appId": "dev.nidavellir.ide",
@@ -23,14 +42,34 @@
     "directories": {
       "output": "dist"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ninja94650",
+        "repo": "Nidavellir",
+        "releaseType": "release"
+      }
+    ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "artifactName": "Nidavellir-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
     },
     "mac": {
-      "target": "dmg"
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools"
     },
     "linux": {
-      "target": "AppImage"
+      "target": "AppImage",
+      "category": "Development"
     }
   }
 }

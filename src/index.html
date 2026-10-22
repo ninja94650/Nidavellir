@@ -2,11 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://api.openai.com https://generativelanguage.googleapis.com https://api.anthropic.com;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src https://api.openai.com https://generativelanguage.googleapis.com https://api.anthropic.com;">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nidavellir</title>
+<title>Nidavellir — Forge AI Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Rajdhani:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.min.js"></script>
+<script src="vendor/monaco/vs/loader.js"></script>
 </head>
 <body>
 <div class="app">
@@ -22,7 +25,7 @@
 
   <div class="workspace">
     <aside class="activity">
-      <button class="active" title="Explorer">▤</button>
+      <button class="active" title="Explorer" id="explorerBtn" aria-label="Toggle Explorer">▤</button>
       <button title="AI panel" id="focusAiBtn">✧</button>
       <button title="Terminal" id="focusTerminalBtn">⌁</button>
     </aside>
@@ -34,7 +37,34 @@
     </aside>
 
     <main class="main-area">
+      <section class="welcome-strip">
+        <div>
+          <div class="eyebrow">YOUR AI DEVELOPMENT WORKSPACE</div>
+          <h1>Build something <span>remarkable.</span></h1>
+          <p>Code, collaborate with your AI team, and ship with confidence.</p>
+        </div>
+        <div class="welcome-actions">
+          <button id="newFileBannerBtn" class="soft-button" type="button">＋ New file</button>
+          <button id="focusAiBannerBtn" class="soft-button" type="button">✧ Ask AI</button>
+        </div>
+      </section>
       <div class="tabs" id="tabs"><div class="tab active">welcome.md</div><div class="tab-spacer"></div><span class="status-pill" id="statusPill">READY</span></div>
+      <div class="find-bar" id="findBar" hidden>
+        <div class="find-row">
+          <label class="find-field"><span>Find</span><input id="findInput" type="text" autocomplete="off" placeholder="Search in current file"></label>
+          <label class="find-case"><input id="findMatchCase" type="checkbox"> Match case</label>
+          <span id="findCount" class="find-count" aria-live="polite">Type to search</span>
+          <button id="findPrevious" type="button" title="Previous match">↑</button>
+          <button id="findNext" type="button" title="Next match">↓</button>
+          <button id="findClose" type="button" title="Close find bar">✕</button>
+        </div>
+        <div class="find-row" id="replaceRow" hidden>
+          <label class="find-field"><span>Replace</span><input id="replaceInput" type="text" autocomplete="off" placeholder="Replace with"></label>
+          <span class="find-spacer"></span>
+          <button id="replaceOne" type="button">Replace</button>
+          <button id="replaceAll" type="button">Replace all</button>
+        </div>
+      </div>
       <div class="editor-wrap">
         <div id="editor"></div>
         <div id="fallbackEditor" hidden><textarea id="plainEditor" spellcheck="false"></textarea></div>
@@ -59,11 +89,14 @@
             <button class="panel-tab" data-panel="problems">PROBLEMS</button>
           </div>
           <div class="panel-head-actions">
+            <button id="terminalStartBtn" class="subtle">Start shell</button>
+            <button id="terminalStopBtn" class="subtle">Stop shell</button>
             <button id="runHistoryBtn" class="subtle">History</button>
             <button id="clearOutputBtn" class="subtle">Clear</button>
           </div>
         </div>
-        <div id="terminal" class="terminal"><div class="term-line muted">Welcome to Nidavellir. Run code to see output here.</div></div>
+        <div id="terminal" class="terminal"><div class="term-line muted">Welcome to Nidavellir. Run code to see output here, or start the integrated shell. Shell commands run with your user permissions.</div></div>
+        <form id="terminalCommandForm" class="terminal-command-form"><span class="terminal-prompt">$</span><input id="terminalCommand" autocomplete="off" spellcheck="false" placeholder="Type a shell command after clicking Start shell…" aria-label="Terminal command"><button type="submit">Send</button></form>
         <div id="problems" class="terminal" hidden><div class="term-line muted">Compiler and runtime errors will appear in Terminal / Output.</div></div>
         <!-- Run history dropdown -->
         <div id="runHistoryDropdown" class="run-history" hidden>
@@ -102,8 +135,53 @@
     <span id="statusText">Ready · No file open</span>
     <span id="pluginStatusItems"></span>
     <span id="languageStatus">JavaScript</span>
-    <span>Nidavellir 0.2.0</span>
+    <button id="updateStatus" class="update-status" type="button" title="Check for updates">Preparing updates…</button>
+    <span>Nidavellir 0.4.0</span>
   </footer>
+</div>
+
+<!-- ── New file dialog ── -->
+<div class="modal-backdrop" id="newFileModal" hidden>
+  <section class="modal new-file-modal" role="dialog" aria-modal="true" aria-labelledby="newFileTitle">
+    <div class="modal-title">
+      <div><h2 id="newFileTitle">Create new file</h2><p>Choose a filename and source type.</p></div>
+      <button id="cancelNewFile" class="close" type="button" aria-label="Close">×</button>
+    </div>
+    <form id="newFileForm">
+      <div class="provider-setting">
+        <label for="newFileName">File name</label>
+        <input id="newFileName" type="text" value="untitled" maxlength="120" autocomplete="off" required placeholder="e.g. main">
+        <small>Enter a name without a folder path. The selected extension will be added automatically.</small>
+      </div>
+      <div class="provider-setting">
+        <label for="newFileType">File type</label>
+        <select id="newFileType">
+          <option value="cpp">C++ (.cpp)</option>
+          <option value="c">C (.c)</option>
+          <option value="javascript">JavaScript (.js)</option>
+          <option value="python">Python (.py)</option>
+          <option value="java">Java (.java)</option>
+          <option value="go">Go (.go)</option>
+          <option value="rust">Rust (.rs)</option>
+          <option value="typescript">TypeScript (.ts)</option>
+          <option value="ruby">Ruby (.rb)</option>
+          <option value="php">PHP (.php)</option>
+          <option value="bash">Bash (.sh)</option>
+          <option value="powershell">PowerShell (.ps1)</option>
+          <option value="html">HTML (.html)</option>
+          <option value="css">CSS (.css)</option>
+          <option value="json">JSON (.json)</option>
+          <option value="markdown">Markdown (.md)</option>
+          <option value="plaintext">Text (.txt)</option>
+        </select>
+      </div>
+      <div id="newFilePreview" class="new-file-preview" aria-live="polite">untitled.cpp</div>
+      <div class="modal-actions">
+        <button id="cancelNewFileAction" type="button">Cancel</button>
+        <button class="primary" type="submit">Create file</button>
+      </div>
+    </form>
+  </section>
 </div>
 
 <!-- ── Settings modal ── -->
@@ -113,7 +191,8 @@
     <div class="provider-setting"><label for="openaiKey">OpenAI API key <span id="openaiState">Not checked</span></label><input id="openaiKey" type="password" placeholder="sk-…"><small>For GPT models. Get a key from the OpenAI developer platform.</small></div>
     <div class="provider-setting"><label for="geminiKey">Google Gemini API key <span id="geminiState">Not checked</span></label><input id="geminiKey" type="password" placeholder="API key"><small>Get a key from Google AI Studio.</small></div>
     <div class="provider-setting"><label for="claudeKey">Anthropic Claude API key <span id="claudeState">Not checked</span></label><input id="claudeKey" type="password" placeholder="sk-ant-…"><small>Get a key from Anthropic Console.</small></div>
-    <div class="modal-note">Nidavellir is an independent starter project, not an official product of OpenAI, Google, Anthropic, or Microsoft. Each provider requires its own API key and may require billing. Do not share your keys.</div>
+    <div class="provider-setting update-setting"><label class="updates-toggle" for="updatesEnabled"><input id="updatesEnabled" type="checkbox" checked> Automatically download and install updates</label><small>Installed builds check at launch and every four hours. Available updates download in the background.</small></div>
+    <div class="modal-note">Nidavellir is an independent project, not an official product of OpenAI, Google, Anthropic, or Microsoft. Each AI provider requires its own key and may require billing. Automatic updates require internet access and a published GitHub Release.</div>
     <div class="modal-actions"><button id="checkKeysBtn">Check saved keys</button><button id="saveKeysBtn" class="primary">Save keys securely</button></div>
     <div id="settingsMessage" class="settings-message"></div>
   </section>

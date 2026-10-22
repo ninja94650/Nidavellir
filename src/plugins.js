@@ -6,6 +6,7 @@
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { EventEmitter } = require('node:events');
+const fsPath = require('node:path');
 
 const plugins = new Map();        // name → { manifest, mainPath, dirPath, module, enabled, hookEntries }
 const hooks = new EventEmitter();
@@ -21,7 +22,7 @@ function sendToRenderer(channel, data) {
 
 function setWindow(win) { winRef = win; }
 
-/* ───── per-plugin sandboxed API ───── */
+/* ───── per-plugin API facade (NOT a security sandbox) ───── */
 
 function createPluginAPI(pluginName) {
   const plugin = plugins.get(pluginName);
@@ -112,18 +113,23 @@ async function initPluginSystem(pluginsDir) {
     try {
       const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
       if (!manifest.name || !manifest.main) continue;
-      const mainPath = path.join(pluginDir, manifest.main);
-      await fs.access(mainPath);
+      if (typeof manifest.main !== 'string' || path.isAbsolute(manifest.main)) continue;
+      const realPluginDir = await fs.realpath(pluginDir);
+      const mainPath = path.resolve(pluginDir, manifest.main);
+      const realMainPath = await fs.realpath(mainPath);
+      const relMain = path.relative(realPluginDir, realMainPath);
+      if (!relMain || relMain.startsWith('..') || path.isAbsolute(relMain)) continue;
+      await fs.access(realMainPath);
+      // Third-party plugin code runs with the app's OS permissions. Never auto-run it.
       plugins.set(manifest.name, {
-        manifest, mainPath, dirPath: pluginDir,
-        module: null, enabled: manifest.enabled !== false, hookEntries: []
+        manifest, mainPath: realMainPath, dirPath: realPluginDir,
+        module: null, enabled: false, hookEntries: []
       });
     } catch { /* skip invalid plugins */ }
   }
 
-  for (const [name, plugin] of plugins) {
-    if (plugin.enabled) activatePlugin(name);
-  }
+  // Plugins remain disabled until the user explicitly enables them in the UI.
+  // Enabling is a trust decision; this is not a process sandbox.
 }
 
 function getPlugins() {

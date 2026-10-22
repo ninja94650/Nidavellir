@@ -1,0 +1,105 @@
+name: Publish Nidavellir releases
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+    paths:
+      - 'src/**'
+      - 'plugins/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'CHANGELOG.md'
+      - '.github/workflows/release.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.tag.outputs.publish }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Run tests
+        run: npm test
+      - name: Verify version and select release
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          tag="v${version}"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            if [[ "$GITHUB_REF_NAME" != "$tag" ]]; then
+              echo "Tag $GITHUB_REF_NAME does not match package version $version"
+              exit 1
+            fi
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            git fetch --tags origin
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+              echo "Version $tag already has a release; skipping duplicate publish."
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+            else
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git tag "$tag"
+              git push origin "$tag"
+              echo "Created release tag $tag"
+              echo "publish=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+  publish-windows:
+    if: needs.verify.outputs.publish == 'true'
+    needs: verify
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Build and publish Windows installer and update metadata
+        run: npx electron-builder --win nsis --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-linux:
+    if: needs.verify.outputs.publish == 'true'
+    needs: [verify, publish-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Build and publish Linux AppImage and update metadata
+        run: npx electron-builder --linux AppImage --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

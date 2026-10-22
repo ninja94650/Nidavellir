@@ -1,0 +1,109 @@
+name: Build Nidavellir desktop app
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - feat/vscode-parity-ai-collaboration
+      - v0.4-installable
+    paths:
+      - 'src/**'
+      - 'plugins/**'
+      - 'package.json'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - '.github/workflows/build-desktop.yml'
+      - '.github/workflows/release.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Run tests
+        run: npm test
+      - name: Build Windows installer
+        run: npm run dist:win
+      - name: Smoke-test installed Windows desktop app
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem dist -Filter *.exe | Select-Object -First 1
+          if (-not $installer) { throw "Windows installer was not produced." }
+          $installDir = Join-Path $env:RUNNER_TEMP "NidavellirSmokeTest"
+          $proc = Start-Process -FilePath $installer.FullName -ArgumentList @("/S", "/D=$installDir") -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "Silent installer failed with exit code $($proc.ExitCode)." }
+          $appExe = Join-Path $installDir "Nidavellir.exe"
+          if (-not (Test-Path $appExe)) { throw "Installed Nidavellir.exe was not found." }
+          $app = Start-Process -FilePath $appExe -PassThru
+          Start-Sleep -Seconds 12
+          $app.Refresh()
+          if ($app.HasExited) { throw "Nidavellir exited during the startup smoke test (exit code $($app.ExitCode))." }
+          Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+          Write-Host "PASS: installer installed Nidavellir and the desktop process stayed alive for 12 seconds."
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nidavellir-Windows-Installer
+          path: dist/*.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  linux-package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Run tests
+        run: npm test
+      - name: Install Playwright Chromium for UI interaction tests
+        run: npx playwright install --with-deps chromium
+      - name: Click through renderer controls in virtual desktop
+        run: xvfb-run -a npm run test:ui
+      - name: Build Linux AppImage
+        run: npm run dist:linux
+      - name: Install AppImage runtime dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2t64
+      - name: Smoke-test Linux AppImage launch
+        shell: bash
+        run: |
+          set -euo pipefail
+          appimage="$(find dist -maxdepth 1 -name '*.AppImage' -print -quit)"
+          test -n "$appimage" || { echo "AppImage was not produced."; exit 1; }
+          chmod +x "$appimage"
+          set +e
+          timeout 15s xvfb-run -a "$appimage" --no-sandbox
+          status=$?
+          set -e
+          if [ "$status" -ne 124 ]; then
+            echo "AppImage did not remain running for the 15-second startup smoke test (exit code $status)."
+            exit 1
+          fi
+          echo "PASS: AppImage launched in a virtual desktop and stayed alive for 15 seconds."
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nidavellir-Linux-AppImage
+          path: dist/*.AppImage
+          if-no-files-found: error
+          retention-days: 14

@@ -11,6 +11,9 @@ contextBridge.exposeInMainWorld('forge', {
   runSafe:     payload  => ipcRenderer.invoke('runner:run-safe', payload),
   killRun:     ()       => ipcRenderer.invoke('runner:kill'),
   runHistory:  ()       => ipcRenderer.invoke('runner:history'),
+  terminalStart: payload => ipcRenderer.invoke('terminal:start', payload),
+  terminalWrite: text => ipcRenderer.invoke('terminal:write', text),
+  terminalStop: () => ipcRenderer.invoke('terminal:stop'),
 
   // ── AI ──
   setKey:        payload => ipcRenderer.invoke('ai:set-key', payload),
@@ -26,8 +29,18 @@ contextBridge.exposeInMainWorld('forge', {
   pluginQuickActions: ()      => ipcRenderer.invoke('plugins:quick-actions'),
   pluginStatusItems:  ()      => ipcRenderer.invoke('plugins:status-items'),
 
+  // ── automatic updates ──
+  checkForUpdates: () => ipcRenderer.invoke('updates:check'),
+  getUpdateStatus: () => ipcRenderer.invoke('updates:status'),
+  setUpdatesEnabled: enabled => ipcRenderer.invoke('updates:set-enabled', enabled),
+
   // ── events (renderer listens) ──
   onRunnerOutput:       cb => ipcRenderer.on('runner:output',         (_e, v) => cb(v)),
   onRunnerState:        cb => ipcRenderer.on('runner:state',          (_e, v) => cb(v)),
+  onTerminalOutput: cb => ipcRenderer.on('terminal:output', (_e, v) => cb(v)),
   onPluginStatusUpdate: cb => ipcRenderer.on('plugins:status-update', (_e, v) => cb(v)),
+  onUpdateStatus: cb => ipcRenderer.on('updates:status', (_e, value) => cb(value)),
+  onEditorCommand: cb => ipcRenderer.on('editor:command', (_e, command) => {
+    if (['new', 'open', 'save', 'find', 'replace', 'gotoLine'].includes(command)) cb(command);
+  }),
 });

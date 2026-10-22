@@ -5,10 +5,12 @@ const $ = id => document.getElementById(id);
 
 let editor = null, currentPath = null, currentName = 'main.js', currentLanguage = 'javascript';
 let monacoReady = false, isRunning = false;
+// Preserve New File requests made while Monaco is still loading.
+let pendingNewDocument = null;
 let diffEditorInstance = null, proposedCode = '';
 
 const languageMap = {
-  js:'javascript',mjs:'javascript',cjs:'javascript',py:'python',cpp:'cpp',c:'c',
+  js:'javascript',mjs:'javascript',cjs:'javascript',py:'python',cpp:'cpp',c:'c',java:'java',go:'go',rs:'rust',rb:'ruby',php:'php',sh:'bash',ps1:'powershell',
   h:'c',hpp:'cpp',java:'java',html:'html',css:'css',json:'json',md:'markdown',
   txt:'plaintext',ts:'typescript',tsx:'typescript',jsx:'javascript',rs:'rust',go:'go'
 };
@@ -25,11 +27,11 @@ const welcome = `// Welcome to Nidavellir
 // What's new in v0.2:
 // • Plugin system — extend the IDE with custom plugins
 // • AI Coordinator — synthesizes answers from all assistants
-// • Safe runner — kill button, run history, resource limits
+// • Runner safeguards — temporary snapshots, timeout/output caps, process-tree stop; not a security sandbox
 // • Auto test generation — generate and save tests automatically
 // • Diff review — review and apply AI-proposed code changes
 //
-// Supported run targets: JavaScript (Node.js), Python, C, and C++.
+// Run support: JavaScript, Python, C/C++, Java, Go, Rust, Ruby, PHP, Bash, and PowerShell (when their toolchains are installed).
 // Tip: AI suggestions can now be reviewed in a diff view before applying.
 `;
 
@@ -37,21 +39,54 @@ const welcome = `// Welcome to Nidavellir
    Monaco editor setup
    ───────────────────────────────────────────── */
 
-require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs' } });
+// Monaco workers need an absolute workerMain URL: relative importScripts paths
+// break when Chromium creates the worker from a blob URL (including CI/browser preview).
+const monacoBaseUrl = new URL('vendor/monaco/', window.location.href).href
+window.MonacoEnvironment = {
+  getWorkerUrl: function () {
+    const workerMain = monacoBaseUrl + 'vs/base/worker/workerMain.js';
+    const bootstrap = 'self.MonacoEnvironment = { baseUrl: ' + JSON.stringify(monacoBaseUrl) + ' }; importScripts(' + JSON.stringify(workerMain) + ');';
+    // The renderer CSP allows blob: workers, not data: workers. A Blob URL also
+    // keeps the bootstrap same-origin-compatible while importScripts loads the
+    // bundled worker entry point from the local app resources.
+    return URL.createObjectURL(new Blob([bootstrap], { type: 'text/javascript' }));
+  }
+};
+require.config({ paths: { vs: monacoBaseUrl + 'vs' } });
 require(['vs/editor/editor.main'], () => {
   monacoReady = true;
   editor = monaco.editor.create($('editor'), {
-    value: welcome, language: 'javascript', theme: 'vs-dark', automaticLayout: true,
+    value: pendingNewDocument ? pendingNewDocument.content : welcome,
+    language: pendingNewDocument ? pendingNewDocument.language : 'javascript', theme: 'vs-dark', automaticLayout: true,
     fontSize: 13, minimap: { enabled: false }, fontFamily: 'Consolas, "Cascadia Code", monospace',
     scrollBeyondLastLine: false, tabSize: 2, padding: { top: 14 }, wordWrap: 'on'
   });
-  editor.onDidChangeModelContent(() => { $('selectionHint').textContent = 'Current file will be included'; });
-  setStatus('Ready · Unsaved welcome example');
+  editor.onDidChangeModelContent(() => {
+    $('selectionHint').textContent = 'Current file will be included';
+    if ($('findBar') && !$('findBar').hidden) collectFindMatches();
+  });
+  if (pendingNewDocument) {
+    $('tabs').querySelector('.tab').textContent = pendingNewDocument.name;
+    showLanguage(pendingNewDocument.language);
+    setStatus('New unsaved file');
+    editor.focus();
+    pendingNewDocument = null;
+  } else {
+    setStatus('Ready · Unsaved welcome example');
+  }
   initPluginUI();
 }, () => {
   $('editor').hidden = true; $('fallbackEditor').hidden = false;
-  $('plainEditor').value = welcome;
-  setStatus('Monaco CDN unavailable · basic editor mode');
+  $('plainEditor').value = pendingNewDocument ? pendingNewDocument.content : welcome;
+  if (pendingNewDocument) {
+    $('tabs').querySelector('.tab').textContent = pendingNewDocument.name;
+    currentName = pendingNewDocument.name;
+    currentLanguage = pendingNewDocument.language;
+    $('languageStatus').textContent = currentLanguage;
+    setStatus('New unsaved file · basic editor mode');
+    pendingNewDocument = null;
+  }
+  setStatus('Monaco unavailable · basic editor mode');
   initPluginUI();
 });
 
@@ -122,11 +157,104 @@ $('saveBtn').onclick = async () => {
     if (f) { currentPath = f.filePath; currentName = f.name; $('tabs').querySelector('.tab').textContent = currentName; setStatus('Saved · ' + currentPath); }
   } catch (e) { addOutput('stderr', e.message); }
 };
-$('newFileBtn').onclick = () => {
-  currentPath = null; currentName = 'untitled.js';
-  setValue('// Start coding here\n', 'javascript'); showLanguage('javascript');
-  $('tabs').querySelector('.tab').textContent = 'untitled.js'; setStatus('New unsaved file');
+const newFileTypes = {
+  cpp: { extension: '.cpp', language: 'cpp' },
+  c: { extension: '.c', language: 'c' },
+  javascript: { extension: '.js', language: 'javascript' },
+  python: { extension: '.py', language: 'python' },
+  java: { extension: '.java', language: 'java' },
+  go: { extension: '.go', language: 'go' },
+  rust: { extension: '.rs', language: 'rust' },
+  typescript: { extension: '.ts', language: 'typescript' },
+  ruby: { extension: '.rb', language: 'ruby' },
+  php: { extension: '.php', language: 'php' },
+  bash: { extension: '.sh', language: 'bash' },
+  powershell: { extension: '.ps1', language: 'powershell' },
+  html: { extension: '.html', language: 'html' },
+  css: { extension: '.css', language: 'css' },
+  json: { extension: '.json', language: 'json' },
+  markdown: { extension: '.md', language: 'markdown' },
+  plaintext: { extension: '.txt', language: 'plaintext' }
 };
+
+function updateNewFilePreview() {
+  const rawName = $('newFileName').value.trim();
+  const type = newFileTypes[$('newFileType').value] || newFileTypes.cpp;
+  const baseName = rawName.toLowerCase().endsWith(type.extension) ? rawName.slice(0, -type.extension.length) : rawName;
+  $('newFilePreview').textContent = (baseName || 'untitled') + type.extension;
+}
+
+function createNewFile() {
+  $('newFileName').value = 'untitled';
+  $('newFileType').value = 'cpp';
+  updateNewFilePreview();
+  $('newFileModal').hidden = false;
+  $('newFileName').focus();
+  $('newFileName').select();
+}
+
+// Wire the Explorer action to the filename/type dialog. The welcome banner
+// delegates to this button, so this handler also fixes both entry points.
+$('newFileBtn').addEventListener('click', createNewFile);
+
+function createNewDocument(name, language) {
+  const starterCode = language === 'cpp'
+    ? '#include <iostream>\n\nint main() {\n    std::cout << "Hello, Nidavellir!\\n";\n    return 0;\n}\n'
+    : language === 'c'
+      ? '#include <stdio.h>\n\nint main(void) {\n    printf("Hello, Nidavellir!\\n");\n    return 0;\n}\n'
+      : '';
+  const documentState = { name, language, content: starterCode };
+  currentPath = null;
+  currentName = documentState.name;
+  currentLanguage = documentState.language;
+  $('tabs').querySelector('.tab').textContent = currentName;
+  $('languageStatus').textContent = currentLanguage;
+  setStatus('New unsaved file · ' + currentName);
+
+  if (monacoReady && editor) {
+    setValue(documentState.content, documentState.language);
+    showLanguage(documentState.language);
+    editor.focus();
+    editor.setPosition({ lineNumber: 1, column: 1 });
+    return;
+  }
+  if (!$('fallbackEditor').hidden) {
+    $('plainEditor').value = documentState.content;
+    $('plainEditor').focus();
+    return;
+  }
+  pendingNewDocument = documentState;
+}
+
+$('newFileName').addEventListener('input', updateNewFilePreview);
+$('newFileType').addEventListener('change', updateNewFilePreview);
+$('cancelNewFile').addEventListener('click', () => { $('newFileModal').hidden = true; });
+$('cancelNewFileAction').addEventListener('click', () => { $('newFileModal').hidden = true; });
+$('newFileModal').addEventListener('click', event => {
+  if (event.target === $('newFileModal')) $('newFileModal').hidden = true;
+});
+$('newFileForm').addEventListener('submit', event => {
+  event.preventDefault();
+  const rawName = $('newFileName').value.trim();
+  if (!rawName || /[\\\/<>:"|?*\x00-\x1f]/.test(rawName) || rawName === '.' || rawName === '..') {
+    $('newFileName').setCustomValidity('Enter a valid filename without folder paths or reserved characters.');
+    $('newFileName').reportValidity();
+    return;
+  }
+  $('newFileName').setCustomValidity('');
+  const type = newFileTypes[$('newFileType').value] || newFileTypes.cpp;
+  const baseName = rawName.toLowerCase().endsWith(type.extension)
+    ? rawName.slice(0, -type.extension.length)
+    : rawName;
+  if (!baseName.trim() || baseName === '.' || baseName === '..') {
+    $('newFileName').setCustomValidity('Enter a valid filename.');
+    $('newFileName').reportValidity();
+    return;
+  }
+  const name = baseName + type.extension;
+  $('newFileModal').hidden = true;
+  createNewDocument(name, type.language);
+});
 
 /* ─────────────────────────────────────────────
    Safe runner with kill support
@@ -137,8 +265,8 @@ $('runBtn').onclick = async () => {
   if (isRunning) { window.forge.killRun(); return; }
 
   const lang = currentLanguage;
-  if (!['javascript','python','cpp','c'].includes(lang)) {
-    addOutput('stderr', `Run is not configured for ${lang}. Supported: JavaScript, Python, C, C++.`); return;
+  if (!['javascript','python','cpp','c','java','go','rust','ruby','php','bash','powershell'].includes(lang)) {
+    addOutput('stderr', `Run is not configured for ${lang}. Supported run targets: JavaScript, Python, C/C++, Java, Go, Rust, Ruby, PHP, Bash, and PowerShell.`); return;
   }
 
   $('terminal').innerHTML = '';
@@ -212,12 +340,42 @@ document.addEventListener('click', e => {
    ───────────────────────────────────────────── */
 
 $('clearOutputBtn').onclick = () => { $('terminal').innerHTML = ''; };
+
+$('terminalStartBtn').onclick = async () => {
+  try {
+    const result = await window.forge.terminalStart({ cwd: currentPath ? currentPath.replace(/[\\/][^\\/]*$/, '') : null });
+    if (result?.cwd) addOutput('info', `Integrated terminal started in ${result.cwd}`);
+    $('terminalCommand').focus();
+  } catch (e) { addOutput('stderr', e.message); }
+};
+$('terminalStopBtn').onclick = async () => {
+  try { await window.forge.terminalStop(); } catch (e) { addOutput('stderr', e.message); }
+};
+$('terminalCommandForm').onsubmit = async e => {
+  e.preventDefault();
+  const input = $('terminalCommand'), command = input.value;
+  if (!command.trim()) return;
+  addOutput('info', `$ ${command}`);
+  input.value = '';
+  try {
+    const result = await window.forge.terminalWrite(command + String.fromCharCode(10));
+    if (!result?.running) addOutput('stderr', 'Terminal is not running. Click Start shell first.');
+  } catch (err) { addOutput('stderr', err.message); }
+};
+window.forge.onTerminalOutput(({ type, text }) => addOutput(type, text));
 document.querySelectorAll('.panel-tab').forEach(b => b.onclick = () => {
   document.querySelectorAll('.panel-tab').forEach(x => x.classList.toggle('active', x === b));
   $('terminal').hidden = b.dataset.panel !== 'terminal';
   $('problems').hidden = b.dataset.panel !== 'problems';
 });
 $('focusTerminalBtn').onclick = () => { document.querySelector('[data-panel="terminal"]').click(); };
+$('explorerBtn').onclick = () => {
+  const sidebar = document.querySelector('.sidebar');
+  const isHidden = sidebar.hidden;
+  sidebar.hidden = !isHidden;
+  $('explorerBtn').classList.toggle('active', isHidden);
+  setStatus(isHidden ? 'Explorer shown' : 'Explorer hidden');
+};
 $('focusAiBtn').onclick = () => $('promptInput').focus();
 
 /* ─────────────────────────────────────────────
@@ -569,6 +727,166 @@ document.addEventListener('keydown', e => {
 });
 
 /* ─────────────────────────────────────────────
+   Unified Find / Replace bar (Monaco + fallback editor)
+   ───────────────────────────────────────────── */
+let findMatches = [];
+let activeFindMatch = -1;
+
+function editorText() { return getValue(); }
+function findOptions() {
+  return { query: $('findInput').value, matchCase: $('findMatchCase').checked };
+}
+function collectFindMatches() {
+  const { query, matchCase } = findOptions();
+  const source = editorText();
+  findMatches = [];
+  activeFindMatch = -1;
+  if (!query) { $('findCount').textContent = 'Type to search'; return; }
+  const haystack = matchCase ? source : source.toLocaleLowerCase();
+  const needle = matchCase ? query : query.toLocaleLowerCase();
+  let offset = 0;
+  while (offset <= haystack.length - needle.length) {
+    const index = haystack.indexOf(needle, offset);
+    if (index < 0) break;
+    findMatches.push({ start: index, end: index + needle.length });
+    offset = index + Math.max(needle.length, 1);
+  }
+  $('findCount').textContent = findMatches.length ? `1 of ${findMatches.length}` : 'No results';
+}
+function selectFindMatch(index, focusEditor = true) {
+  if (!findMatches.length) { $('findCount').textContent = 'No results'; return false; }
+  activeFindMatch = (index + findMatches.length) % findMatches.length;
+  const match = findMatches[activeFindMatch];
+  if (monacoReady && editor) {
+    const model = editor.getModel();
+    const start = model.getPositionAt(match.start), end = model.getPositionAt(match.end);
+    editor.setSelection(new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column));
+    editor.revealRangeInCenter(editor.getSelection());
+    if (focusEditor) editor.focus();
+  } else {
+    const field = $('plainEditor');
+    if (focusEditor) field.focus();
+    field.setSelectionRange(match.start, match.end);
+  }
+  $('findCount').textContent = `${activeFindMatch + 1} of ${findMatches.length}`;
+  return true;
+}
+function openFindBar(mode = 'find') {
+  $('findBar').hidden = false;
+  $('replaceRow').hidden = mode !== 'replace';
+  if (monacoReady && editor) {
+    const selection = editor.getModel().getValueInRange(editor.getSelection());
+    if (selection && !$('findInput').value) $('findInput').value = selection;
+  } else {
+    const field = $('plainEditor');
+    const selection = field.value.slice(field.selectionStart, field.selectionEnd);
+    if (selection && !$('findInput').value) $('findInput').value = selection;
+  }
+  collectFindMatches();
+  $('findInput').focus();
+  $('findInput').select();
+}
+function closeFindBar() {
+  $('findBar').hidden = true;
+  if (monacoReady && editor) editor.focus();
+  else $('plainEditor').focus();
+}
+function replaceCurrentMatch() {
+  const query = $('findInput').value;
+  if (!query) return;
+  if (activeFindMatch < 0 || !findMatches[activeFindMatch]) {
+    collectFindMatches();
+    if (!selectFindMatch(0)) return;
+  }
+  const match = findMatches[activeFindMatch];
+  const previousIndex = activeFindMatch;
+  const replacementText = $('replaceInput').value;
+  if (monacoReady && editor) {
+    const model = editor.getModel();
+    const start = model.getPositionAt(match.start), end = model.getPositionAt(match.end);
+    editor.executeEdits('find-replace', [{ range: new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column), text: replacementText, forceMoveMarkers: true }]);
+  } else {
+    const field = $('plainEditor');
+    field.setRangeText(replacementText, match.start, match.end, 'select');
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  collectFindMatches();
+  if (findMatches.length) selectFindMatch(Math.min(previousIndex, findMatches.length - 1));
+}
+function replaceAllMatches() {
+  const query = $('findInput').value;
+  if (!query) return;
+  const { matchCase } = findOptions();
+  const source = editorText();
+  const needle = matchCase ? query : query.toLocaleLowerCase();
+  const haystack = matchCase ? source : source.toLocaleLowerCase();
+  const ranges = [];
+  let offset = 0;
+  while (offset <= haystack.length - needle.length) {
+    const index = haystack.indexOf(needle, offset);
+    if (index < 0) break;
+    ranges.push({ start: index, end: index + query.length });
+    offset = index + Math.max(query.length, 1);
+  }
+  if (!ranges.length) { collectFindMatches(); return; }
+  const replacementText = $('replaceInput').value;
+  if (monacoReady && editor) {
+    const model = editor.getModel();
+    editor.executeEdits('find-replace-all', ranges.map(match => {
+      const start = model.getPositionAt(match.start), end = model.getPositionAt(match.end);
+      return { range: new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column), text: replacementText, forceMoveMarkers: true };
+    }));
+  } else {
+    const field = $('plainEditor');
+    let result = source;
+    for (let i = ranges.length - 1; i >= 0; i--) result = result.slice(0, ranges[i].start) + replacementText + result.slice(ranges[i].end);
+    field.value = result;
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  collectFindMatches();
+  setStatus(`Replaced ${ranges.length} occurrence${ranges.length === 1 ? '' : 's'}`);
+}
+$('plainEditor').addEventListener('input', () => {
+  if ($('findBar') && !$('findBar').hidden) collectFindMatches();
+});
+$('findInput').addEventListener('input', () => { collectFindMatches(); if (findMatches.length) selectFindMatch(0, false); });
+$('findMatchCase').addEventListener('change', () => { collectFindMatches(); if (findMatches.length) selectFindMatch(0, false); });
+$('findNext').onclick = () => { if (!findMatches.length) collectFindMatches(); selectFindMatch(activeFindMatch + 1); };
+$('findPrevious').onclick = () => { if (!findMatches.length) collectFindMatches(); selectFindMatch(activeFindMatch <= 0 ? findMatches.length - 1 : activeFindMatch - 1); };
+$('replaceOne').onclick = replaceCurrentMatch;
+$('replaceAll').onclick = replaceAllMatches;
+$('findClose').onclick = closeFindBar;
+$('findInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); selectFindMatch(activeFindMatch + (e.shiftKey ? -1 : 1)); }
+  if (e.key === 'Escape') { e.preventDefault(); closeFindBar(); }
+});
+$('replaceInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); replaceCurrentMatch(); }
+  if (e.key === 'Escape') { e.preventDefault(); closeFindBar(); }
+});
+
+window.forge.onEditorCommand(command => {
+  if (command === 'new') { $('newFileBtn').click(); return; }
+  if (command === 'open') { $('openBtn').click(); return; }
+  if (command === 'save') { $('saveBtn').click(); return; }
+  if (command === 'find') { openFindBar('find'); return; }
+  if (command === 'replace') { openFindBar('replace'); return; }
+  if (command === 'gotoLine') {
+    if (monacoReady && editor) {
+      editor.focus();
+      editor.trigger('application-menu', 'editor.action.gotoLine');
+      return;
+    }
+    const field = $('plainEditor');
+    const line = Number.parseInt(prompt('Go to line:', '1'), 10);
+    if (!Number.isInteger(line) || line < 1) return;
+    const lines = field.value.split('\n');
+    const offset = lines.slice(0, Math.min(line - 1, lines.length)).reduce((sum, value) => sum + value.length + 1, 0);
+    field.focus(); field.setSelectionRange(offset, offset);
+  }
+});
+
+/* ─────────────────────────────────────────────
    Language picker
    ───────────────────────────────────────────── */
 
@@ -583,3 +901,57 @@ $('languageStatus').onclick = () => {
 };
 
 setStatus('Ready · No file open');
+
+
+/* ── Studio welcome actions ── */
+const newFileBannerBtn = $('newFileBannerBtn');
+if (newFileBannerBtn) {
+  newFileBannerBtn.addEventListener('click', () => $('newFileBtn').click());
+}
+const focusAiBannerBtn = $('focusAiBannerBtn');
+if (focusAiBannerBtn) {
+  focusAiBannerBtn.addEventListener('click', () => {
+    $('aiPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    $('promptInput').focus();
+  });
+}
+
+
+/* ── Automatic updates ── */
+function renderUpdateStatus(update) {
+  if (!update) return;
+  const button = $('updateStatus');
+  const enabled = $('updatesEnabled');
+  const labels = { starting: 'Preparing updates…', checking: 'Checking for updates…', downloading: 'Downloading update…', ready: 'Restart to update', 'up-to-date': 'Up to date', disabled: 'Updates disabled', development: 'Updates: installed app only', error: 'Update check failed' };
+  button.textContent = update.state === 'downloading' && typeof update.progress === 'number'
+    ? 'Downloading ' + update.progress + '%'
+    : (labels[update.state] || update.message || 'Update status');
+  button.dataset.state = update.state || 'idle';
+  button.title = update.error || update.message || 'Click to check for updates';
+  button.disabled = update.state === 'development';
+  if (enabled && typeof update.enabled === 'boolean') enabled.checked = update.enabled;
+}
+if (window.forge && typeof window.forge.getUpdateStatus === 'function') {
+  window.forge.onUpdateStatus(renderUpdateStatus);
+  window.forge.getUpdateStatus().then(renderUpdateStatus).catch(() => {});
+  $('updateStatus').addEventListener('click', async () => {
+    $('updateStatus').disabled = true;
+    try { renderUpdateStatus(await window.forge.checkForUpdates()); }
+    catch { renderUpdateStatus({ state: 'error', message: 'Update check failed.' }); }
+    finally {
+      const current = await window.forge.getUpdateStatus().catch(() => null);
+      if (current) renderUpdateStatus(current); else $('updateStatus').disabled = false;
+    }
+  });
+  $('updatesEnabled').addEventListener('change', async () => {
+    const checkbox = $('updatesEnabled'); checkbox.disabled = true;
+    try { renderUpdateStatus(await window.forge.setUpdatesEnabled(checkbox.checked)); }
+    catch { checkbox.checked = !checkbox.checked; $('updateStatus').title = 'Could not save the update preference.'; }
+    finally { checkbox.disabled = false; }
+  });
+} else {
+  $('updateStatus').textContent = 'Updates: installed app only';
+  $('updateStatus').title = 'Automatic updates are available only in packaged desktop builds.';
+  $('updateStatus').disabled = true;
+  $('updatesEnabled').disabled = true;
+}
