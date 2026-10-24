@@ -67,6 +67,18 @@ const assert = require('node:assert/strict');
   await check('Open folder', async () => { await click('#openFolderBtn'); await called('openFolder'); assert.equal(await page.locator('#folderName').textContent(), 'PROJECT'); });
   await check('Explorer file item', async () => { await click('.file-item'); await called('readPath'); });
   await check('Save', async () => { await click('#saveBtn'); await called('saveFile'); });
+  await check('Save As opens destination picker request', async () => {
+    await click('#saveAsBtn');
+    const calls = await page.evaluate(() => window.__uiCalls.filter(c => c.name === 'saveFile'));
+    assert.equal(calls.at(-1).payload.forceDialog, true);
+    assert.equal(calls.at(-1).payload.filePath, null);
+  });
+  await check('Ctrl+Shift+S invokes Save As', async () => {
+    await page.locator('#editor').click({ position: { x: 30, y: 30 } }).catch(() => {});
+    await page.keyboard.press('Control+Shift+S');
+    const calls = await page.evaluate(() => window.__uiCalls.filter(c => c.name === 'saveFile'));
+    assert.equal(calls.at(-1).payload.forceDialog, true);
+  });
   await check('New File sidebar button', async () => { await click('#newFileBtn'); assert.equal(await page.locator('#newFileModal').isVisible(), true); await click('#cancelNewFile'); });
   await check('New File banner + C++ create', async () => { await click('#newFileBannerBtn'); await page.locator('#newFileName').fill('click_test'); await page.locator('#newFileType').selectOption('cpp'); assert.equal(await page.locator('#newFilePreview').textContent(), 'click_test.cpp'); await click('#newFileForm button[type="submit"]'); assert.match(await page.locator('#tabs .tab').textContent(), /click_test\.cpp/); });
   await check('New File cancel action', async () => { await click('#newFileBtn'); await click('#cancelNewFileAction'); assert.equal(await page.locator('#newFileModal').isVisible(), false); });

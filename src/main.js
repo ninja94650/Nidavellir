@@ -204,7 +204,8 @@ ipcMain.handle('file:open', async () => {
 ipcMain.handle('file:save', async (_event, payload) => {
   if (!payload || typeof payload !== 'object') throw new Error('Invalid save request.');
   validateTextPayload(payload.content, MAX_SAVE_BYTES, 'File content');
-  let filePath = payload.filePath;
+  // Save As always asks the user to choose a destination, even for an opened file.
+  let filePath = payload.forceDialog === true ? null : payload.filePath;
   const userChosePath = !filePath;
   if (!filePath) {
     const result = await dialog.showSaveDialog(win, { defaultPath: payload.name || 'untitled.js' });

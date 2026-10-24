@@ -151,12 +151,28 @@ $('openFolderBtn').onclick = async () => {
     setStatus('Folder opened · ' + f.folder);
   } catch (e) { addOutput('stderr', e.message); }
 };
-$('saveBtn').onclick = async () => {
+async function saveCurrentFile(forceDialog = false) {
   try {
-    const f = await window.forge.saveFile({ filePath: currentPath, name: currentName, content: getValue() });
-    if (f) { currentPath = f.filePath; currentName = f.name; $('tabs').querySelector('.tab').textContent = currentName; setStatus('Saved · ' + currentPath); }
-  } catch (e) { addOutput('stderr', e.message); }
-};
+    const f = await window.forge.saveFile({
+      filePath: forceDialog ? null : currentPath,
+      name: currentName,
+      content: getValue(),
+      forceDialog
+    });
+    if (f) {
+      currentPath = f.filePath;
+      currentName = f.name;
+      $('tabs').querySelector('.tab').textContent = currentName;
+      setStatus('Saved · ' + currentPath);
+      document.querySelectorAll('.file-item').forEach(x => x.classList.toggle('selected', x.title === currentPath));
+    }
+  } catch (e) {
+    addOutput('stderr', e.message);
+    setStatus('Save failed');
+  }
+}
+$('saveBtn').onclick = () => saveCurrentFile(false);
+$('saveAsBtn').onclick = () => saveCurrentFile(true);
 const newFileTypes = {
   cpp: { extension: '.cpp', language: 'cpp' },
   c: { extension: '.c', language: 'c' },
@@ -738,6 +754,11 @@ async function initPluginUI() {
    ───────────────────────────────────────────── */
 
 document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {
+    e.preventDefault();
+    $('saveAsBtn').click();
+    return;
+  }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); $('saveBtn').click(); }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); $('openBtn').click(); }
   if (e.key === 'F5') { $('runBtn').click(); }
