@@ -71,6 +71,10 @@ contextBridge.exposeInMainWorld('forge', {
   onPluginStatusUpdate: cb => ipcRenderer.on('plugins:status-update', (_e, v) => cb(v)),
   onUpdateStatus: cb => ipcRenderer.on('updates:status', (_e, value) => cb(value)),
   onLanguageServerNotification: cb => ipcRenderer.on('lsp:notification', (_e, notification) => cb(notification)),
+  debuggerCommand: payload => ipcRenderer.invoke('debugger:command', payload),
+  setDebuggerBreakpoints: lines => ipcRenderer.invoke('debugger:set-breakpoints', lines),
+  stopDebugger: () => ipcRenderer.invoke('debugger:stop'),
+  onDebuggerNotification: cb => ipcRenderer.on('debugger:notification', (_e, event) => cb(event)),
   onEditorCommand: cb => ipcRenderer.on('editor:command', (_e, command) => {
     if (['new', 'open', 'save', 'find', 'replace', 'gotoLine', 'commandPalette', 'quickOpen'].includes(command)) cb(command);
   }),
