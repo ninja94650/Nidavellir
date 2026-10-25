@@ -128,7 +128,7 @@ class LanguageServerManager {
   }
 
   async openDocument({ root, filePath, language, text }) {
-    const session = this._requireSession(root, language);
+    const session = await this._requireSession(root, language);
     const actual = await this._assertDocument(session.root, filePath);
     if (typeof text !== 'string' || Buffer.byteLength(text, 'utf8') > MAX_SOURCE_BYTES) throw new Error('Document is too large for language-server integration (2 MB limit).');
     const uri = toUri(actual);
@@ -157,7 +157,7 @@ class LanguageServerManager {
   }
 
   async request({ root, filePath, language, text, method, position, newName, context }) {
-    const session = this._requireSession(root, language);
+    const session = await this._requireSession(root, language);
     if (!REQUEST_ALLOWLIST.has(method)) throw new Error('This language-server request is not allowed.');
     await this.openDocument({ root, filePath, language, text });
     const actual = await this._assertDocument(session.root, filePath);
@@ -189,10 +189,16 @@ class LanguageServerManager {
     return { line:position.line, character:position.character };
   }
 
-  _requireSession(root, language) {
+  async _requireSession(root, language) {
     const session = this.session;
     if (!session || session.closed || !session.started) throw new Error('Start a language server from Studio Tools first.');
-    if (typeof root !== 'string' || path.resolve(root) !== session.root) throw new Error('Language server workspace changed; restart the server from Studio Tools.');
+    let canonicalRoot;
+    try { canonicalRoot = await fs.realpath(path.resolve(root)); }
+    catch { canonicalRoot = typeof root === 'string' ? path.resolve(root) : ''; }
+    const sameRoot = process.platform === 'win32'
+      ? canonicalRoot.toLocaleLowerCase() === session.root.toLocaleLowerCase()
+      : canonicalRoot === session.root;
+    if (typeof root !== 'string' || !sameRoot) throw new Error('Language server workspace changed; restart the server from Studio Tools.');
     if (String(language || '').toLowerCase() !== session.language) throw new Error('The active file uses a different language. Stop and start the matching language server.');
     return session;
   }
