@@ -521,13 +521,20 @@ ipcMain.handle('plugins:list', () => pluginSystem.getPlugins());
 ipcMain.handle('plugins:toggle', async (_event, payload) => {
   if (!payload || typeof payload.name !== 'string' || typeof payload.enabled !== 'boolean') throw new Error('Invalid plugin toggle request.');
   if (payload.enabled) {
+    const info = pluginSystem.getPlugins().find(plugin => plugin.name === payload.name);
+    const unrestricted = Boolean(info && info.permissions.includes('native:unrestricted'));
     const answer = await dialog.showMessageBox(win, {
       type: 'warning',
-      buttons: ['Cancel', 'Enable plugin'],
+      buttons: ['Cancel', unrestricted ? 'Enable unrestricted plugin' : 'Enable restricted plugin'],
       defaultId: 0, cancelId: 0,
-      title: 'Enable trusted plugin?',
-      message: 'Plugins execute JavaScript with Nidavellir’s operating-system permissions.',
-      detail: `Only enable plugins whose source you have reviewed and trust. A plugin can read or modify files and access resources available to this app. This confirmation is not a sandbox.\n\nPlugin: ${payload.name}`
+      title: unrestricted ? 'Enable unrestricted native plugin?' : 'Enable restricted plugin?',
+      message: unrestricted
+        ? 'This plugin explicitly requests unrestricted Node.js and operating-system user permissions.'
+        : 'This plugin runs in a restricted JavaScript context with only declared Nidavellir capabilities.',
+      detail: (unrestricted
+        ? 'Native plugins can read and modify files, execute commands, and access resources available to your user account. Enable only after reviewing every source file.'
+        : 'Restricted execution is defense in depth, not a strong OS security boundary. Do not enable untrusted code. Review its requested capabilities and source before continuing.') +
+        '\n\nPlugin: ' + payload.name + '\nCapabilities: ' + (info && info.permissions.length ? info.permissions.join(', ') : 'none')
     });
     if (answer.response !== 1) return false;
   }
