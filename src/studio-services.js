@@ -175,4 +175,46 @@ async function applyProjectChanges(root,changes,backupRoot){
  catch(error){for(const item of applied.reverse()){try{if(item.original==null)await fs.rm(item.target,{force:true});else await atomicWriteFile(item.target,item.original);}catch{}}throw new Error('Applying project changes failed; rollback was attempted and backups were retained: '+error.message);}
  return{applied:prepared.map(x=>({path:x.path,action:x.action})),backupDir,count:prepared.length};
 }
-module.exports={IGNORED_DIRS,SENSITIVE_NAMES,normalizeRelativePath,assertRealDirectory,collectTextFiles,searchWorkspace,replaceWorkspace,detectEnvironment,gitStatus,gitDiff,gitBranches,gitStage,gitUnstage,gitCommit,gitPullFastForward,gitPush,gitLog,readProjectContext,applyProjectChanges};
+
+async function diagnoseSource(options = {}) {
+  const language = String(options.language || '').toLowerCase();
+  const content = options.content;
+  const filename = typeof options.fileName === 'string' ? path.basename(options.fileName) : 'source';
+  if (typeof content !== 'string') throw new Error('Source code must be text.');
+  if (Buffer.byteLength(content, 'utf8') > 2 * MAX_FILE_BYTES) throw new Error('Source is larger than the 2 MB diagnostic limit.');
+  if (language === 'json') {
+    try { JSON.parse(content); return { status: 'passed', tool: 'built-in JSON parser', diagnostics: 'JSON syntax is valid.' }; }
+    catch (error) { return { status: 'issues', tool: 'built-in JSON parser', diagnostics: error.message }; }
+  }
+  const extension = ({ javascript:'.js', typescript:'.ts', python:'.py', c:'.c', cpp:'.cpp', java:'.java', rust:'.rs', ruby:'.rb', php:'.php', bash:'.sh' })[language];
+  if (!extension) return { status:'unsupported', tool:'language service', diagnostics:'No local syntax checker is configured for '+language+'.' };
+  const tempDir = await fs.mkdtemp(path.join(require('node:os').tmpdir(), 'nidavellir-diagnose-'));
+  try {
+    const stem = filename && filename !== '.' && filename !== '..' ? filename : 'source'+extension;
+    const finalName = stem.toLowerCase().endsWith(extension) ? stem : path.basename(stem, path.extname(stem))+extension;
+    const source = path.join(tempDir, finalName);
+    await fs.writeFile(source, content, { encoding:'utf8', flag:'wx', mode:0o600 });
+    let command, args;
+    if (language === 'javascript') { command='node'; args=['--check',source]; }
+    else if (language === 'typescript') { command='tsc'; args=['--noEmit','--pretty','false','--skipLibCheck',source]; }
+    else if (language === 'python') { command=process.platform === 'win32' ? 'python' : 'python3'; args=['-m','py_compile',source]; }
+    else if (language === 'c') { command='gcc'; args=['-fsyntax-only',source]; }
+    else if (language === 'cpp') { command='g++'; args=['-fsyntax-only',source]; }
+    else if (language === 'java') { command='javac'; args=['-Xlint:all','-d',tempDir,source]; }
+    else if (language === 'rust') { command='rustc'; args=['--crate-type','lib','--emit=metadata','-o',path.join(tempDir,'diagnostic.rmeta'),source]; }
+    else if (language === 'ruby') { command='ruby'; args=['-c',source]; }
+    else if (language === 'php') { command='php'; args=['-l',source]; }
+    else { command='bash'; args=['-n',source]; }
+    if (options.filePath && ['c','cpp'].includes(language)) args.splice(1,0,'-I',path.dirname(path.resolve(options.filePath)));
+    try {
+      const result = await execFileAsync(command,args,{cwd:tempDir,timeout:15000,windowsHide:true,maxBuffer:128*1024,encoding:'utf8'});
+      return {status:'passed',tool:command,diagnostics:String(result.stdout||result.stderr||'Syntax check passed.').trim().slice(0,12000)||'Syntax check passed.'};
+    } catch(error) {
+      if (error && error.code === 'ENOENT') return {status:'unavailable',tool:command,diagnostics:command+' was not found. Install it and ensure it is on PATH.'};
+      const output=String(error&&(error.stderr||error.stdout)||error.message||'Diagnostic failed.').trim().slice(0,12000);
+      return {status:error&&error.code==='ETIMEDOUT'?'timeout':'issues',tool:command,diagnostics:output||'Syntax check reported an issue.'};
+    }
+  } finally { await fs.rm(tempDir,{recursive:true,force:true}).catch(()=>{}); }
+}
+
+module.exports={IGNORED_DIRS,SENSITIVE_NAMES,normalizeRelativePath,assertRealDirectory,collectTextFiles,searchWorkspace,replaceWorkspace,detectEnvironment,diagnoseSource,gitStatus,gitDiff,gitBranches,gitStage,gitUnstage,gitCommit,gitPullFastForward,gitPush,gitLog,readProjectContext,applyProjectChanges};
