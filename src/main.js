@@ -1,4 +1,5 @@
-const { app, BrowserWindow, ipcMain, safeStorage, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, safeStorage, dialog, shell, clipboard } = require('electron');
+const { constants: fsConstants } = require('node:fs');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const os = require('node:os');
@@ -257,24 +258,24 @@ ipcMain.handle('file:save', async (_event, payload) => {
   return saved;
 });
 
+async function buildFolderTree(dir, depth = 0) {
+  if (depth > 3) return [];
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const output = [];
+  for (const entry of entries.slice(0, 200)) {
+    if (entry.name.startsWith('.') || ['node_modules','dist','.git'].includes(entry.name) || entry.isSymbolicLink()) continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) output.push({ name: entry.name, path: full, directory: true, children: await buildFolderTree(full, depth + 1) });
+    else if (entry.isFile()) output.push({ name: entry.name, path: full, directory: false });
+  }
+  return output;
+}
 ipcMain.handle('file:open-folder', async () => {
   const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
   if (result.canceled || !result.filePaths[0]) return null;
   const folder = path.resolve(result.filePaths[0]);
   approvedRoots.add(folder);
-  async function tree(dir, depth = 0) {
-    if (depth > 3) return [];
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    const output = [];
-    for (const entry of entries.slice(0, 200)) {
-      if (entry.name.startsWith('.') || ['node_modules','dist','.git'].includes(entry.name)) continue;
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) output.push({ name: entry.name, path: full, directory: true, children: await tree(full, depth + 1) });
-      else output.push({ name: entry.name, path: full, directory: false });
-    }
-    return output;
-  }
-  return { folder, tree: await tree(folder) };
+  return { folder, tree: await buildFolderTree(folder) };
 });
 
 ipcMain.handle('file:read-path', async (_event, filePath) => {
@@ -286,6 +287,103 @@ ipcMain.handle('file:read-path', async (_event, filePath) => {
   const content = await fs.readFile(resolved, 'utf8');
   pluginSystem.notifyPlugins('fileOpen', { filePath: resolved, fileName: path.basename(resolved), content });
   return { filePath: resolved, content };
+});
+
+
+async function resolveApprovedFile(filePath, label = 'File') {
+  if (typeof filePath !== 'string' || !filePath || filePath.length > 4096) throw new Error('Invalid file path.');
+  const resolved = path.resolve(filePath);
+  if (!await isWithinApprovedRoot(resolved)) throw new Error('Access denied: path is outside the opened workspace.');
+  const stat = await fs.lstat(resolved);
+  if (stat.isSymbolicLink() || !stat.isFile()) throw new Error(label + ' must be a regular file.');
+  return { resolved, stat };
+}
+async function resolveApprovedDirectory(dirPath) {
+  if (typeof dirPath !== 'string' || !dirPath || dirPath.length > 4096) throw new Error('Invalid folder path.');
+  const resolved = path.resolve(dirPath);
+  if (!await isWithinApprovedRoot(resolved)) throw new Error('Access denied: folder is outside the opened workspace.');
+  const stat = await fs.lstat(resolved);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('Destination must be a regular folder.');
+  return { resolved, stat };
+}
+ipcMain.handle('file:reveal', async (_event, filePath) => {
+  if (typeof filePath !== 'string') throw new Error('Invalid file path.');
+  const resolved = path.resolve(filePath);
+  if (!await isWithinApprovedRoot(resolved)) throw new Error('Reveal denied: path is outside the opened workspace.');
+  const stat = await fs.lstat(resolved);
+  if (stat.isSymbolicLink()) throw new Error('Reveal denied: symbolic links are not supported.');
+  if (stat.isDirectory()) { const error = await shell.openPath(resolved); if (error) throw new Error(error); }
+  else shell.showItemInFolder(resolved);
+  return { success: true };
+});
+ipcMain.handle('file:open-with', async (_event, filePath) => {
+  const { resolved } = await resolveApprovedFile(filePath, 'File to open');
+  const filters = process.platform === 'win32' ? [{ name: 'Applications', extensions: ['exe'] }]
+    : process.platform === 'darwin' ? [{ name: 'Applications', extensions: ['app'] }, { name: 'All files', extensions: ['*'] }]
+    : [{ name: 'Applications and executables', extensions: ['AppImage','bin','sh','desktop','exe'] }, { name: 'All files', extensions: ['*'] }];
+  const result = await dialog.showOpenDialog(win, { title: 'Choose an application to open ' + path.basename(resolved), properties: ['openFile'], filters });
+  if (result.canceled || !result.filePaths[0]) return { canceled: true };
+  const executable = path.resolve(result.filePaths[0]);
+  if (process.platform === 'win32' && path.extname(executable).toLowerCase() !== '.exe') throw new Error('Choose a Windows .exe application.');
+  await new Promise((resolve, reject) => {
+    const macApp = process.platform === 'darwin' && executable.toLowerCase().endsWith('.app');
+    const child = spawn(macApp ? 'open' : executable, macApp ? ['-a', executable, resolved] : [resolved], { detached: true, stdio: 'ignore', windowsHide: true });
+    child.once('error', reject); child.once('spawn', () => { child.unref(); resolve(); });
+  });
+  return { success: true };
+});
+ipcMain.handle('file:rename', async (_event, payload) => {
+  const { resolved: source } = await resolveApprovedFile(payload && payload.filePath, 'Source');
+  const newName = payload && payload.newName, forbidden = '/\\:*?"<>|';
+  if (typeof newName !== 'string' || !newName.trim() || newName.length > 255 || newName === '.' || newName === '..' ||
+      path.basename(newName) !== newName || [...newName].some(ch => forbidden.includes(ch) || ch.charCodeAt(0) < 32)) {
+    throw new Error('Enter a valid filename without folder paths or reserved characters.');
+  }
+  const target = path.join(path.dirname(source), newName.trim());
+  if (!await isWithinApprovedRoot(target)) throw new Error('Rename denied: target is outside the opened workspace.');
+  try { await fs.lstat(target); throw new Error('A file with that name already exists.'); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  await fs.copyFile(source, target, fsConstants.COPYFILE_EXCL);
+  try { await fs.unlink(source); } catch (error) { await fs.unlink(target).catch(() => {}); throw error; }
+  return { filePath: target, name: path.basename(target) };
+});
+ipcMain.handle('file:delete', async (_event, filePath) => {
+  const { resolved } = await resolveApprovedFile(filePath, 'File to delete');
+  const result = await dialog.showMessageBox(win, { type:'warning', title:'Delete file?', message:'Delete '+path.basename(resolved)+'?', detail:'This permanently deletes the file from disk. This action cannot be undone.', buttons:['Delete','Cancel'], defaultId:1, cancelId:1, noLink:true });
+  if (result.response !== 0) return { canceled: true };
+  await fs.unlink(resolved);
+  return { success: true, filePath: resolved };
+});
+ipcMain.handle('file:transfer', async (_event, payload) => {
+  if (!payload || !['copy','move'].includes(payload.mode)) throw new Error('Transfer mode must be copy or move.');
+  const { resolved: source } = await resolveApprovedFile(payload.sourcePath, 'Source');
+  const { resolved: directory } = await resolveApprovedDirectory(payload.destinationDirectory);
+  const target = path.join(directory, path.basename(source));
+  if (source === target) throw new Error('The source and destination are the same file.');
+  if (!await isWithinApprovedRoot(target)) throw new Error('Transfer denied: destination is outside the opened workspace.');
+  await fs.copyFile(source, target, fsConstants.COPYFILE_EXCL);
+  if (payload.mode === 'move') { try { await fs.unlink(source); } catch (error) { await fs.unlink(target).catch(() => {}); throw error; } }
+  return { filePath: target, sourcePath: source, mode: payload.mode };
+});
+ipcMain.handle('file:refresh-folder', async (_event, folderPath) => {
+  const { resolved } = await resolveApprovedDirectory(folderPath);
+  return { folder: resolved, tree: await buildFolderTree(resolved) };
+});
+ipcMain.handle('file:info', async (_event, filePath) => {
+  const { resolved, stat } = await resolveApprovedFile(filePath);
+  return { filePath:resolved, name:path.basename(resolved), size:stat.size, modifiedAt:stat.mtime.toISOString(), createdAt:stat.birthtime.toISOString() };
+});
+ipcMain.handle('file:relative-path', async (_event, payload) => {
+  if (!payload || typeof payload.root !== 'string' || typeof payload.filePath !== 'string') throw new Error('Invalid relative-path request.');
+  const root = path.resolve(payload.root), filePath = path.resolve(payload.filePath);
+  if (!await isWithinApprovedRoot(root) || !await isWithinApprovedRoot(filePath)) throw new Error('Path is outside the opened workspace.');
+  const relative = path.relative(root,filePath);
+  if (!relative || relative === '..' || relative.startsWith('..'+path.sep) || path.isAbsolute(relative)) throw new Error('File is not inside the workspace root.');
+  return relative;
+});
+ipcMain.handle('file:copy-text', async (_event, value) => {
+  if (typeof value !== 'string' || value.length > 8192) throw new Error('Clipboard text is invalid or too long.');
+  clipboard.writeText(value); return { success:true };
 });
 
 /* ═══════════════════════════════════════════════════════════
