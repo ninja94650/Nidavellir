@@ -1,3 +1,9 @@
+# 0.4.12
+
+- Replaces provider-separated API key sections with one unified saved-key list and a floating add-key panel for name, provider, and API key.
+- Keeps per-key active selection, removal, local encrypted storage, and legacy-key migration.
+- Adds UI regression coverage for adding multiple keys through the new panel.
+
 # 0.4.11
 
 - Adds an unlimited multi-key manager for OpenAI, Gemini, and Claude, with encrypted storage, labels, active-key selection, removal, and migration of previously saved single keys.
