@@ -7,6 +7,9 @@ let editor = null, currentPath = null, currentName = 'main.js', currentLanguage 
 let monacoReady = false, isRunning = false;
 const openDocuments = new Map();
 let activeDocumentId = null, unsavedDocumentSequence = 0;
+let workspaceRoot = null, explorerClipboard = null, currentExplorerSelection = null;
+let compareSelectionPath = null, sideEditorInstance = null, sideOpenDocumentId = null, compareEditorInstance = null;
+const documentTimeline = new Map();
 // Preserve New File requests made while Monaco is still loading.
 let pendingNewDocument = null;
 let diffEditorInstance = null, proposedCode = '';
@@ -102,16 +105,45 @@ function inferLanguage(name) { const ext = (name.split('.').pop() || 'js').toLow
 function showLanguage(lang) { currentLanguage = lang; $('languageStatus').textContent = lang; if (monacoReady && editor && editor.getModel()) monaco.editor.setModelLanguage(editor.getModel(), lang); }
 function documentKey() { return 'untitled:' + (++unsavedDocumentSequence); }
 function renderDocumentTabs() {
-  const host = $('tabs'); host.querySelectorAll('.document-tab').forEach(n => n.remove());
-  for (const doc of openDocuments.values()) {
-    const tab = document.createElement('button'); tab.type = 'button'; tab.className = 'tab document-tab' + (doc.id === activeDocumentId ? ' active' : ''); tab.dataset.documentId = doc.id; tab.title = doc.path || doc.name;
-    const label = document.createElement('span'); label.className = 'tab-label'; label.textContent = doc.name;
-    const dirty = document.createElement('span'); dirty.className = 'tab-dirty'; dirty.textContent = doc.dirty ? '●' : ''; dirty.title = doc.dirty ? 'Unsaved changes' : '';
-    const close = document.createElement('span'); close.className = 'tab-close'; close.textContent = '×'; close.title = 'Close ' + doc.name; close.setAttribute('role','button'); close.setAttribute('aria-label','Close ' + doc.name); close.tabIndex = 0;
-    close.addEventListener('click', e => { e.stopPropagation(); closeDocument(doc.id); });
-    close.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); closeDocument(doc.id); } });
-    tab.append(label, dirty, close); tab.addEventListener('click', () => switchDocument(doc.id)); host.insertBefore(tab, host.querySelector('.tab-spacer'));
+  const host=$('tabs');host.querySelectorAll('.document-tab').forEach(n=>n.remove());
+  for(const doc of openDocuments.values()){
+    const tab=document.createElement('div');tab.className='tab document-tab'+(doc.id===activeDocumentId?' active':'');tab.dataset.documentId=doc.id;tab.title=doc.path||doc.name;tab.setAttribute('role','tab');tab.setAttribute('aria-selected',doc.id===activeDocumentId?'true':'false');tab.tabIndex=doc.id===activeDocumentId?0:-1;
+    const label=document.createElement('span');label.className='tab-label';label.textContent=doc.name;
+    const dirty=document.createElement('span');dirty.className='tab-dirty';dirty.textContent=doc.dirty?'●':'';dirty.title=doc.dirty?'Unsaved changes':'';
+    const close=document.createElement('button');close.type='button';close.className='tab-close';close.textContent='×';close.title='Close '+doc.name;close.setAttribute('aria-label','Close '+doc.name);
+    close.addEventListener('click',e=>{e.stopPropagation();void closeDocument(doc.id);});
+    tab.append(label,dirty,close);tab.addEventListener('click',()=>switchDocument(doc.id));
+    tab.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();switchDocument(doc.id);}if(e.key==='ArrowLeft'||e.key==='ArrowRight'){const ids=[...openDocuments.keys()],idx=ids.indexOf(doc.id);switchDocument(ids[(idx+(e.key==='ArrowRight'?1:ids.length-1))%ids.length]);}});
+    host.insertBefore(tab,host.querySelector('.tab-spacer'));
   }
+}
+function recordFileSnapshot(filePath,content,label){
+  if(!filePath||typeof content!=='string')return;const history=documentTimeline.get(filePath)||[];
+  if(history.length&&history[history.length-1].content===content)return;
+  history.push({timestamp:Date.now(),label,content});if(history.length>30)history.shift();documentTimeline.set(filePath,history);
+}
+function createDialogFrame(id,title,detail){
+  const overlay=document.createElement('div');overlay.id=id;overlay.className='modal-backdrop file-action-backdrop';
+  const panel=document.createElement('section');panel.className='modal file-action-modal';panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');
+  const h=document.createElement('h2');h.textContent=title;const p=document.createElement('p');p.textContent=detail||'';panel.append(h,p);overlay.appendChild(panel);document.body.appendChild(overlay);return{overlay,panel};
+}
+function askCloseDocumentAction(doc){
+  return new Promise(resolve=>{const{overlay,panel}=createDialogFrame('fileCloseConfirm','Close '+doc.name+'?','This file has unsaved changes.');
+    const actions=document.createElement('div');actions.className='modal-actions file-action-buttons';
+    const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Cancel';cancel.dataset.closeAction='cancel';
+    const discard=document.createElement('button');discard.type='button';discard.textContent='Close without saving';discard.dataset.closeAction='discard';
+    const save=document.createElement('button');save.type='button';save.className='primary';save.textContent='Save & close';save.dataset.closeAction='save';actions.append(cancel,discard,save);panel.appendChild(actions);
+    const finish=v=>{overlay.remove();resolve(v);};cancel.addEventListener('click',()=>finish('cancel'));discard.addEventListener('click',()=>finish('discard'));save.addEventListener('click',()=>finish('save'));
+    overlay.addEventListener('click',e=>{if(e.target===overlay)finish('cancel');});overlay.addEventListener('keydown',e=>{if(e.key==='Escape')finish('cancel');});cancel.focus();
+  });
+}
+async function saveDocument(doc){
+  if(!doc)return false;const content=doc.model?doc.model.getValue():(doc.id===activeDocumentId?getValue():doc.content);
+  try{const result=await window.forge.saveFile({filePath:doc.path,name:doc.name,content});if(!result)return false;
+    const oldId=doc.id;if(oldId!==result.filePath){openDocuments.delete(oldId);doc.id=result.filePath;openDocuments.set(doc.id,doc);if(activeDocumentId===oldId)activeDocumentId=doc.id;}
+    doc.path=result.filePath;doc.name=result.name;doc.content=content;doc.dirty=false;recordFileSnapshot(doc.path,content,'Saved');
+    if(activeDocumentId===doc.id){currentPath=doc.path;currentName=doc.name;currentLanguage=doc.language;}renderDocumentTabs();setStatus('Saved · '+doc.path);return true;
+  }catch(e){addOutput('stderr',e.message);return false;}
 }
 function switchDocument(id, focus = true) {
   const doc = openDocuments.get(id); if (!doc) return;
@@ -128,13 +160,12 @@ function openDocument(filePath, name, content, language) {
   if (!doc) { doc = { id, path: filePath || null, name, language, content: content || '', model: null, dirty: !filePath }; if (monacoReady) doc.model = monaco.editor.createModel(doc.content, language); openDocuments.set(id, doc); }
   switchDocument(id); setStatus(doc.path ? 'Opened · ' + doc.path : 'New unsaved file · ' + doc.name);
 }
-function closeDocument(id) {
-  const doc = openDocuments.get(id); if (!doc) return;
-  if (doc.dirty && !window.confirm('Close ' + doc.name + ' with unsaved changes?')) return;
-  const ids = [...openDocuments.keys()], index = ids.indexOf(id); if (doc.model && monacoReady) doc.model.dispose(); openDocuments.delete(id);
-  if (!openDocuments.size) openDocuments.set('welcome', { id:'welcome', path:null, name:'welcome.md', language:'javascript', content:welcome, model:monacoReady ? monaco.editor.createModel(welcome,'javascript') : null, dirty:false });
-  if (activeDocumentId === id) switchDocument([...openDocuments.keys()][Math.max(0, Math.min(index, openDocuments.size - 1))]); else renderDocumentTabs();
-  setStatus('Closed · ' + doc.name);
+async function closeDocument(id){
+  const doc=openDocuments.get(id);if(!doc)return;
+  if(doc.dirty){const action=await askCloseDocumentAction(doc);if(action==='cancel')return;if(action==='save'&&!await saveDocument(doc))return;}
+  const ids=[...openDocuments.keys()],index=ids.indexOf(id);if(doc.model&&monacoReady)doc.model.dispose();openDocuments.delete(id);
+  if(!openDocuments.size)openDocuments.set('welcome',{id:'welcome',path:null,name:'welcome.md',language:'javascript',content:welcome,model:monacoReady?monaco.editor.createModel(welcome,'javascript'):null,dirty:false});
+  if(activeDocumentId===id)switchDocument([...openDocuments.keys()][Math.max(0,Math.min(index,openDocuments.size-1))]);else renderDocumentTabs();setStatus('Closed · '+doc.name);
 }
 function addOutput(type, text) {
   const terminal = $('terminal');
@@ -164,7 +195,7 @@ function renderTree(items, container, depth = 0) {
   }
 }
 function iconFor(name) { const e = name.split('.').pop(); return ({ js:'JS',py:'Py',cpp:'C+',c:'C',html:'◇',css:'#',json:'{}',md:'M',ts:'TS' })[e] || '·'; }
-function loadFile(filePath, content) { const name = filePath.split(/[\\/]/).pop(); openDocument(filePath, name, content, inferLanguage(name)); }
+function loadFile(filePath, content) { const name = filePath.split(/[\\/]/).pop(); recordFileSnapshot(filePath,content,'Opened'); openDocument(filePath, name, content, inferLanguage(name)); }
 
 /* ─────────────────────────────────────────────
    File buttons
@@ -179,18 +210,7 @@ $('openFolderBtn').onclick = async () => {
     setStatus('Folder opened · ' + f.folder);
   } catch (e) { addOutput('stderr', e.message); }
 };
-$('saveBtn').onclick = async () => {
-  try {
-    const f = await window.forge.saveFile({ filePath: currentPath, name: currentName, content: getValue() });
-    if (f) {
-      const oldId = activeDocumentId, doc = openDocuments.get(oldId);
-      if (doc) { doc.path = f.filePath; doc.name = f.name; doc.content = getValue(); doc.dirty = false;
-        if (oldId !== f.filePath) { openDocuments.delete(oldId); doc.id = f.filePath; openDocuments.set(doc.id, doc); activeDocumentId = doc.id; }
-      }
-      currentPath = f.filePath; currentName = f.name; renderDocumentTabs(); setStatus('Saved · ' + currentPath);
-    }
-  } catch (e) { addOutput('stderr', e.message); }
-};
+$('saveBtn').onclick = async () => { await saveDocument(openDocuments.get(activeDocumentId)); };
 const newFileTypes = {
   cpp: { extension: '.cpp', language: 'cpp' },
   c: { extension: '.c', language: 'c' },
