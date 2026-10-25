@@ -309,8 +309,21 @@
     <section class="studio-tool-page" data-studio-page="debug-security" hidden>
       <h3>JavaScript debugging</h3>
       <p class="studio-help">The Node Inspector can pause a JavaScript run and allow attachment from Chrome DevTools or a compatible debugger. This is not yet a full in-app Debug Adapter Protocol frontend.</p>
-      <div class="studio-toolbar"><button id="debugCurrentFileBtn" class="primary" type="button">Debug current JavaScript file</button><span id="debugStatus">Ready</span></div>
-      <div class="studio-note">Debugging requires Node.js to be available to the runner. The inspector binds to localhost and uses an ephemeral port; copy the WebSocket URL from Terminal / Output to attach a debugger. Only debug code you trust.</div>
+      <div class="studio-toolbar"><button id="debugCurrentFileBtn" class="primary" type="button">Start JavaScript debugger</button><span id="debugStatus">Ready</span></div>
+      <label class="studio-field-label" for="debugBreakpointLines">Breakpoints (line numbers, comma-separated)</label>
+      <div class="studio-toolbar"><input id="debugBreakpointLines" type="text" maxlength="1000" placeholder="e.g. 3, 8, 12" aria-label="Breakpoint lines"><button id="debugSetBreakpointsBtn" type="button" disabled>Set breakpoints</button></div>
+      <div class="studio-git-actions">
+        <button id="debugContinueBtn" type="button" disabled>Continue</button>
+        <button id="debugPauseBtn" type="button" disabled>Pause</button>
+        <button id="debugStepOverBtn" type="button" disabled>Step over</button>
+        <button id="debugStepIntoBtn" type="button" disabled>Step into</button>
+        <button id="debugStepOutBtn" type="button" disabled>Step out</button>
+        <button id="debugStopBtn" type="button" disabled>Stop debug run</button>
+      </div>
+      <label class="studio-field-label" for="debugEvaluateInput">Evaluate expression (while paused)</label>
+      <div class="studio-inline-form"><input id="debugEvaluateInput" type="text" maxlength="500" placeholder="e.g. myVariable" aria-label="Debugger expression"><button id="debugEvaluateBtn" type="button" disabled>Evaluate</button></div>
+      <pre id="debugInspectorOutput" class="studio-code-preview">Start a JavaScript debug run to inspect call stack and variables.</pre>
+      <div class="studio-note">The in-app debugger currently targets JavaScript running in Node.js through the local Node Inspector protocol. Step controls, breakpoints, call-stack details, variable scopes and expression evaluation use a localhost-only connection. This is not yet a generic DAP front-end for every language.</div>
       <h3>Plugin security center</h3>
       <p class="studio-help">Plugins run with the app user's operating-system permissions. Disable anything you do not trust. Permission declarations are informational, not a security sandbox.</p>
       <button id="refreshPluginSecurityBtn" type="button">Refresh plugin risk report</button>
