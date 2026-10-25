@@ -244,7 +244,12 @@
       <div id="workspaceSearchResults" class="studio-result-list"><div class="studio-empty">Open a project folder, enter a search query, and run a search.</div></div>
       <div class="studio-replace-row">
         <input id="workspaceReplaceText" type="text" maxlength="10000" placeholder="Replace matching text with…">
-        <button id="workspaceReplaceSelectedBtn" type="button">Replace in selected files</button>
+        <button id="workspaceReplaceSelectedBtn" type="button">Preview replacement</button>
+      </div>
+      <div id="workspaceReplacePreview" hidden>
+        <div class="studio-results-head"><strong id="workspaceReplacePreviewSummary">Preview</strong><span>Nothing has been changed yet.</span></div>
+        <pre id="workspaceReplacePreviewText" class="studio-code-preview"></pre>
+        <div class="studio-git-actions"><button id="workspaceCancelReplacementBtn" type="button">Cancel preview</button><button id="workspaceApplyReplacementBtn" class="primary" type="button" disabled>Apply previewed replacement</button></div>
       </div>
       <div id="workspaceSearchMessage" class="studio-message" role="status" aria-live="polite"></div>
     </section>
