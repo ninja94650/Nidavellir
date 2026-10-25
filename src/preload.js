@@ -27,6 +27,9 @@ contextBridge.exposeInMainWorld('forge', {
 
   // ── AI ──
   setKey:        payload => ipcRenderer.invoke('ai:set-key', payload),
+  listKeys:      ()      => ipcRenderer.invoke('ai:list-keys'),
+  setActiveKey:  payload => ipcRenderer.invoke('ai:set-active-key', payload),
+  deleteKey:     payload => ipcRenderer.invoke('ai:delete-key', payload),
   askAI:         payload => ipcRenderer.invoke('ai:ask', payload),
   keyStatus:     ()      => ipcRenderer.invoke('ai:key-status'),
   synthesize:    payload => ipcRenderer.invoke('ai:synthesize', payload),
