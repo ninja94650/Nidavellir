@@ -24,22 +24,21 @@ const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
 
 function toUri(filePath) { return pathToFileURL(path.resolve(filePath)).href; }
 function normalizePathForComparison(value) {
-  let resolved = path.resolve(value);
-  if (process.platform === 'win32') {
-    // fs.realpath() may return Windows extended-length paths (\\\\?\\C:\\...),
-    // while editor paths commonly arrive as ordinary drive-letter paths. Strip
-    // the prefix before containment checks so equivalent paths compare safely.
-    if (resolved.startsWith('\\\\?\\UNC\\')) resolved = '\\\\' + resolved.slice(8);
-    else if (resolved.startsWith('\\\\?\\')) resolved = resolved.slice(4);
-    resolved = path.win32.normalize(resolved).toLocaleLowerCase();
-  }
-  return resolved;
+  if (process.platform !== 'win32') return path.resolve(value);
+
+  // Strip Win32 extended-length prefixes before resolving. Resolving first can
+  // preserve the prefix on some Node/Windows versions and make equivalent
+  // workspace/editor paths appear unrelated.
+  let input = String(value);
+  if (input.startsWith('\\\\?\\UNC\\')) input = '\\\\' + input.slice(8);
+  else if (input.startsWith('\\\\?\\')) input = input.slice(4);
+  return path.win32.resolve(input).replace(/\\\\+$/, '').toLocaleLowerCase();
 }
 
 function insideRoot(root, target) {
   const normalizedRoot = normalizePathForComparison(root);
   const normalizedTarget = normalizePathForComparison(target);
-  const relative = path.relative(normalizedRoot, normalizedTarget);
+  const relative = (process.platform === 'win32' ? path.win32 : path).relative(normalizedRoot, normalizedTarget);
   return relative === '' || (
     relative !== '..' &&
     !relative.startsWith('..' + path.sep) &&
