@@ -136,10 +136,13 @@ class LanguageServerManager {
 
   async _assertDocument(root, filePath) {
     if (typeof filePath !== 'string' || !path.isAbsolute(filePath) || filePath.length > 4096) throw new Error('Save the file inside the opened workspace before using language intelligence.');
-    const resolved = path.resolve(filePath);
-    if (!insideRoot(root, resolved)) throw new Error('Language server requests are restricted to the opened workspace.');
-    const actual = await fs.realpath(resolved);
-    if (!insideRoot(root, actual)) throw new Error('Language server document path escapes the workspace.');
+    // Compare canonical paths rather than rejecting the lexical path first.
+    // Windows may expose the same file as a normal drive path or an extended
+    // \\?\\ path; the lexical check can reject equivalent paths before
+    // realpath has normalized them. The canonical containment check below
+    // still rejects paths outside the workspace and symlink escapes.
+    const actual = await fs.realpath(path.resolve(filePath));
+    if (!insideRoot(root, actual)) throw new Error('Language server requests are restricted to the opened workspace.');
     const stat = await fs.lstat(actual);
     if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('Language server requires a regular file.');
     return actual;
