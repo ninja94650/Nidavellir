@@ -13,6 +13,7 @@ let paletteMode = 'commands', paletteItems = [], paletteActiveIndex = 0, palette
 let wordWrapEnabled = true;
 const openDocuments = new Map();
 let activeDocumentKey = null, documentSequence = 0, recoveryTimer = null;
+let splitEditor = null, splitViewEnabled = false;
 let pendingRecoveryDrafts = null, recoveryPromptShown = false, pendingCloseDocumentKey = null;
 let currentWorkspaceRoot = null;
 let projectSearchResults = [], aiProjectChanges = [], gitStatusCache = null;
@@ -200,9 +201,11 @@ function activateDocument(key) {
   if (monacoReady && editor) {
     if (!next.model) next.model = monaco.editor.createModel(next.content, next.language);
     if (editor.getModel() !== next.model) editor.setModel(next.model);
+    if (splitEditor && splitEditor.getModel() !== next.model) splitEditor.setModel(next.model);
     monaco.editor.setModelLanguage(next.model, next.language);
   } else if (!$('fallbackEditor').hidden) {
     $('plainEditor').value = next.content;
+    if (splitViewEnabled) $('splitPlainEditor').value = next.content;
   } else {
     pendingNewDocument = { filePath: next.filePath, name: next.name, language: next.language, content: next.content, savedContent: next.savedContent };
   }
@@ -211,6 +214,7 @@ function activateDocument(key) {
   document.querySelectorAll('.file-item').forEach(row => row.classList.toggle('selected', row.title === currentPath));
   renderDocumentTabs();
   setStatus(next.dirty ? 'Unsaved changes · ' + next.name : (next.filePath ? 'Opened · ' + next.filePath : 'Ready · ' + next.name));
+  if (splitViewEnabled && !monacoReady) $('splitPlainEditor').value = next.content;
 }
 function scheduleRecoverySave() {
   if (recoveryTimer) clearTimeout(recoveryTimer);
@@ -1015,6 +1019,52 @@ async function initPluginUI() {
 }
 
 
+
+function toggleSplitEditor() {
+  const wrap = document.querySelector('.editor-wrap');
+  if (!wrap) return;
+  splitViewEnabled = !splitViewEnabled;
+  const splitPane = $('splitPane');
+  if (splitViewEnabled) {
+    splitPane.hidden = false;
+    wrap.classList.add('split-enabled');
+    $('splitEditorBtn').classList.add('primary');
+    if (monacoReady && editor) {
+      splitEditor = monaco.editor.create($('splitEditor'), {
+        model: editor.getModel(), theme: 'vs-dark', automaticLayout: true, fontSize: 13,
+        minimap: { enabled: false }, fontFamily: 'Consolas, "Cascadia Code", monospace',
+        scrollBeyondLastLine: false, tabSize: 2, padding: { top: 14 }, wordWrap: wordWrapEnabled ? 'on' : 'off'
+      });
+      splitEditor.focus();
+    } else {
+      $('splitPlainEditor').hidden = false;
+      $('splitPlainEditor').value = getValue();
+      $('splitPlainEditor').focus();
+    }
+    setStatus('Split view enabled · both panes edit the active document');
+  } else {
+    if (splitEditor) {
+      splitEditor.dispose();
+      splitEditor = null;
+    }
+    $('splitPlainEditor').hidden = true;
+    splitPane.hidden = true;
+    wrap.classList.remove('split-enabled');
+    $('splitEditorBtn').classList.remove('primary');
+    if (monacoReady && editor) editor.focus();
+    else $('plainEditor').focus();
+    setStatus('Split view closed');
+  }
+  if (monacoReady && editor) editor.layout();
+}
+$('splitEditorBtn').addEventListener('click', toggleSplitEditor);
+$('splitPlainEditor').addEventListener('input', () => {
+  if (!splitViewEnabled || monacoReady) return;
+  $('plainEditor').value = $('splitPlainEditor').value;
+  syncActiveDocumentState(true);
+  if ($('findBar') && !$('findBar').hidden) collectFindMatches();
+});
+
 /* ─────────────────────────────────────────────
    Command Palette and Quick Open
    ───────────────────────────────────────────── */
@@ -1048,6 +1098,7 @@ function getPaletteCommands() {
     { label: 'Show Run History', detail: 'Review recent code executions', run: () => $('runHistoryBtn').click() },
     { label: 'Manage Plugins', detail: 'View and enable installed plugins', run: () => $('pluginsBtn').click() },
     { label: 'AI Settings', detail: 'Configure assistant API keys', run: () => $('settingsBtn').click() },
+    { label: 'Toggle Split Editor', detail: splitViewEnabled ? 'Close the second editor view' : 'Show a synchronized side-by-side editor', run: toggleSplitEditor },
     { label: 'Toggle Word Wrap', detail: 'Currently ' + (wordWrapEnabled ? 'on' : 'off') + ' · wrap long editor lines', run: toggleWordWrap }
   ];
 }
@@ -1059,6 +1110,8 @@ function toggleWordWrap() {
     fallback.style.whiteSpace = wordWrapEnabled ? 'pre-wrap' : 'pre';
     fallback.style.overflowWrap = wordWrapEnabled ? 'anywhere' : 'normal';
   }
+  if (splitEditor) splitEditor.updateOptions({ wordWrap: wordWrapEnabled ? 'on' : 'off' });
+  if (!$('splitPlainEditor').hidden) { $('splitPlainEditor').style.whiteSpace = wordWrapEnabled ? 'pre-wrap' : 'pre'; $('splitPlainEditor').style.overflowWrap = wordWrapEnabled ? 'anywhere' : 'normal'; }
   setStatus('Word wrap ' + (wordWrapEnabled ? 'enabled' : 'disabled'));
 }
 function getQuickOpenFiles() {
@@ -1314,6 +1367,7 @@ function replaceAllMatches() {
   setStatus(`Replaced ${ranges.length} occurrence${ranges.length === 1 ? '' : 's'}`);
 }
 $('plainEditor').addEventListener('input', () => {
+  if (splitViewEnabled && !monacoReady && $('splitPlainEditor').value !== $('plainEditor').value) $('splitPlainEditor').value = $('plainEditor').value;
   syncActiveDocumentState(true);
   if ($('findBar') && !$('findBar').hidden) collectFindMatches();
 });
