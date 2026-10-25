@@ -161,8 +161,11 @@ function openDocument(filePath, name, content, language) {
   switchDocument(id); setStatus(doc.path ? 'Opened · ' + doc.path : 'New unsaved file · ' + doc.name);
 }
 async function closeDocument(id){
-  const doc=openDocuments.get(id);if(!doc)return;
-  if(doc.dirty){const action=await askCloseDocumentAction(doc);if(action==='cancel')return;if(action==='save'&&!await saveDocument(doc))return;}
+  let doc=openDocuments.get(id);if(!doc)return;
+  if(doc.dirty){
+    const action=await askCloseDocumentAction(doc);if(action==='cancel')return;
+    if(action==='save'){if(!await saveDocument(doc))return;id=doc.id;doc=openDocuments.get(id);if(!doc)return;}
+  }
   const ids=[...openDocuments.keys()],index=ids.indexOf(id);if(doc.model&&monacoReady)doc.model.dispose();openDocuments.delete(id);
   if(!openDocuments.size)openDocuments.set('welcome',{id:'welcome',path:null,name:'welcome.md',language:'javascript',content:welcome,model:monacoReady?monaco.editor.createModel(welcome,'javascript'):null,dirty:false});
   if(activeDocumentId===id)switchDocument([...openDocuments.keys()][Math.max(0,Math.min(index,openDocuments.size-1))]);else renderDocumentTabs();setStatus('Closed · '+doc.name);
