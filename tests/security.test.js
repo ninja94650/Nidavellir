@@ -123,3 +123,52 @@ test('plugins are discovered disabled and do not execute automatically', async (
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+
+test('restricted plugins run without Node require or process and only receive declared capabilities', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'nidavellir-plugin-vm-'));
+  const pluginDir = path.join(dir, 'restricted-plugin');
+  await fs.mkdir(pluginDir);
+  await fs.writeFile(path.join(pluginDir, 'plugin.json'), JSON.stringify({
+    name: 'restricted-plugin', version: '1.0.0', main: 'index.js', permissions: ['ui:status']
+  }));
+  const restrictedSource = "module.exports = { activate(api) { api.addStatusItem({ id: 'security', text: typeof require + ':' + typeof process + ':' + String(api.log.constructor), tooltip: 'restricted' }); } };";
+  await fs.writeFile(path.join(pluginDir, 'index.js'), restrictedSource);
+  try {
+    await plugins.initPluginSystem(dir);
+    assert.equal(await plugins.setPluginEnabled('restricted-plugin', true), true);
+    const item = plugins.getStatusItems().find(x => x.id === 'restricted-plugin:security');
+    assert.ok(item);
+    assert.equal(item.text, 'undefined:undefined:undefined');
+    await plugins.setPluginEnabled('restricted-plugin', false);
+    assert.equal(plugins.getStatusItems().some(x => x.id === 'restricted-plugin:security'), false);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('restricted plugins cannot use undeclared capabilities or import Node modules', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'nidavellir-plugin-deny-'));
+  const pluginDir = path.join(dir, 'denied-plugin');
+  await fs.mkdir(pluginDir);
+  await fs.writeFile(path.join(pluginDir, 'plugin.json'), JSON.stringify({
+    name: 'denied-plugin', version: '1.0.0', main: 'index.js', permissions: ['logging']
+  }));
+  const deniedSource = "module.exports = { activate(api) { api.addStatusItem({ id: 'denied', text: 'should not appear' }); } };";
+  await fs.writeFile(path.join(pluginDir, 'index.js'), deniedSource);
+  const importPluginDir = path.join(dir, 'import-plugin');
+  await fs.mkdir(importPluginDir);
+  await fs.writeFile(path.join(importPluginDir, 'plugin.json'), JSON.stringify({
+    name: 'import-plugin', version: '1.0.0', main: 'index.js', permissions: ['logging']
+  }));
+  await fs.writeFile(path.join(importPluginDir, 'index.js'), "const fs = require('node:fs'); module.exports = { activate() {} };");
+  try {
+    await plugins.initPluginSystem(dir);
+    assert.equal(await plugins.setPluginEnabled('denied-plugin', true), false);
+    assert.equal(await plugins.setPluginEnabled('import-plugin', true), false);
+    assert.equal(plugins.getPlugins().some(p => p.name === 'denied-plugin' && p.enabled), false);
+    assert.equal(plugins.getStatusItems().some(x => x.id === 'denied-plugin:denied'), false);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
