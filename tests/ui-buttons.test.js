@@ -37,6 +37,7 @@ const assert = require('node:assert/strict');
       clearRecoveryDrafts: async () => { record('clearRecoveryDrafts'); return { cleared: true }; },
       searchWorkspace: async p => { record('searchWorkspace', p); return { root: '/tmp/project', filesScanned: 1, totalMatches: 2, truncated: false, matches: [{ path:'main.js', line:1, column:1, text:'alpha alpha', match:'alpha' }, { path:'main.js', line:1, column:7, text:'alpha alpha', match:'alpha' }] }; },
       replaceWorkspace: async p => { record('replaceWorkspace', p); return { cancelled: false, filesChanged: 1, replacements: 2, backups: [] }; },
+      previewWorkspaceReplace: async p => { record('previewWorkspaceReplace', p); return { filesChanged:1, replacements:2, previews:[{path:'main.js',replacements:2,before:'alpha alpha',after:'beta beta'}], warning:'Preview only; no files changed.' }; },
       detectEnvironment: async () => { record('detectEnvironment'); return { platform:'linux', nodeRuntime:'22.0.0', electronRuntime:'45.0.0', scannedAt:new Date().toISOString(), tools:[{name:'Node.js',command:'node',category:'runtime',available:true,version:'v22.0.0'},{name:'C++ compiler (g++)',command:'g++',category:'compiler',available:false,version:''}] }; },
       diagnoseSource: async p => { record('diagnoseSource', p); return { status:'passed', tool:'node', diagnostics:'Syntax check passed.' }; },
       gitStatus: async root => { record('gitStatus', root); return { root:'/tmp/project', branch:'main', changes:[{index:' ',worktree:'M',status:'M',path:'main.js'}], workingDiff:'1 file changed', stagedDiff:'', hasRemote:true }; },
@@ -216,6 +217,10 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('#workspaceSearchResults .studio-result-item').count(), 2);
     await page.locator('#workspaceReplaceText').fill('beta');
     await click('#workspaceReplaceSelectedBtn');
+    await called('previewWorkspaceReplace');
+    assert.equal(await page.locator('#workspaceReplacePreview').isVisible(), true);
+    assert.match(await page.locator('#workspaceReplacePreviewText').textContent(), /beta beta/);
+    await click('#workspaceApplyReplacementBtn');
     await called('replaceWorkspace');
     await click('#closeStudioTools');
     assert.equal(await page.locator('#studioToolsModal').isVisible(), false);
