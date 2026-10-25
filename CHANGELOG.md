@@ -1,3 +1,8 @@
+# 0.4.6
+
+- Improves the AI workspace presentation with a more minimal, professional IDE layout.
+- Keeps the installed-app automatic updater; this release makes the new UI available to existing installations through the normal update flow.
+
 # 0.4.5
 
 - Fixes terminal input being dropped when entered during compilation or process startup.
