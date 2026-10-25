@@ -346,7 +346,24 @@ class LanguageServerManager {
     }
     this.session = null;
     this._closeSession(session, 'Language server stopped.');
-    try { session.child.kill(); } catch {}
+    const child = session.child;
+    try { child.kill(); } catch {}
+    // On Windows, killing a child is asynchronous. Wait for its close event
+    // before callers remove temporary workspaces or start another server;
+    // otherwise open handles can make fs.rm fail with EBUSY.
+    if (child && child.exitCode === null && child.signalCode === null) {
+      await new Promise(resolve => {
+        const timer = setTimeout(() => {
+          child.removeListener('close', onClose);
+          resolve();
+        }, 1500);
+        const onClose = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        child.once('close', onClose);
+      });
+    }
     return { stopped:true };
   }
 }
