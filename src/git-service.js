@@ -1,0 +1,14 @@
+'use strict';
+const {execFile}=require('node:child_process'),{promisify}=require('node:util'),fs=require('node:fs/promises'),path=require('node:path'),execAsync=promisify(execFile);
+function validateRoot(root){if(typeof root!=='string'||!root||root.length>4096)throw new Error('Open a project folder first.');return path.resolve(root);}
+async function git(root,args){const cwd=validateRoot(root),st=await fs.stat(cwd);if(!st.isDirectory())throw new Error('Git working directory must be a folder.');try{const r=await execAsync('git',args,{cwd,shell:false,windowsHide:true,timeout:10000,maxBuffer:1048576,encoding:'utf8'});return{stdout:String(r.stdout||'').trim(),stderr:String(r.stderr||'').trim()};}catch(e){const detail=String(e.stderr||e.message||'Git command failed').trim();if(/not a git repository/i.test(detail))throw new Error('This folder is not a Git repository. Open or initialize a repository first.');if(e.code==='ENOENT')throw new Error('Git was not found. Install Git, then reopen Nidavellir.');throw new Error(detail.slice(0,2000));}}
+function validateRelativePath(p){if(typeof p!=='string'||!p||p.length>4096||path.isAbsolute(p)||p.split(/[\\/]/).includes('..'))throw new Error('Invalid repository-relative path.');return p;}
+async function status(root){const [r,b,t]=await Promise.all([git(root,['status','--porcelain=v1','--untracked-files=all']),git(root,['branch','--show-current']),git(root,['rev-parse','--show-toplevel'])]);return{root:t.stdout,branch:b.stdout||'(detached HEAD)',entries:r.stdout.split(/\r?\n/).filter(Boolean).map(line=>({indexStatus:line.slice(0,1),worktreeStatus:line.slice(1,2),path:line.slice(3).split(' -> ').at(-1),original:line}))};}
+async function diff(root){return(await git(root,['diff','--no-ext-diff','--','.'])).stdout.slice(0,200000);}
+async function branches(root){return(await git(root,['branch','--format=%(refname:short)'])).stdout.split(/\r?\n/).filter(Boolean).slice(0,200);}
+async function log(root){return(await git(root,['log','-n','20','--pretty=format:%h%x09%s%x09%cr'])).stdout.split(/\r?\n/).filter(Boolean).map(line=>{const [hash,subject,date]=line.split('\t');return{hash,subject,date};});}
+async function stage(root,p){return p==='*'?git(root,['add','--all']):git(root,['add','--',validateRelativePath(p)]);}
+async function unstage(root,p){return git(root,['restore','--staged','--',validateRelativePath(p)]);}
+async function commit(root,message){if(typeof message!=='string'||!message.trim()||message.length>500)throw new Error('Commit message must be between 1 and 500 characters.');return git(root,['commit','-m',message.trim()]);}
+async function checkout(root,b){if(typeof b!=='string'||!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,100}$/.test(b)||b.includes('..')||b.endsWith('/')||b.endsWith('.'))throw new Error('Invalid branch name.');return git(root,['switch',b]);}
+module.exports={status,diff,branches,log,stage,unstage,commit,checkout,git,validateRelativePath};

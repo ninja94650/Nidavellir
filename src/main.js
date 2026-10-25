@@ -10,6 +10,9 @@ const pluginSystem = require('./plugins');
 const { autoUpdater } = require('electron-updater');
 const { createUpdater } = require('./updater');
 const { prepareUserPluginsDir } = require('./user-plugins');
+const projectTools = require('./project-tools');
+const { checkEnvironment } = require('./environment-doctor');
+const gitService = require('./git-service');
 
 /* ─── globals ─── */
 let win;
@@ -17,6 +20,7 @@ let updateService = null;
 const keyCache = {};
 const allowedProviders = new Set(['openai', 'gemini', 'claude']);
 const approvedRoots = new Set();
+let workspaceRoot = null;
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_SAVE_BYTES = 5 * 1024 * 1024;
 
@@ -265,6 +269,7 @@ ipcMain.handle('file:open-folder', async () => {
   if (result.canceled || !result.filePaths[0]) return null;
   const folder = path.resolve(result.filePaths[0]);
   approvedRoots.add(folder);
+  workspaceRoot = folder;
   async function tree(dir, depth = 0) {
     if (depth > 3) return [];
     const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -290,6 +295,22 @@ ipcMain.handle('file:read-path', async (_event, filePath) => {
   pluginSystem.notifyPlugins('fileOpen', { filePath: resolved, fileName: path.basename(resolved), content });
   return { filePath: resolved, content };
 });
+
+/* ═══════════════════════════════════════════════════════════
+   PROJECT SEARCH, ENVIRONMENT DOCTOR, AND GIT
+   ═══════════════════════════════════════════════════════════ */
+ipcMain.handle('project:search',async(_event,payload={})=>{if(!workspaceRoot||!await isWithinApprovedRoot(workspaceRoot))throw new Error('Open a project folder first.');return projectTools.searchProject(workspaceRoot,{query:payload.query,matchCase:payload.matchCase===true});});
+ipcMain.handle('project:replace',async(_event,payload={})=>{if(!workspaceRoot||!await isWithinApprovedRoot(workspaceRoot))throw new Error('Open a project folder first.');return projectTools.replaceProject(workspaceRoot,{query:payload.query,replacement:payload.replacement,matchCase:payload.matchCase===true});});
+ipcMain.handle('environment:check',async()=>checkEnvironment());
+function requireWorkspaceRoot(){if(!workspaceRoot||!approvedRoots.has(path.resolve(workspaceRoot)))throw new Error('Open a project folder first.');return workspaceRoot;}
+ipcMain.handle('git:status',async()=>gitService.status(requireWorkspaceRoot()));
+ipcMain.handle('git:diff',async()=>gitService.diff(requireWorkspaceRoot()));
+ipcMain.handle('git:branches',async()=>gitService.branches(requireWorkspaceRoot()));
+ipcMain.handle('git:log',async()=>gitService.log(requireWorkspaceRoot()));
+ipcMain.handle('git:stage',async(_event,p)=>gitService.stage(requireWorkspaceRoot(),p));
+ipcMain.handle('git:unstage',async(_event,p)=>gitService.unstage(requireWorkspaceRoot(),p));
+ipcMain.handle('git:commit',async(_event,m)=>gitService.commit(requireWorkspaceRoot(),m));
+ipcMain.handle('git:checkout',async(_event,b)=>{const answer=await dialog.showMessageBox(win,{type:'warning',buttons:['Cancel','Switch branch'],defaultId:0,cancelId:0,title:'Switch Git branch?',message:'Switching branches may change workspace files.',detail:'Commit or stash changes first. Review the working tree before continuing.'});if(answer.response!==1)return{cancelled:true};return gitService.checkout(requireWorkspaceRoot(),b);});
 
 /* ═══════════════════════════════════════════════════════════
    RUNNER IPC

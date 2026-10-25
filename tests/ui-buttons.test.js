@@ -32,6 +32,17 @@ const assert = require('node:assert/strict');
       openFolder: async () => { record('openFolder'); return { folder: '/tmp/project', tree: [{ name: 'main.js', path: '/tmp/project/main.js', directory: false }] }; },
       saveFile: async p => { record('saveFile', p); return { filePath: p.filePath || '/tmp/new-file.js', name: p.name || 'new-file.js' }; },
       readPath: async filePath => { record('readPath', filePath); return { filePath, content: 'alpha alpha\n' }; },
+      searchProject: async p => { record('searchProject',p); return {root:'/tmp/project',filesScanned:1,truncated:false,results:[{filePath:'/tmp/project/main.js',relativePath:'main.js',lineNumber:1,line:'alpha alpha',matchIndex:0,matchLength:5}]}; },
+      replaceProject: async p => { record('replaceProject',p); return {replacedFiles:1,replacements:2}; },
+      checkEnvironment: async () => { record('checkEnvironment'); return {platform:'test',checkedAt:new Date().toISOString(),tools:[{id:'node',label:'Node.js',available:true,command:'node',version:'v22.0.0',purpose:'Run JS',install:'Install Node'}]}; },
+      gitStatus: async () => { record('gitStatus'); return {root:'/tmp/project',branch:'main',entries:[{indexStatus:' ',worktreeStatus:'M',path:'main.js',original:' M main.js'}]}; },
+      gitDiff: async () => { record('gitDiff'); return 'diff --git a/main.js b/main.js'; },
+      gitBranches: async () => { record('gitBranches'); return ['main','feature']; },
+      gitLog: async () => { record('gitLog'); return [{hash:'abc123',subject:'Initial commit',date:'just now'}]; },
+      gitStage: async p => { record('gitStage',p); return {stdout:'staged'}; },
+      gitUnstage: async p => { record('gitUnstage',p); return {stdout:'unstaged'}; },
+      gitCommit: async p => { record('gitCommit',p); return {stdout:'[main abc123] test'}; },
+      gitCheckout: async p => { record('gitCheckout',p); return {stdout:'switched'}; },
       runSafe: async p => { record('runSafe', p); state.runner?.({ running: true }); await new Promise(r => setTimeout(r, 10)); state.runner?.({ running: false }); return { durationMs: 10, code: 0 }; },
       killRun: async () => { record('killRun'); state.runner?.({ running: false }); },
       writeRunInput: async text => { record('writeRunInput', text); return { accepted: true }; },
@@ -66,6 +77,16 @@ const assert = require('node:assert/strict');
   await check('Open file', async () => { await click('#openBtn'); await called('openFile'); assert.match(await page.locator('#statusText').textContent(), /Opened/); });
   await check('Open folder', async () => { await click('#openFolderBtn'); await called('openFolder'); assert.equal(await page.locator('#folderName').textContent(), 'PROJECT'); });
   await check('Explorer file item', async () => { await click('.file-item'); await called('readPath'); });
+  await check('Project search dialog returns results', async () => {
+    await click('#projectSearchBtn'); await page.locator('#projectSearchQuery').fill('alpha'); await click('#projectSearchRun'); await called('searchProject');
+    assert.match(await page.locator('#projectSearchSummary').textContent(), /match/); await click('#closeProjectSearch');
+  });
+  await check('Environment Doctor renders tool status', async () => {
+    await click('#environmentDoctorBtn'); await called('checkEnvironment'); assert.match(await page.locator('#environmentResults').textContent(), /Node.js/); await click('#closeEnvironment');
+  });
+  await check('Git workspace shows status and stages files', async () => {
+    await click('#gitBtn'); await called('gitStatus'); assert.match(await page.locator('#gitBranchLabel').textContent(), /main/); await page.locator('#gitEntries button').first().click(); await called('gitStage'); await click('#closeGit');
+  });
   await check('New documents get independent tabs', async () => {
     await click('#newFileBtn');
     await page.locator('#newFileName').fill('scratch');

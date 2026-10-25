@@ -1347,3 +1347,21 @@ input:focus, textarea:focus, select:focus, .composer textarea:focus {
 .tab .tab-dirty { color: #ffca76; font-size: 12px; }
 .tab .tab-close { border: 0; padding: 0 2px; background: transparent; color: #8994aa; font-size: 14px; }
 .tab .tab-close:hover { color: #ff9ca4; }
+
+/* Project tooling panels */
+.tooling-modal{width:min(920px,calc(100vw - 28px));max-height:86vh;overflow:hidden;display:flex;flex-direction:column}
+.tooling-fields{display:flex;flex-wrap:wrap;align-items:end;gap:10px;padding:12px 0}
+.tooling-fields label{flex:1 1 200px;display:flex;flex-direction:column;gap:5px;color:#aeb8cc;font-size:11px}
+.tooling-fields input,.tooling-fields select,.git-commit-label input{width:100%;min-width:0}
+.tooling-fields .inline-check{flex:0 0 auto;display:flex;flex-direction:row;align-items:center;gap:7px}
+.tooling-fields .inline-check input{width:auto}
+.tooling-summary{padding:10px 12px;margin:6px 0 10px;background:#151b28;border:1px solid #2c3549;border-radius:7px;color:#bdc8dc;font-size:11px}
+.tooling-results{min-height:50px;max-height:44vh;overflow:auto;border:1px solid #2b3347;border-radius:8px}
+.tooling-result{padding:10px 12px;border-bottom:1px solid #262d3d;color:#dfe6f4;font-size:11px}
+.tooling-result:last-child{border-bottom:0}.tooling-result strong{color:#d4caff;overflow-wrap:anywhere}
+.tooling-result small{display:block;margin-top:4px;color:#99a6bc;overflow-wrap:anywhere}
+.tooling-result pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0 0;padding:7px;background:#0f1420;border-radius:5px;color:#c4d0e5;font:11px/1.45 ui-monospace,Consolas,monospace}
+.tool-status{float:right;font-size:10px;font-weight:700}.tool-status.ok{color:#68d9a4}.tool-status.missing{color:#ffb86b}
+.git-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:8px 0}.git-toolbar span{flex:1;color:#d3caff;font-weight:700}
+.git-commit-label{display:flex;flex-direction:column;gap:6px;margin-top:12px;color:#aeb8cc;font-size:11px}
+.git-output{margin-top:10px;padding:10px;background:#10141f;border:1px solid #2c3549;border-radius:7px;white-space:pre-wrap;overflow:auto;max-height:200px;font:11px/1.5 ui-monospace,Consolas,monospace}

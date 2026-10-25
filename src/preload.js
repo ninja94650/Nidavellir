@@ -5,6 +5,17 @@ contextBridge.exposeInMainWorld('forge', {
   saveFile:    payload  => ipcRenderer.invoke('file:save', payload),
   openFolder:  ()       => ipcRenderer.invoke('file:open-folder'),
   readPath:    filePath => ipcRenderer.invoke('file:read-path', filePath),
+  searchProject: payload => ipcRenderer.invoke('project:search', payload),
+  replaceProject: payload => ipcRenderer.invoke('project:replace', payload),
+  checkEnvironment: () => ipcRenderer.invoke('environment:check'),
+  gitStatus: () => ipcRenderer.invoke('git:status'),
+  gitDiff: () => ipcRenderer.invoke('git:diff'),
+  gitBranches: () => ipcRenderer.invoke('git:branches'),
+  gitLog: () => ipcRenderer.invoke('git:log'),
+  gitStage: p => ipcRenderer.invoke('git:stage', p),
+  gitUnstage: p => ipcRenderer.invoke('git:unstage', p),
+  gitCommit: m => ipcRenderer.invoke('git:commit', m),
+  gitCheckout: b => ipcRenderer.invoke('git:checkout', b),
 
   // ── runner ──
   run:         payload  => ipcRenderer.invoke('runner:run', payload),
