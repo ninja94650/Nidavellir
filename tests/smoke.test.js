@@ -50,7 +50,7 @@ test('AI provider adapters exist', () => {
 
 test('preload exposes safe runner and plugin channels', () => {
   const preload = fs.readFileSync(path.join(root, 'src/preload.js'), 'utf8');
-  for (const channel of ['runSafe', 'killRun', 'runHistory', 'synthesize', 'generateTests', 'listPlugins', 'togglePlugin', 'getRecoveryDrafts', 'saveRecoveryDrafts', 'searchWorkspace', 'replaceWorkspace', 'detectEnvironment', 'gitStatus', 'gitStage', 'gitCommit', 'planProjectChanges', 'applyProjectChanges']) {
+  for (const channel of ['runSafe', 'killRun', 'runHistory', 'synthesize', 'generateTests', 'listPlugins', 'togglePlugin', 'getRecoveryDrafts', 'saveRecoveryDrafts', 'clearRecoveryDrafts', 'searchWorkspace', 'replaceWorkspace', 'detectEnvironment', 'diagnoseSource', 'gitStatus', 'gitDiff', 'gitBranches', 'gitLog', 'gitStage', 'gitUnstage', 'gitCommit', 'gitPull', 'gitPush', 'planProjectChanges', 'applyProjectChanges']) {
     assert.ok(preload.includes(channel), `preload missing ${channel}`);
   }
 });
@@ -60,6 +60,8 @@ test('main process imports new modules', () => {
   assert.match(main, /require\(['"]\.\/safe-runner['"]\)/);
   assert.match(main, /require\(['"]\.\/coordinator['"]\)/);
   assert.match(main, /require\(['"]\.\/plugins['"]\)/);
+  assert.match(main, /require\(['"]\.\/studio-ipc['"]\)/);
+  assert.match(main, /registerStudioIpc\(/);
 });
 
 test('coordinator module exports synthesizeResponses', () => {
