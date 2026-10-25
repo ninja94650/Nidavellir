@@ -1487,3 +1487,26 @@ button:focus-visible,.ai-panel input:focus-visible,.ai-panel textarea:focus-visi
 .side-plain-editor { width:100%; flex:1; min-height:0; resize:none; border:0; outline:0; padding:12px; background:var(--bg); color:var(--text); font:13px/1.5 Consolas,monospace; }
 .side-plain-editor[hidden] { display:none; }
 @media(max-width:950px) { .editor-wrap.split-view { grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr) minmax(0,1fr); } .side-editor-panel { border-left:0; border-top:1px solid var(--border); } }
+
+
+/* Unlimited encrypted API-key manager */
+.api-key-intro { margin:0 0 12px; color:var(--muted); font-size:12px; line-height:1.5; }
+.api-key-providers { display:flex; flex-direction:column; gap:12px; max-height:52vh; overflow:auto; padding:1px 4px 4px 1px; }
+.api-key-provider { display:flex; flex-direction:column; gap:9px; padding:12px; border:1px solid var(--border); border-radius:9px; background:var(--panel); }
+.api-key-provider-title { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.api-key-provider-title h3 { margin:0; font-size:14px; font-weight:650; }
+.api-key-provider-title span { color:var(--muted); font-size:11px; }
+.api-key-add-row { display:grid; grid-template-columns:minmax(90px,.8fr) minmax(140px,1.4fr) auto; gap:7px; }
+.api-key-add-row input { width:100%; min-width:0; }
+.api-key-add-row button { white-space:nowrap; }
+.saved-api-keys { display:flex; flex-direction:column; gap:6px; }
+.api-key-empty { margin:0; color:var(--muted); font-size:12px; }
+.saved-api-key { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 9px; border:1px solid var(--border); border-radius:6px; background:var(--bg); }
+.saved-api-key.active { border-color:color-mix(in srgb,var(--accent) 55%,var(--border)); }
+.saved-api-key-details { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.saved-api-key-details strong { font-size:12px; overflow-wrap:anywhere; }
+.saved-api-key-details span { color:var(--muted); font-size:11px; }
+.saved-api-key-actions { display:flex; align-items:center; gap:5px; flex-shrink:0; }
+.saved-api-key-actions button { padding:5px 8px; font-size:11px; }
+.saved-api-key-actions .danger-subtle { color:#f2a2a2; }
+@media(max-width:720px) { .api-key-add-row { grid-template-columns:1fr; } .saved-api-key { align-items:flex-start; flex-direction:column; } .api-key-providers { max-height:48vh; } }
