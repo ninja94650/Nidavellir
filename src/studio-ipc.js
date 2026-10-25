@@ -3,11 +3,19 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const { Buffer } = require('node:buffer');
 const studio = require('./studio-services');
+const { LanguageServerManager } = require('./language-server');
 
 const MAX_RECOVERY_BYTES = 12 * 1024 * 1024;
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 
 function registerStudioIpc({ ipcMain, app, dialog, getWindow, approvedRoots, isWithinApprovedRoot, getActiveWorkspaceRoot, getKey, callProvider }) {
+  const languageServers = new LanguageServerManager({
+    onNotification: notification => {
+      const window = getWindow();
+      if (window && !window.isDestroyed()) window.webContents.send('lsp:notification', notification);
+    }
+  });
+  app.on('before-quit', () => { void languageServers.stop(); });
   async function workspaceRoot(requestedRoot) {
     if (typeof requestedRoot !== 'string' || !requestedRoot || requestedRoot.length > 4096) throw new Error('Open a project folder first.');
     const requested = path.resolve(requestedRoot);
@@ -63,6 +71,21 @@ function registerStudioIpc({ ipcMain, app, dialog, getWindow, approvedRoots, isW
   });
   ipcMain.handle('studio:environment', async () => studio.detectEnvironment());
   ipcMain.handle('studio:diagnose', async (_event,p={}) => studio.diagnoseSource(p));
+  ipcMain.handle('lsp:start', async (_event, p={}) => languageServers.start({
+    root: await workspaceRoot(p.root), language: p.language
+  }));
+  ipcMain.handle('lsp:stop', async () => languageServers.stop());
+  ipcMain.handle('lsp:open-document', async (_event, p={}) => languageServers.openDocument({
+    root: await workspaceRoot(p.root), filePath: p.filePath, language: p.language, text: p.text
+  }));
+  ipcMain.handle('lsp:change-document', async (_event, p={}) => languageServers.changeDocument({
+    root: await workspaceRoot(p.root), filePath: p.filePath, language: p.language, text: p.text
+  }));
+  ipcMain.handle('lsp:request', async (_event, p={}) => languageServers.request({
+    root: await workspaceRoot(p.root), filePath: p.filePath, language: p.language, text: p.text,
+    method: p.method, position: p.position, newName: p.newName, context: p.context
+  }));
+
 
   ipcMain.handle('git:status', async (_event,root) => studio.gitStatus(await workspaceRoot(root)));
   ipcMain.handle('git:diff', async (_event,p={}) => studio.gitDiff(await workspaceRoot(p.root),p.staged===true,p.path||''));
