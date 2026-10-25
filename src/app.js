@@ -1423,3 +1423,420 @@ if (window.forge && typeof window.forge.getUpdateStatus === 'function') {
   $('updateStatus').disabled = true;
   $('updatesEnabled').disabled = true;
 }
+
+
+/* ─────────────────────────────────────────────
+   Studio Tools: project search, Environment Doctor, Git, AI review and security
+   ───────────────────────────────────────────── */
+function setStudioTab(tabName) {
+  document.querySelectorAll('[data-studio-tab]').forEach(button => {
+    const active = button.dataset.studioTab === tabName;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-studio-page]').forEach(page => { page.hidden = page.dataset.studioPage !== tabName; });
+  if (tabName === 'git') void refreshGitStatus();
+  if (tabName === 'debug-security') void refreshPluginSecurityReport();
+}
+function openStudioTools(tabName = 'search') {
+  $('studioToolsModal').hidden = false;
+  setStudioTab(tabName);
+  if (tabName === 'search') $('workspaceSearchQuery').focus();
+}
+$('studioToolsBtn').addEventListener('click', () => openStudioTools('search'));
+$('closeStudioTools').addEventListener('click', () => { $('studioToolsModal').hidden = true; });
+$('studioToolsModal').addEventListener('click', event => { if (event.target === $('studioToolsModal')) $('studioToolsModal').hidden = true; });
+document.querySelectorAll('[data-studio-tab]').forEach(button => button.addEventListener('click', () => setStudioTab(button.dataset.studioTab)));
+
+function requireWorkspaceForTools() {
+  if (!currentWorkspaceRoot) {
+    throw new Error('Open a project folder first. Use Open Folder so workspace tools can safely operate on that folder.');
+  }
+  return currentWorkspaceRoot;
+}
+function renderStudioEmpty(container, message) {
+  container.replaceChildren();
+  const empty = document.createElement('div');
+  empty.className = 'studio-empty';
+  empty.textContent = message;
+  container.appendChild(empty);
+}
+function renderProjectSearchResults() {
+  const list = $('workspaceSearchResults');
+  list.replaceChildren();
+  if (!projectSearchResults.length) {
+    renderStudioEmpty(list, 'No matches found. Try another query or check the selected workspace.');
+    return;
+  }
+  projectSearchResults.forEach((match, index) => {
+    const row = document.createElement('div');
+    row.className = 'studio-result-item';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = true;
+    checkbox.dataset.searchIndex = String(index);
+    checkbox.setAttribute('aria-label', 'Select ' + match.path);
+    const copy = document.createElement('div');
+    copy.className = 'studio-result-copy';
+    const title = document.createElement('strong');
+    title.textContent = match.path + ':' + match.line + ':' + match.column;
+    const preview = document.createElement('pre');
+    preview.textContent = match.text;
+    copy.append(title, preview);
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.textContent = 'Open';
+    open.addEventListener('click', async () => {
+      try {
+        const filePath = currentWorkspaceRoot.replace(/[\\/]+$/, '') + '/' + match.path;
+        const file = await window.forge.readPath(filePath);
+        if (file) {
+          loadFile(file.filePath, file.content);
+          if (monacoReady && editor) {
+            editor.focus();
+            editor.setPosition({ lineNumber: match.line, column: match.column });
+            editor.revealLineInCenter(match.line);
+          } else {
+            const lines = file.content.split('\n');
+            const offset = lines.slice(0, match.line - 1).reduce((sum, line) => sum + line.length + 1, 0) + match.column - 1;
+            $('plainEditor').focus();
+            $('plainEditor').setSelectionRange(offset, offset);
+          }
+        }
+      } catch (error) { $('workspaceSearchMessage').textContent = error.message; }
+    });
+    row.append(checkbox, copy, open);
+    list.appendChild(row);
+  });
+}
+async function performWorkspaceSearch() {
+  const query = $('workspaceSearchQuery').value;
+  if (!query.trim()) { $('workspaceSearchMessage').textContent = 'Enter text to search.'; return; }
+  $('workspaceSearchBtn').disabled = true;
+  $('workspaceSearchMessage').textContent = 'Searching workspace…';
+  try {
+    const result = await window.forge.searchWorkspace({
+      root: requireWorkspaceForTools(),
+      options: { query, matchCase: $('workspaceSearchCase').checked, regex: $('workspaceSearchRegex').checked }
+    });
+    projectSearchResults = result.matches || [];
+    renderProjectSearchResults();
+    $('workspaceSearchSummary').textContent = result.totalMatches + ' matching line(s) · ' + result.filesScanned + ' file(s) scanned';
+    $('workspaceSearchMessage').textContent = result.truncated ? 'Results are capped for performance; refine the query for more precise results.' : 'Search complete.';
+  } catch (error) {
+    projectSearchResults = [];
+    renderProjectSearchResults();
+    $('workspaceSearchSummary').textContent = 'Search failed';
+    $('workspaceSearchMessage').textContent = error.message || String(error);
+  } finally { $('workspaceSearchBtn').disabled = false; }
+}
+$('workspaceSearchForm').addEventListener('submit', event => { event.preventDefault(); void performWorkspaceSearch(); });
+$('workspaceSearchSelectAll').addEventListener('click', () => document.querySelectorAll('#workspaceSearchResults input[type="checkbox"]').forEach(input => { input.checked = true; }));
+$('workspaceSearchClear').addEventListener('click', () => { projectSearchResults = []; renderStudioEmpty($('workspaceSearchResults'), 'Search results cleared.'); $('workspaceSearchSummary').textContent = 'No search performed'; });
+$('workspaceReplaceSelectedBtn').addEventListener('click', async () => {
+  try {
+    const paths = Array.from($('workspaceSearchResults').querySelectorAll('input[type="checkbox"]:checked'))
+      .map(input => projectSearchResults[Number(input.dataset.searchIndex)]?.path).filter(Boolean);
+    const uniquePaths = [...new Set(paths)];
+    if (!uniquePaths.length) throw new Error('Select one or more search results first.');
+    if (!$('workspaceSearchQuery').value.trim()) throw new Error('Enter the original search query first.');
+    const result = await window.forge.replaceWorkspace({
+      root: requireWorkspaceForTools(),
+      options: {
+        paths: uniquePaths, query: $('workspaceSearchQuery').value,
+        replacement: $('workspaceReplaceText').value,
+        matchCase: $('workspaceSearchCase').checked,
+        regex: $('workspaceSearchRegex').checked
+      }
+    });
+    if (result.cancelled) { $('workspaceSearchMessage').textContent = 'Replacement cancelled.'; return; }
+    $('workspaceSearchMessage').textContent = 'Replaced ' + result.replacements + ' occurrence(s) in ' + result.filesChanged + ' file(s). Backups are stored in Nidavellir user data.';
+    await performWorkspaceSearch();
+  } catch (error) { $('workspaceSearchMessage').textContent = error.message || String(error); }
+});
+
+async function scanEnvironment() {
+  const button = $('scanEnvironmentBtn');
+  button.disabled = true;
+  $('environmentSummary').textContent = 'Checking installed tools…';
+  try {
+    const result = await window.forge.detectEnvironment();
+    const list = $('environmentResults');
+    list.replaceChildren();
+    const grouped = new Map();
+    for (const item of result.tools) {
+      if (!grouped.has(item.category)) grouped.set(item.category, []);
+      grouped.get(item.category).push(item);
+    }
+    for (const [category, items] of grouped) {
+      const heading = document.createElement('div');
+      heading.className = 'studio-result-item';
+      const copy = document.createElement('div');
+      copy.className = 'studio-result-copy';
+      const title = document.createElement('strong');
+      title.textContent = category.toUpperCase();
+      const detail = document.createElement('small');
+      detail.textContent = items.length + ' detectable tool(s)';
+      copy.append(title, detail);
+      heading.appendChild(copy);
+      list.appendChild(heading);
+      for (const item of items) {
+        const row = document.createElement('div');
+        row.className = 'studio-result-item';
+        const copy = document.createElement('div');
+        copy.className = 'studio-result-copy';
+        const title = document.createElement('strong');
+        title.textContent = item.name + ' (' + item.command + ')';
+        const detail = document.createElement('small');
+        detail.className = item.available ? 'studio-state-ok' : 'studio-state-missing';
+        detail.textContent = item.available ? item.version : 'Not found in PATH';
+        copy.append(title, detail);
+        row.appendChild(copy);
+        list.appendChild(row);
+      }
+    }
+    $('environmentSummary').textContent = result.platform + ' · Node ' + result.nodeRuntime + ' · Electron ' + result.electronRuntime + ' · scanned ' + new Date(result.scannedAt).toLocaleTimeString();
+  } catch (error) { $('environmentSummary').textContent = error.message || String(error); }
+  finally { button.disabled = false; }
+}
+$('scanEnvironmentBtn').addEventListener('click', () => { void scanEnvironment(); });
+
+function selectedGitPaths() {
+  return Array.from($('gitChangedFiles').querySelectorAll('input[type="checkbox"]:checked')).map(input => input.dataset.gitPath).filter(Boolean);
+}
+function renderGitStatus(status) {
+  gitStatusCache = status;
+  const list = $('gitChangedFiles');
+  list.replaceChildren();
+  $('gitStatusSummary').textContent = 'Branch: ' + status.branch + ' · ' + status.changes.length + ' changed path(s) · ' + (status.hasRemote ? 'remote configured' : 'no remote detected');
+  if (!status.changes.length) { renderStudioEmpty(list, 'Working tree clean.'); return; }
+  status.changes.forEach(change => {
+    const row = document.createElement('div');
+    row.className = 'studio-result-item';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.dataset.gitPath = change.path;
+    const copy = document.createElement('div');
+    copy.className = 'studio-result-copy';
+    const title = document.createElement('strong');
+    title.textContent = change.path;
+    const detail = document.createElement('small');
+    detail.textContent = 'Index: ' + (change.index || ' ') + ' · Working tree: ' + (change.worktree || ' ') + ' · ' + change.status;
+    copy.append(title, detail);
+    const diff = document.createElement('button');
+    diff.type = 'button';
+    diff.textContent = 'Diff';
+    diff.addEventListener('click', async () => {
+      try { $('gitOutput').hidden = false; $('gitOutput').textContent = await window.forge.gitDiff({ root: requireWorkspaceForTools(), path: change.path }); }
+      catch (error) { $('gitMessage').textContent = error.message || String(error); }
+    });
+    row.append(checkbox, copy, diff);
+    list.appendChild(row);
+  });
+}
+async function refreshGitStatus() {
+  try {
+    const status = await window.forge.gitStatus(requireWorkspaceForTools());
+    renderGitStatus(status);
+    $('gitMessage').textContent = '';
+  } catch (error) {
+    $('gitStatusSummary').textContent = error.message || String(error);
+    renderStudioEmpty($('gitChangedFiles'), 'Open the repository root, and verify Git is installed.');
+  }
+}
+async function runGitAction(action) {
+  try {
+    const root = requireWorkspaceForTools();
+    let result;
+    if (action === 'stage') {
+      const paths = selectedGitPaths();
+      result = await window.forge.gitStage({ root, paths, all: false });
+    } else if (action === 'stageAll') result = await window.forge.gitStage({ root, all: true });
+    else if (action === 'unstage') {
+      const paths = selectedGitPaths();
+      result = await window.forge.gitUnstage({ root, paths, all: false });
+    } else if (action === 'commit') {
+      result = await window.forge.gitCommit({ root, message: $('gitCommitMessage').value });
+      $('gitCommitMessage').value = '';
+      $('gitOutput').hidden = false;
+      $('gitOutput').textContent = result.output || 'Commit created.';
+    } else if (action === 'pull') {
+      result = await window.forge.gitPull(root);
+      $('gitOutput').hidden = false;
+      $('gitOutput').textContent = result.cancelled ? 'Pull cancelled.' : result.output || 'Pull completed.';
+    } else if (action === 'push') {
+      result = await window.forge.gitPush(root);
+      $('gitOutput').hidden = false;
+      $('gitOutput').textContent = result.cancelled ? 'Push cancelled.' : result.output || 'Push completed.';
+    } else if (action === 'diff') {
+      $('gitOutput').hidden = false;
+      $('gitOutput').textContent = await window.forge.gitDiff({ root, staged: false });
+      return;
+    } else if (action === 'stagedDiff') {
+      $('gitOutput').hidden = false;
+      $('gitOutput').textContent = await window.forge.gitDiff({ root, staged: true });
+      return;
+    } else if (action === 'log') {
+      const entries = await window.forge.gitLog(root);
+      $('gitOutput').hidden = false;
+      $('gitOutput').textContent = entries.map(entry => entry.hash + '  ' + entry.date + '  ' + entry.subject).join('\n') || 'No commits yet.';
+      return;
+    }
+    if (result && result.status) renderGitStatus(result.status);
+    else if (result && result.changes) renderGitStatus(result);
+    $('gitMessage').textContent = 'Git action completed.';
+  } catch (error) { $('gitMessage').textContent = error.message || String(error); }
+}
+$('refreshGitBtn').addEventListener('click', () => { void refreshGitStatus(); });
+$('showWorkingDiffBtn').addEventListener('click', () => { void runGitAction('diff'); });
+$('showStagedDiffBtn').addEventListener('click', () => { void runGitAction('stagedDiff'); });
+$('showGitLogBtn').addEventListener('click', () => { void runGitAction('log'); });
+$('gitStageSelectedBtn').addEventListener('click', () => { void runGitAction('stage'); });
+$('gitStageAllBtn').addEventListener('click', () => { void runGitAction('stageAll'); });
+$('gitUnstageSelectedBtn').addEventListener('click', () => { void runGitAction('unstage'); });
+$('gitCommitBtn').addEventListener('click', () => { void runGitAction('commit'); });
+$('gitPullBtn').addEventListener('click', () => { void runGitAction('pull'); });
+$('gitPushBtn').addEventListener('click', () => { void runGitAction('push'); });
+
+function renderAiProjectChanges() {
+  const list = $('aiProjectChangeList');
+  list.replaceChildren();
+  if (!aiProjectChanges.length) { renderStudioEmpty(list, 'No plan is loaded.'); $('applyAiChangesBtn').disabled = true; return; }
+  aiProjectChanges.forEach((change, index) => {
+    const row = document.createElement('div');
+    row.className = 'studio-result-item';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = change.selected !== false;
+    checkbox.dataset.aiChangeIndex = String(index);
+    const copy = document.createElement('div');
+    copy.className = 'studio-result-copy';
+    const title = document.createElement('strong');
+    title.textContent = change.path;
+    const detail = document.createElement('small');
+    detail.textContent = (change.action || 'modify').toUpperCase() + ' · ' + (change.summary || 'No summary provided');
+    copy.append(title, detail);
+    const preview = document.createElement('button');
+    preview.type = 'button';
+    preview.textContent = 'Preview';
+    preview.addEventListener('click', () => {
+      $('aiProjectChangePreview').textContent = change.action === 'delete'
+        ? 'This plan deletes ' + change.path + '. A backup of the original will be kept.'
+        : String(change.content || '');
+    });
+    checkbox.addEventListener('change', () => {
+      change.selected = checkbox.checked;
+      $('applyAiChangesBtn').disabled = !aiProjectChanges.some(item => item.selected !== false);
+    });
+    row.append(checkbox, copy, preview);
+    row.addEventListener('click', event => {
+      if (event.target === checkbox || event.target === preview || event.target.tagName === 'BUTTON') return;
+      $('aiProjectChangePreview').textContent = change.action === 'delete' ? 'This plan deletes ' + change.path + '.' : String(change.content || '');
+    });
+    list.appendChild(row);
+  });
+  $('applyAiChangesBtn').disabled = !aiProjectChanges.some(item => item.selected !== false);
+  $('aiProjectChangePreview').textContent = 'Select Preview to inspect the proposed file content.';
+}
+async function planAiProjectChanges() {
+  if (Array.from(openDocuments.values()).some(doc => doc.dirty || (!doc.filePath && doc.name !== 'welcome.md'))) {
+    $('aiProjectChangeMessage').textContent = 'Save or close unsaved documents before planning multi-file changes. The AI plan reads the saved files on disk.';
+    return;
+  }
+  const button = $('planProjectChangesBtn');
+  button.disabled = true;
+  $('aiProjectPlanStatus').textContent = 'Reading project context and asking AI…';
+  $('aiProjectChangeMessage').textContent = '';
+  try {
+    const plan = await window.forge.planProjectChanges({ root: requireWorkspaceForTools(), prompt: $('aiProjectPrompt').value });
+    aiProjectChanges = (plan.changes || []).map(change => ({ ...change, selected: true }));
+    $('aiProjectPlanSummary').hidden = false;
+    $('aiProjectPlanSummary').textContent = plan.summary + ' · Provider: ' + plan.provider + ' · Context files: ' + plan.contextFiles + (plan.contextTruncated ? ' (context capped)' : '');
+    $('aiProjectPlanStatus').textContent = aiProjectChanges.length + ' proposed file change(s)';
+    renderAiProjectChanges();
+  } catch (error) {
+    $('aiProjectPlanStatus').textContent = 'Planning failed';
+    $('aiProjectChangeMessage').textContent = error.message || String(error);
+  } finally { button.disabled = false; }
+}
+$('planProjectChangesBtn').addEventListener('click', () => { void planAiProjectChanges(); });
+$('selectAllAiChangesBtn').addEventListener('click', () => {
+  aiProjectChanges.forEach(change => { change.selected = true; });
+  renderAiProjectChanges();
+});
+$('applyAiChangesBtn').addEventListener('click', async () => {
+  const changes = aiProjectChanges.filter(change => change.selected !== false).map(({ selected, ...change }) => change);
+  if (!changes.length) { $('aiProjectChangeMessage').textContent = 'Select one or more changes first.'; return; }
+  if (Array.from(openDocuments.values()).some(doc => doc.dirty)) {
+    $('aiProjectChangeMessage').textContent = 'Save unsaved editor changes before applying a multi-file patch.';
+    return;
+  }
+  const button = $('applyAiChangesBtn');
+  button.disabled = true;
+  try {
+    const result = await window.forge.applyProjectChanges({ root: requireWorkspaceForTools(), changes });
+    if (result.cancelled) { $('aiProjectChangeMessage').textContent = 'Application cancelled.'; return; }
+    $('aiProjectChangeMessage').textContent = 'Applied ' + result.count + ' file change(s). Backups are stored in the Nidavellir user-data folder.';
+    const applied = new Set(result.applied.map(item => item.path.replace(/\\/g, '/')));
+    for (const doc of openDocuments.values()) {
+      if (!doc.filePath || !doc.filePath.startsWith(currentWorkspaceRoot)) continue;
+      const relative = doc.filePath.slice(currentWorkspaceRoot.replace(/[\\/]+$/, '').length).replace(/^[\\/]/, '').replace(/\\/g, '/');
+      if (!applied.has(relative) || result.applied.some(item => item.path === relative && item.action === 'delete')) continue;
+      try {
+        const file = await window.forge.readPath(doc.filePath);
+        doc.content = file.content; doc.savedContent = file.content; doc.dirty = false;
+        if (doc.model) doc.model.setValue(file.content);
+        if (doc.key === activeDocumentKey && !monacoReady) $('plainEditor').value = file.content;
+      } catch {}
+    }
+    renderDocumentTabs();
+    void refreshGitStatus();
+    scheduleRecoverySave();
+  } catch (error) {
+    $('aiProjectChangeMessage').textContent = error.message || String(error);
+  } finally { button.disabled = !aiProjectChanges.some(item => item.selected !== false); }
+});
+
+async function refreshPluginSecurityReport() {
+  try {
+    const plugins = await window.forge.listPlugins();
+    const list = $('pluginSecurityReport');
+    list.replaceChildren();
+    if (!plugins.length) { renderStudioEmpty(list, 'No plugins are installed.'); return; }
+    for (const plugin of plugins) {
+      const row = document.createElement('div');
+      row.className = 'studio-result-item';
+      const copy = document.createElement('div');
+      copy.className = 'studio-result-copy';
+      const title = document.createElement('strong');
+      title.textContent = plugin.name + (plugin.enabled ? ' · ENABLED' : ' · disabled');
+      const detail = document.createElement('small');
+      const permissions = Array.isArray(plugin.permissions) && plugin.permissions.length ? plugin.permissions.join(', ') : 'unrestricted native plugin code (legacy manifest)';
+      detail.textContent = 'v' + plugin.version + ' · ' + (plugin.description || 'No description') + ' · Declared permissions: ' + permissions + '. Not sandboxed.';
+      copy.append(title, detail);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = plugin.enabled ? 'Disable' : 'Review / enable';
+      button.addEventListener('click', async () => {
+        try {
+          await window.forge.togglePlugin({ name: plugin.name, enabled: !plugin.enabled });
+          await refreshPluginSecurityReport();
+          await refreshPluginList();
+        } catch (error) { $('debugStatus').textContent = error.message || String(error); }
+      });
+      row.append(copy, button);
+      list.appendChild(row);
+    }
+  } catch (error) { renderStudioEmpty($('pluginSecurityReport'), error.message || String(error)); }
+}
+$('refreshPluginSecurityBtn').addEventListener('click', () => { void refreshPluginSecurityReport(); });
+$('debugCurrentFileBtn').addEventListener('click', async () => {
+  if (currentLanguage !== 'javascript') { $('debugStatus').textContent = 'Node Inspector currently supports JavaScript only.'; return; }
+  $('debugStatus').textContent = 'Starting Node Inspector…';
+  addOutput('info', 'Starting JavaScript debug run. Use the ws://127.0.0.1 URL printed below to attach Chrome DevTools or a compatible debugger.');
+  try {
+    const result = await window.forge.runSafe({ language: currentLanguage, content: getValue(), filePath: currentPath, debug: true, timeout: 120000 });
+    $('debugStatus').textContent = 'Debug process ended with exit code ' + result.code;
+  } catch (error) { $('debugStatus').textContent = error.message || String(error); }
+});
+
