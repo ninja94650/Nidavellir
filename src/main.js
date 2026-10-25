@@ -10,6 +10,8 @@ const pluginSystem = require('./plugins');
 const { autoUpdater } = require('electron-updater');
 const { createUpdater } = require('./updater');
 const { prepareUserPluginsDir } = require('./user-plugins');
+const { registerStudioIpc } = require('./studio-ipc');
+const { NodeInspectorClient, normalizeBreakpointLines } = require('./node-inspector');
 
 /* ─── globals ─── */
 let win;
@@ -19,6 +21,102 @@ const allowedProviders = new Set(['openai', 'gemini', 'claude']);
 const approvedRoots = new Set();
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_SAVE_BYTES = 5 * 1024 * 1024;
+let activeWorkspaceRoot = null;
+let debugRunRequested = false, debugSourceSnapshot = null, debugScriptUrl = null;
+let debugClient = null, debugBreakpointLines = [], debugBreakpointIds = [], debugPaused = false;
+let debugCallFrames = [], debugScopes = [];
+function sendDebuggerNotification(event) {
+  if (win && !win.isDestroyed()) win.webContents.send('debugger:notification', event);
+}
+function inspectorUrlToPath(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'file:') return null;
+    let value = decodeURIComponent(parsed.pathname);
+    if (/^\/[A-Za-z]:\//.test(value)) value = value.slice(1);
+    return process.platform === 'win32' ? value.replace(/\//g, '\\') : value;
+  } catch { return null; }
+}
+function sameLocalPath(left, right) {
+  const a = path.resolve(left), b = path.resolve(right);
+  return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+async function applyDebugBreakpoints(client = debugClient) {
+  if (!client || !debugScriptUrl) return { queued: true, lines: debugBreakpointLines };
+  for (const id of debugBreakpointIds) {
+    await client.send('Debugger.removeBreakpoint', { breakpointId: id }).catch(() => {});
+  }
+  debugBreakpointIds = [];
+  for (const line of debugBreakpointLines) {
+    const result = await client.send('Debugger.setBreakpointByUrl', { url: debugScriptUrl, lineNumber: line - 1, columnNumber: 0 });
+    if (result && result.breakpointId) debugBreakpointIds.push(result.breakpointId);
+  }
+  sendDebuggerNotification({ type: 'breakpoints-set', lines: debugBreakpointLines, count: debugBreakpointIds.length });
+  return { queued: false, lines: debugBreakpointLines, count: debugBreakpointIds.length };
+}
+async function handleDebuggerProtocolMessage(client, message) {
+  if (client !== debugClient || !message || !message.method) return;
+  const params = message.params || {};
+  if (message.method === 'Debugger.scriptParsed') {
+    const sourcePath = inspectorUrlToPath(params.url || '');
+    if (debugSourceSnapshot && sourcePath && sameLocalPath(sourcePath, debugSourceSnapshot)) {
+      debugScriptUrl = params.url;
+      await applyDebugBreakpoints(client).catch(error => sendDebuggerNotification({ type:'error', message:error.message }));
+      sendDebuggerNotification({ type:'script', url:params.url, sourcePath });
+    }
+  } else if (message.method === 'Debugger.paused') {
+    debugPaused = true;
+    const frames = Array.isArray(params.callFrames) ? params.callFrames.slice(0, 40) : [];
+    debugCallFrames = frames;
+    const safeFrames = frames.map(frame => ({
+      callFrameId: frame.callFrameId,
+      functionName: frame.functionName || '(anonymous)',
+      url: frame.url || '',
+      lineNumber: Number.isInteger(frame.location && frame.location.lineNumber) ? frame.location.lineNumber + 1 : null,
+      columnNumber: Number.isInteger(frame.location && frame.location.columnNumber) ? frame.location.columnNumber + 1 : null
+    }));
+    const scopes = [];
+    const topFrame = frames[0];
+    for (const scope of (topFrame && topFrame.scopeChain || []).slice(0, 6)) {
+      const variables = [];
+      const objectId = scope.object && scope.object.objectId;
+      if (objectId) {
+        try {
+          const result = await client.send('Runtime.getProperties', { objectId, ownProperties: true, accessorPropertiesOnly: false, generatePreview: true }, 5000);
+          for (const item of (result.result || []).slice(0, 100)) {
+            if (!item || typeof item.name !== 'string' || item.name.startsWith('[[Prototype]]')) continue;
+            const value = item.value ? (Object.hasOwn(item.value, 'value') ? JSON.stringify(item.value.value) : item.value.description || item.value.type) : item.get ? '(getter)' : 'undefined';
+            variables.push({ name:item.name.slice(0,160), value:String(value).slice(0,500) });
+          }
+        } catch {}
+      }
+      scopes.push({ name:scope.name || scope.type || 'scope', type:scope.type, variables });
+    }
+    debugScopes = scopes;
+    sendDebuggerNotification({ type:'paused', reason:String(params.reason || 'paused'), description:String(params.data && params.data.description || ''), frames:safeFrames, scopes });
+  } else if (message.method === 'Debugger.resumed') {
+    debugPaused = false;
+    sendDebuggerNotification({ type:'resumed' });
+  } else if (message.method === 'Runtime.exceptionThrown') {
+    const detail = params.exceptionDetails || {};
+    sendDebuggerNotification({ type:'exception', message:String(detail.text || 'JavaScript exception'), lineNumber:Number.isInteger(detail.lineNumber) ? detail.lineNumber + 1 : null });
+  }
+}
+async function connectNodeInspector(address) {
+  if (debugClient) debugClient.close();
+  const client = new NodeInspectorClient({ onEvent: message => { void handleDebuggerProtocolMessage(client, message); } });
+  debugClient = client;
+  try {
+    await client.connect(address);
+    await client.send('Runtime.enable');
+    await client.send('Debugger.enable');
+    sendDebuggerNotification({ type:'connected', sourcePath:debugSourceSnapshot || '', breakpoints:debugBreakpointLines });
+  } catch (error) {
+    if (debugClient === client) debugClient = null;
+    client.close();
+    sendDebuggerNotification({ type:'error', message:error.message || String(error) });
+  }
+}
 
 async function isWithinApprovedRoot(filePath) {
   if (typeof filePath !== 'string' || filePath.length > 4096) return false;
@@ -52,7 +150,17 @@ const modelDefaults = {
 
 /* ─── output helpers ─── */
 function sendOutput(type, text) {
-  if (win && !win.isDestroyed()) win.webContents.send('runner:output', { type, text: String(text) });
+  let value = String(text);
+  if (debugRunRequested) {
+    const sourceMatch = value.match(/NIDAVELLIR_DEBUG_SOURCE:([^\r\n]+)/);
+    if (sourceMatch) {
+      debugSourceSnapshot = path.resolve(sourceMatch[1].trim());
+      value = value.replace(sourceMatch[0], '').trim();
+    }
+    const urlMatch = value.match(/ws:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):\d+\/[A-Za-z0-9-]+/);
+    if (urlMatch && !debugClient) void connectNodeInspector(urlMatch[0]);
+  }
+  if (value && win && !win.isDestroyed()) win.webContents.send('runner:output', { type, text: value });
 }
 function sendRunnerState(running) {
   if (win && !win.isDestroyed()) win.webContents.send('runner:state', { running });
@@ -196,7 +304,8 @@ ipcMain.handle('file:open', async () => {
   });
   if (result.canceled || !result.filePaths[0]) return null;
   const filePath = path.resolve(result.filePaths[0]);
-  approvedRoots.add(path.dirname(filePath));
+  activeWorkspaceRoot = path.dirname(filePath);
+  approvedRoots.add(activeWorkspaceRoot);
   const stat = await fs.stat(filePath);
   if (!stat.isFile() || stat.size > MAX_FILE_BYTES) throw new Error('File must be a regular file no larger than 2 MB.');
   const content = await fs.readFile(filePath, 'utf8');
@@ -264,6 +373,7 @@ ipcMain.handle('file:open-folder', async () => {
   const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
   if (result.canceled || !result.filePaths[0]) return null;
   const folder = path.resolve(result.filePaths[0]);
+  activeWorkspaceRoot = folder;
   approvedRoots.add(folder);
   async function tree(dir, depth = 0) {
     if (depth > 3) return [];
@@ -306,6 +416,14 @@ ipcMain.handle('runner:run', async (_event, payload) => {
 ipcMain.handle('runner:run-safe', async (_event, payload) => {
   validateTextPayload(payload?.content, 2 * 1024 * 1024, 'Source code');
   if (payload?.filePath && !await isWithinApprovedRoot(payload.filePath)) throw new Error('Run denied: source path is outside an approved folder.');
+  debugRunRequested = payload?.debug === true;
+  if (debugRunRequested) {
+    debugSourceSnapshot = null; debugScriptUrl = null; debugPaused = false;
+    debugCallFrames = []; debugScopes = []; debugBreakpointIds = [];
+    try { debugBreakpointLines = normalizeBreakpointLines(payload.breakpointLines || []); }
+    catch (error) { debugRunRequested = false; throw error; }
+    sendDebuggerNotification({ type:'starting', language:payload.language, breakpoints:debugBreakpointLines });
+  }
   sendRunnerState(true);
   try {
     pluginSystem.notifyPlugins('beforeRun', {
@@ -325,7 +443,47 @@ ipcMain.handle('runner:run-safe', async (_event, payload) => {
     return { code: 1, durationMs: 0 };
   } finally {
     sendRunnerState(false);
+    if (debugRunRequested) {
+      debugRunRequested = false;
+      if (debugClient) debugClient.close();
+      debugClient = null; debugScriptUrl = null; debugPaused = false;
+      sendDebuggerNotification({ type:'stopped' });
+    }
   }
+});
+
+ipcMain.handle('debugger:set-breakpoints', async (_event, lines) => {
+  debugBreakpointLines = normalizeBreakpointLines(lines);
+  return applyDebugBreakpoints();
+});
+ipcMain.handle('debugger:command', async (_event, payload = {}) => {
+  if (typeof payload.command !== 'string') throw new Error('Invalid debugger command.');
+  if (!debugClient) throw new Error('Start a debug run first.');
+  const commands = {
+    continue:'Debugger.resume', pause:'Debugger.pause',
+    stepOver:'Debugger.stepOver', stepInto:'Debugger.stepInto', stepOut:'Debugger.stepOut'
+  };
+  if (payload.command === 'evaluate') {
+    if (!debugPaused || !debugCallFrames[0]) throw new Error('Pause execution before evaluating an expression.');
+    if (typeof payload.expression !== 'string' || !payload.expression.trim() || payload.expression.length > 500) throw new Error('Expression must contain 1–500 characters.');
+    const result = await debugClient.send('Debugger.evaluateOnCallFrame', {
+      callFrameId:debugCallFrames[0].callFrameId,
+      expression:payload.expression,
+      returnByValue:true, silent:true, throwOnSideEffect:true, timeout:1000
+    });
+    if (result && result.exceptionDetails) return { error:result.exceptionDetails.text || 'Expression evaluation failed.' };
+    return { result: result && result.result ? (Object.hasOwn(result.result,'value') ? result.result.value : result.result.description || result.result.type) : null };
+  }
+  const method = commands[payload.command];
+  if (!method) throw new Error('Debugger command is not allowed.');
+  return debugClient.send(method, {});
+});
+ipcMain.handle('debugger:stop', async () => {
+  try { if (debugClient) debugClient.close(); } catch {}
+  debugClient = null; debugRunRequested = false; debugPaused = false;
+  const result = await runner.kill();
+  sendDebuggerNotification({ type:'stopped' });
+  return result;
 });
 
 ipcMain.handle('runner:input', (_event, text) => {
@@ -494,6 +652,11 @@ ipcMain.handle('ai:generate-tests', async (_event, { code, language, fileName })
   throw new Error('Add at least one AI provider API key in Settings to generate tests.');
 });
 
+registerStudioIpc({
+  ipcMain, app, dialog, getWindow: () => win, approvedRoots, isWithinApprovedRoot,
+  getActiveWorkspaceRoot: () => activeWorkspaceRoot, getKey, callProvider
+});
+
 /* ═══════════════════════════════════════════════════════════
    PLUGINS IPC
    ═══════════════════════════════════════════════════════════ */
@@ -512,13 +675,20 @@ ipcMain.handle('plugins:list', () => pluginSystem.getPlugins());
 ipcMain.handle('plugins:toggle', async (_event, payload) => {
   if (!payload || typeof payload.name !== 'string' || typeof payload.enabled !== 'boolean') throw new Error('Invalid plugin toggle request.');
   if (payload.enabled) {
+    const info = pluginSystem.getPlugins().find(plugin => plugin.name === payload.name);
+    const unrestricted = Boolean(info && info.permissions.includes('native:unrestricted'));
     const answer = await dialog.showMessageBox(win, {
       type: 'warning',
-      buttons: ['Cancel', 'Enable plugin'],
+      buttons: ['Cancel', unrestricted ? 'Enable unrestricted plugin' : 'Enable restricted plugin'],
       defaultId: 0, cancelId: 0,
-      title: 'Enable trusted plugin?',
-      message: 'Plugins execute JavaScript with Nidavellir’s operating-system permissions.',
-      detail: `Only enable plugins whose source you have reviewed and trust. A plugin can read or modify files and access resources available to this app. This confirmation is not a sandbox.\n\nPlugin: ${payload.name}`
+      title: unrestricted ? 'Enable unrestricted native plugin?' : 'Enable restricted plugin?',
+      message: unrestricted
+        ? 'This plugin explicitly requests unrestricted Node.js and operating-system user permissions.'
+        : 'This plugin runs in a restricted JavaScript context with only declared Nidavellir capabilities.',
+      detail: (unrestricted
+        ? 'Native plugins can read and modify files, execute commands, and access resources available to your user account. Enable only after reviewing every source file.'
+        : 'Restricted execution is defense in depth, not a strong OS security boundary. Do not enable untrusted code. Review its requested capabilities and source before continuing.') +
+        '\n\nPlugin: ' + payload.name + '\nCapabilities: ' + (info && info.permissions.length ? info.permissions.join(', ') : 'none')
     });
     if (answer.response !== 1) return false;
   }

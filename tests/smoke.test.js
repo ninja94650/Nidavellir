@@ -8,7 +8,7 @@ const root = path.resolve(__dirname, '..');
 
 test('project has core app files', () => {
   for (const f of [
-    'package.json', 'src/main.js', 'src/preload.js',
+    'package.json', 'src/main.js', 'src/preload.js', 'src/studio-services.js',
     'src/index.html', 'src/app.js', 'src/styles.css', 'src/updater.js', 'scripts/copy-monaco.js', 'README.md'
   ]) {
     assert.ok(fs.existsSync(path.join(root, f)), `missing ${f}`);
@@ -50,9 +50,17 @@ test('AI provider adapters exist', () => {
 
 test('preload exposes safe runner and plugin channels', () => {
   const preload = fs.readFileSync(path.join(root, 'src/preload.js'), 'utf8');
-  for (const channel of ['runSafe', 'killRun', 'runHistory', 'synthesize', 'generateTests', 'listPlugins', 'togglePlugin']) {
+  for (const channel of ['runSafe', 'killRun', 'runHistory', 'synthesize', 'generateTests', 'listPlugins', 'togglePlugin', 'getRecoveryDrafts', 'saveRecoveryDrafts', 'clearRecoveryDrafts', 'searchWorkspace', 'previewWorkspaceReplace', 'replaceWorkspace', 'detectEnvironment', 'diagnoseSource', 'startLanguageServer', 'stopLanguageServer', 'openLanguageServerDocument', 'changeLanguageServerDocument', 'languageServerRequest', 'onLanguageServerNotification', 'gitStatus', 'gitDiff', 'gitBranches', 'gitSwitchBranch', 'gitCreateBranch', 'gitLog', 'gitStage', 'gitUnstage', 'gitCommit', 'gitPull', 'gitPush', 'planProjectChanges', 'applyProjectChanges']) {
     assert.ok(preload.includes(channel), `preload missing ${channel}`);
   }
+});
+
+test('language server module exports an allowlisted client', () => {
+  const lsp = require('../src/language-server');
+  assert.equal(typeof lsp.LanguageServerManager, 'function');
+  assert.ok(lsp.REQUEST_ALLOWLIST.has('textDocument/definition'));
+  assert.equal(lsp.REQUEST_ALLOWLIST.has('workspace/executeCommand'), false);
+  assert.equal(lsp.LANGUAGE_SERVERS.python.command, 'pylsp');
 });
 
 test('main process imports new modules', () => {
@@ -60,6 +68,10 @@ test('main process imports new modules', () => {
   assert.match(main, /require\(['"]\.\/safe-runner['"]\)/);
   assert.match(main, /require\(['"]\.\/coordinator['"]\)/);
   assert.match(main, /require\(['"]\.\/plugins['"]\)/);
+  assert.match(main, /require\(['"]\.\/studio-ipc['"]\)/);
+  const studioIpc = fs.readFileSync(path.join(root, 'src/studio-ipc.js'), 'utf8');
+  assert.match(studioIpc, /require\(['"]\.\/language-server['"]\)/);
+  assert.match(main, /registerStudioIpc\(/);
 });
 
 test('coordinator module exports synthesizeResponses', () => {

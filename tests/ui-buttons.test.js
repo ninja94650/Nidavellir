@@ -23,15 +23,42 @@ const assert = require('node:assert/strict');
   const browser = await chromium.launch({ headless: process.env.HEADLESS_UI === '1', args: ['--no-sandbox'] });
   const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
   await page.addInitScript(() => {
-    const state = { runner: null, editorCommand: null, keys: {}, plugins: [{ name: 'sample-plugin', version: '1.0.0', description: 'UI test plugin', enabled: true }] };
+    const state = { runner: null, editorCommand: null, keys: {}, plugins: [{ name: 'sample-plugin', version: '1.0.0', description: 'UI test plugin', enabled: true, permissions: ['ui:status'], permissionsDeclared: true, executionModel: 'restricted vm context (not a strong OS security boundary)' }] };
     window.__uiCalls = []; window.__uiState = state;
     const record = (name, payload) => window.__uiCalls.push({ name, payload });
     window.prompt = (_message, value) => value || 'javascript';
     window.forge = {
       openFile: async () => { record('openFile'); return { filePath: '/tmp/example.js', content: 'alpha alpha\n' }; },
       openFolder: async () => { record('openFolder'); return { folder: '/tmp/project', tree: [{ name: 'main.js', path: '/tmp/project/main.js', directory: false }] }; },
-      saveFile: async p => { record('saveFile', p); return { filePath: p.filePath || '/tmp/new-file.js', name: p.name || 'new-file.js' }; },
+      saveFile: async p => { record('saveFile', p); return { filePath: p.filePath || ('/tmp/' + (p.name || 'new-file.js')), name: p.name || 'new-file.js' }; },
       readPath: async filePath => { record('readPath', filePath); return { filePath, content: 'alpha alpha\n' }; },
+      getRecoveryDrafts: async () => { record('getRecoveryDrafts'); return { drafts: [], available: false }; },
+      saveRecoveryDrafts: async p => { record('saveRecoveryDrafts', p); return { saved: true, count: (p.drafts || []).length }; },
+      clearRecoveryDrafts: async () => { record('clearRecoveryDrafts'); return { cleared: true }; },
+      searchWorkspace: async p => { record('searchWorkspace', p); return { root: '/tmp/project', filesScanned: 1, totalMatches: 2, truncated: false, matches: [{ path:'main.js', line:1, column:1, text:'alpha alpha', match:'alpha' }, { path:'main.js', line:1, column:7, text:'alpha alpha', match:'alpha' }] }; },
+      replaceWorkspace: async p => { record('replaceWorkspace', p); return { cancelled: false, filesChanged: 1, replacements: 2, backups: [] }; },
+      previewWorkspaceReplace: async p => { record('previewWorkspaceReplace', p); return { filesChanged:1, replacements:2, previews:[{path:'main.js',replacements:2,before:'alpha alpha',after:'beta beta'}], warning:'Preview only; no files changed.' }; },
+      detectEnvironment: async () => { record('detectEnvironment'); return { platform:'linux', nodeRuntime:'22.0.0', electronRuntime:'45.0.0', scannedAt:new Date().toISOString(), tools:[{name:'Node.js',command:'node',category:'runtime',available:true,version:'v22.0.0'},{name:'C++ compiler (g++)',command:'g++',category:'compiler',available:false,version:''}] }; },
+      diagnoseSource: async p => { record('diagnoseSource', p); return { status:'passed', tool:'node', diagnostics:'Syntax check passed.' }; },
+      startLanguageServer: async p => { record('startLanguageServer', p); return { active:true, language:p.language, label:'Mock language server', root:p.root, capabilities:['definition','hover','formatting'] }; },
+      stopLanguageServer: async () => { record('stopLanguageServer'); return { stopped:true }; },
+      openLanguageServerDocument: async p => { record('openLanguageServerDocument', p); return { opened:true, uri:'file:///tmp/project/main.js', version:1 }; },
+      changeLanguageServerDocument: async p => { record('changeLanguageServerDocument', p); return { opened:true, uri:'file:///tmp/project/main.js', version:2 }; },
+      languageServerRequest: async p => { record('languageServerRequest', p); if (p.method === 'textDocument/definition') return { uri:'file:///tmp/project/main.js', range:{start:{line:0,character:0},end:{line:0,character:5}}}; if (p.method === 'textDocument/references') return [{uri:'file:///tmp/project/main.js',range:{start:{line:0,character:0},end:{line:0,character:5}}}]; if (p.method === 'textDocument/hover') return {contents:{kind:'markdown',value:'Mock hover details'}}; if (p.method === 'textDocument/completion') return {items:[{label:'mockCompletion',detail:'test item'}]}; if (p.method === 'textDocument/formatting') return []; return null; },
+      onLanguageServerNotification: () => {},
+      gitStatus: async root => { record('gitStatus', root); return { root:'/tmp/project', branch:'main', changes:[{index:' ',worktree:'M',status:'M',path:'main.js'}], workingDiff:'1 file changed', stagedDiff:'', hasRemote:true }; },
+      gitDiff: async p => { record('gitDiff', p); return 'diff --git a/main.js b/main.js\\n+alpha'; },
+      gitBranches: async root => { record('gitBranches',root); return [{name:'main',current:true,upstream:'origin/main'}]; },
+      gitSwitchBranch: async p => { record('gitSwitchBranch',p); return { output:'Switched to main', status:{root:'/tmp/project',branch:'main',changes:[{index:' ',worktree:'M',status:'M',path:'main.js'}],workingDiff:'1 file changed',stagedDiff:'',hasRemote:true}, branches:[{name:'main',current:true,upstream:'origin/main'},{name:'feature/new',current:false,upstream:''}] }; },
+      gitCreateBranch: async p => { record('gitCreateBranch',p); return { output:'Switched to a new branch ' + p.name, status:{root:'/tmp/project',branch:p.name,changes:[{index:' ',worktree:'M',status:'M',path:'main.js'}],workingDiff:'1 file changed',stagedDiff:'',hasRemote:true}, branches:[{name:p.name,current:true,upstream:''},{name:'main',current:false,upstream:'origin/main'}] }; },
+      gitLog: async root => { record('gitLog',root); return [{hash:'abc123',date:'2026-10-25',subject:'Test commit'}]; },
+      gitStage: async p => { record('gitStage',p); return { root:'/tmp/project',branch:'main',changes:[{index:'M',worktree:' ',status:'M',path:'main.js'}],workingDiff:'',stagedDiff:'1 file changed',hasRemote:true }; },
+      gitUnstage: async p => { record('gitUnstage',p); return { root:'/tmp/project',branch:'main',changes:[{index:' ',worktree:'M',status:'M',path:'main.js'}],workingDiff:'1 file changed',stagedDiff:'',hasRemote:true }; },
+      gitCommit: async p => { record('gitCommit',p); return { output:'[main abc123] ' + p.message, status:{root:'/tmp/project',branch:'main',changes:[],workingDiff:'',stagedDiff:'',hasRemote:true} }; },
+      gitPull: async root => { record('gitPull',root); return { cancelled:true }; },
+      gitPush: async root => { record('gitPush',root); return { cancelled:true }; },
+      planProjectChanges: async p => { record('planProjectChanges',p); return { summary:'Mock multi-file plan',provider:'openai',contextFiles:1,contextTruncated:false,changes:[{path:'src/new.js',action:'create',summary:'Add helper',content:'export const helper = true;'}, {path:'src/old.js',action:'modify',summary:'Update helper',content:'export const oldHelper = true;'}] }; },
+      applyProjectChanges: async p => { record('applyProjectChanges',p); return { cancelled:false,count:p.changes.length,backupDir:'/tmp/backups',applied:p.changes.map(change=>({path:change.path,action:change.action})) }; },
       runSafe: async p => { record('runSafe', p); state.runner?.({ running: true }); await new Promise(r => setTimeout(r, 10)); state.runner?.({ running: false }); return { durationMs: 10, code: 0 }; },
       killRun: async () => { record('killRun'); state.runner?.({ running: false }); },
       writeRunInput: async text => { record('writeRunInput', text); return { accepted: true }; },
@@ -54,10 +81,17 @@ const assert = require('node:assert/strict');
     };
   });
   const errors = [];
-  page.on('pageerror', e => errors.push(e.message));
+  page.on('pageerror', e => errors.push(e.stack || e.message));
   await page.goto(baseUrl + '/src/index.html');
   await page.waitForSelector('#statusText');
   await page.waitForTimeout(1800);
+  const startupWiring = await page.evaluate(() => ({
+    openFile: typeof document.getElementById('openBtn')?.onclick,
+    save: typeof document.getElementById('saveBtn')?.onclick,
+    studioTools: typeof document.getElementById('studioToolsBtn')?.onclick,
+    commandButton: typeof document.getElementById('commandPaletteBtn')?.onclick,
+    splitButton: typeof document.getElementById('splitEditorBtn')?.onclick
+  }));
   const click = async s => { const el = page.locator(s); await el.waitFor({ state: 'visible', timeout: 5000 }); await el.click({ timeout: 5000 }); };
   const called = async name => assert.ok((await page.evaluate(() => window.__uiCalls)).some(c => c.name === name), 'expected call ' + name);
   const results = [];
@@ -112,7 +146,7 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('#commandPalette').isVisible(), false);
   });
   await check('New File sidebar button', async () => { await click('#newFileBtn'); assert.equal(await page.locator('#newFileModal').isVisible(), true); await click('#cancelNewFile'); });
-  await check('New File banner + C++ create', async () => { await click('#newFileBannerBtn'); await page.locator('#newFileName').fill('click_test'); await page.locator('#newFileType').selectOption('cpp'); assert.equal(await page.locator('#newFilePreview').textContent(), 'click_test.cpp'); await click('#newFileForm button[type="submit"]'); assert.match(await page.locator('#tabs .tab').textContent(), /click_test\.cpp/); });
+  await check('New File banner + C++ create', async () => { await click('#newFileBannerBtn'); await page.locator('#newFileName').fill('click_test'); await page.locator('#newFileType').selectOption('cpp'); assert.equal(await page.locator('#newFilePreview').textContent(), 'click_test.cpp'); await click('#newFileForm button[type="submit"]'); assert.match(await page.locator('#tabs .tab.active .tab-name').textContent(), /click_test\.cpp/); await click('#saveBtn'); await called('saveFile'); });
   await check('New File cancel action', async () => { await click('#newFileBtn'); await click('#cancelNewFileAction'); assert.equal(await page.locator('#newFileModal').isVisible(), false); });
   await check('Run', async () => { await click('#runBtn'); await called('runSafe'); });
   await check('Run history', async () => { await click('#runHistoryBtn'); await called('runHistory'); assert.equal(await page.locator('#runHistoryDropdown').isVisible(), true); await click('#runHistoryBtn'); });
@@ -164,8 +198,133 @@ const assert = require('node:assert/strict');
   });
   await check('Language status picker', async () => { await click('#languageStatus'); assert.ok(await page.locator('#languageStatus').textContent()); });
   await check('Plugin quick action', async () => { const b = page.locator('.plugin-qa'); if (await b.count()) { await b.click(); await called('askAI'); } });
+  await check('Side-by-side editor toggles and tracks active document', async () => {
+    await click('#splitEditorBtn');
+    assert.equal(await page.locator('#splitPane').isVisible(), true);
+    assert.equal(await page.locator('.editor-wrap').evaluate(el => el.classList.contains('split-enabled')), true);
+    if (await page.locator('#splitEditor').count()) assert.ok(await page.locator('#splitEditor').isVisible());
+    await click('#splitEditorBtn');
+    assert.equal(await page.locator('#splitPane').isVisible(), false);
+    assert.equal(await page.locator('.editor-wrap').evaluate(el => el.classList.contains('split-enabled')), false);
+  });
+  await check('Multi-document tabs preserve separately opened files', async () => {
+    const tabs = page.locator('#tabs .tab');
+    assert.ok(await tabs.count() >= 2, 'opening two files should preserve two tabs');
+    const activeName = await page.locator('#tabs .tab.active .tab-name').textContent();
+    assert.ok(activeName, 'active tab should have a document title');
+    await tabs.nth(1).click();
+    assert.equal(await page.locator('#tabs .tab.active').count(), 1);
+    await tabs.first().click();
+    assert.equal(await page.locator('#tabs .tab.active').count(), 1);
+  });
+  await check('Studio project search and selected-file replacement', async () => {
+    await click('#studioToolsBtn');
+    await page.locator('#workspaceSearchQuery').fill('alpha');
+    await click('#workspaceSearchForm button[type="submit"]');
+    await called('searchWorkspace');
+    assert.equal(await page.locator('#workspaceSearchResults .studio-result-item').count(), 2);
+    await page.locator('#workspaceReplaceText').fill('beta');
+    await click('#workspaceReplaceSelectedBtn');
+    await called('previewWorkspaceReplace');
+    assert.equal(await page.locator('#workspaceReplacePreview').isVisible(), true);
+    assert.match(await page.locator('#workspaceReplacePreviewText').textContent(), /beta beta/);
+    await click('#workspaceApplyReplacementBtn');
+    await called('replaceWorkspace');
+    await click('#closeStudioTools');
+    assert.equal(await page.locator('#studioToolsModal').isVisible(), false);
+  });
+  await check('Environment Doctor and source syntax diagnostics', async () => {
+    await click('#studioToolsBtn');
+    await click('[data-studio-tab="environment"]');
+    await click('#scanEnvironmentBtn');
+    await called('detectEnvironment');
+    assert.match(await page.locator('#environmentSummary').textContent(), /linux/);
+    await click('#diagnoseCurrentFileBtn');
+    await called('diagnoseSource');
+    assert.match(await page.locator('#sourceDiagnosticsSummary').textContent(), /PASSED/);
+    await click('#closeStudioTools');
+  });
+  await check('Language Server starts and serves navigation, hover, completion and format requests', async () => {
+    // The earlier UI checks create untitled files outside the workspace. Open
+    // the workspace file explicitly so LSP startup satisfies the real
+    // workspace/path guard instead of silently testing the error path.
+    await click('.file-item');
+    await called('readPath');
+    await click('#studioToolsBtn');
+    await click('[data-studio-tab="environment"]');
+    await click('#startLanguageServerBtn');
+    await called('startLanguageServer');
+    await called('openLanguageServerDocument');
+    assert.match(await page.locator('#languageServerStatus').textContent(), /Running/);
+    await page.locator('#lspDefinitionBtn').click({ force: true });
+    await called('languageServerRequest');
+    await click('#lspReferencesBtn');
+    await click('#lspHoverBtn');
+    await click('#lspCompletionBtn');
+    await click('#lspFormatBtn');
+    const reqs = await page.evaluate(() => window.__uiCalls.filter(c => c.name === 'languageServerRequest').map(c => c.payload.method));
+    for (const method of ['textDocument/definition','textDocument/references','textDocument/hover','textDocument/completion','textDocument/formatting']) assert.ok(reqs.includes(method), 'missing request '+method);
+    await click('#stopLanguageServerBtn');
+    await called('stopLanguageServer');
+    assert.match(await page.locator('#languageServerStatus').textContent(), /stopped/i);
+    await click('#closeStudioTools');
+  });
+  await check('Git status, staging, unstage and commit actions', async () => {
+    await click('#studioToolsBtn');
+    await click('[data-studio-tab="git"]');
+    await called('gitStatus');
+    await click('#gitSwitchBranchBtn');
+    await called('gitSwitchBranch');
+    await page.locator('#gitNewBranchInput').fill('feature/test-ui');
+    await click('#gitCreateBranchBtn');
+    await called('gitCreateBranch');
+    assert.equal(await page.locator('#gitBranchSelect').inputValue(), 'feature/test-ui');
+    const selection = page.locator('#gitChangedFiles input[type="checkbox"]').first();
+    await selection.check();
+    await click('#gitStageSelectedBtn');
+    await called('gitStage');
+    await page.locator('#gitChangedFiles input[type="checkbox"]').first().check();
+    await click('#gitUnstageSelectedBtn');
+    await called('gitUnstage');
+    await click('#gitStageAllBtn');
+    await called('gitStage');
+    await page.locator('#gitCommitMessage').fill('Add tested studio actions');
+    await click('#gitCommitBtn');
+    await called('gitCommit');
+    assert.match(await page.locator('#gitOutput').textContent(), /Add tested studio actions/);
+    await click('#closeStudioTools');
+  });
+  await check('AI multi-file plan, per-file review, and application', async () => {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const dirtyTab = page.locator('#tabs .tab .tab-dirty').filter({ hasText: '●' }).first();
+      if (!await dirtyTab.count()) break;
+      await dirtyTab.locator('xpath=..').click();
+      await click('#saveBtn');
+      await called('saveFile');
+    }
+    await click('#studioToolsBtn');
+    await click('[data-studio-tab="ai-changes"]');
+    await page.locator('#aiProjectPrompt').fill('Add a small helper and update the previous helper.');
+    await click('#planProjectChangesBtn');
+    await called('planProjectChanges');
+    assert.equal(await page.locator('#aiProjectChangeList .studio-result-item').count(), 2);
+    await page.locator('#aiProjectChangeList .studio-result-item button').first().click();
+    assert.match(await page.locator('#aiProjectChangePreview').textContent(), /export const helper/);
+    await click('#applyAiChangesBtn');
+    await called('applyProjectChanges');
+    await click('#closeStudioTools');
+  });
+  await check('Plugin security center shows execution risk and controls', async () => {
+    await click('#studioToolsBtn');
+    await click('[data-studio-tab="debug-security"]');
+    await click('#refreshPluginSecurityBtn');
+    assert.ok(await page.locator('#pluginSecurityReport .studio-result-item').count() >= 1);
+    assert.match(await page.locator('#pluginSecurityReport').textContent(), /restricted vm context/);
+    await click('#closeStudioTools');
+  });
+
   const inventory = await page.locator('button:visible').evaluateAll(bs => bs.map(b => ({ label: (b.innerText || b.getAttribute('aria-label') || b.title || '').trim(), id: b.id, type: b.type })));
-  const summary = { totalChecks: results.length, passed: results.filter(x => x.result === 'PASS').length, failed: results.filter(x => x.result === 'FAIL').length, results, visibleButtonsAtEnd: inventory, pageErrors: errors };
+  const summary = { startupWiring, totalChecks: results.length, passed: results.filter(x => x.result === 'PASS').length, failed: results.filter(x => x.result === 'FAIL').length, results, visibleButtonsAtEnd: inventory, pageErrors: errors };
   console.log(JSON.stringify(summary, null, 2));
   await browser.close();
   await new Promise(resolve => server.close(resolve));

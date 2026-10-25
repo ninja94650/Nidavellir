@@ -11,6 +11,15 @@ let diffEditorInstance = null, proposedCode = '';
 let recentFiles = [];
 let paletteMode = 'commands', paletteItems = [], paletteActiveIndex = 0, palettePreviousFocus = null;
 let wordWrapEnabled = true;
+const openDocuments = new Map();
+let activeDocumentKey = null, documentSequence = 0, recoveryTimer = null;
+let splitEditor = null, splitViewEnabled = false;
+let pendingRecoveryDrafts = null, recoveryPromptShown = false, pendingCloseDocumentKey = null;
+let currentWorkspaceRoot = null;
+let projectSearchResults = [], aiProjectChanges = [], gitStatusCache = null;
+let pendingWorkspaceReplacement = null;
+let languageServerActive = false, languageServerLanguage = null, languageServerRoot = null, languageServerTimer = null;
+const lspDiagnosticsByUri = new Map();
 
 const languageMap = {
   js:'javascript',mjs:'javascript',cjs:'javascript',py:'python',cpp:'cpp',c:'c',java:'java',go:'go',rs:'rust',rb:'ruby',php:'php',sh:'bash',ps1:'powershell',
@@ -64,33 +73,274 @@ require(['vs/editor/editor.main'], () => {
     fontSize: 13, minimap: { enabled: false }, fontFamily: 'Consolas, "Cascadia Code", monospace',
     scrollBeyondLastLine: false, tabSize: 2, padding: { top: 14 }, wordWrap: 'on'
   });
+  const startingDocument = pendingNewDocument || { name: 'welcome.md', language: 'javascript', content: welcome, savedContent: welcome, filePath: null };
+  const initialDoc = createDocumentRecord({
+    filePath: startingDocument.filePath || null, name: startingDocument.name,
+    language: startingDocument.language, content: startingDocument.content,
+    savedContent: startingDocument.savedContent == null ? startingDocument.content : startingDocument.savedContent,
+    model: editor.getModel()
+  });
+  activeDocumentKey = initialDoc.key;
+  syncActiveDocumentState(false);
+  renderDocumentTabs();
   editor.onDidChangeModelContent(() => {
     $('selectionHint').textContent = 'Current file will be included';
+    syncActiveDocumentState(true);
+    scheduleLanguageServerSync();
     if ($('findBar') && !$('findBar').hidden) collectFindMatches();
   });
   if (pendingNewDocument) {
-    $('tabs').querySelector('.tab').textContent = pendingNewDocument.name;
     showLanguage(pendingNewDocument.language);
     setStatus('New unsaved file');
     editor.focus();
     pendingNewDocument = null;
   } else {
-    setStatus('Ready · Unsaved welcome example');
+    setStatus('Ready · No file open');
   }
   initPluginUI();
+  void checkRecoveryDrafts();
 }, () => {
   $('editor').hidden = true; $('fallbackEditor').hidden = false;
   $('plainEditor').value = pendingNewDocument ? pendingNewDocument.content : welcome;
-  if (pendingNewDocument) {
-    $('tabs').querySelector('.tab').textContent = pendingNewDocument.name;
-    currentName = pendingNewDocument.name;
-    currentLanguage = pendingNewDocument.language;
-    $('languageStatus').textContent = currentLanguage;
-    setStatus('New unsaved file · basic editor mode');
-    pendingNewDocument = null;
-  }
+  const startingDocument = pendingNewDocument || { name: 'welcome.md', language: 'javascript', content: welcome, savedContent: welcome, filePath: null };
+  const initialDoc = createDocumentRecord({
+    filePath: startingDocument.filePath || null, name: startingDocument.name,
+    language: startingDocument.language, content: startingDocument.content,
+    savedContent: startingDocument.savedContent == null ? startingDocument.content : startingDocument.savedContent,
+    model: null
+  });
+  activeDocumentKey = initialDoc.key;
+  currentName = initialDoc.name; currentLanguage = initialDoc.language; currentPath = initialDoc.filePath;
+  $('languageStatus').textContent = currentLanguage;
+  renderDocumentTabs();
+  if (pendingNewDocument) { setStatus('New unsaved file · basic editor mode'); pendingNewDocument = null; }
   setStatus('Monaco unavailable · basic editor mode');
   initPluginUI();
+  void checkRecoveryDrafts();
+});
+
+
+function normalizedDocumentPath(filePath) {
+  const value = String(filePath).replace(/\\/g, '/');
+  return navigator.platform && /^Win/i.test(navigator.platform) ? value.toLowerCase() : value;
+}
+function documentKeyForPath(filePath) { return 'file:' + normalizedDocumentPath(filePath); }
+function getActiveDocument() { return activeDocumentKey ? openDocuments.get(activeDocumentKey) || null : null; }
+function createDocumentRecord(state) {
+  const filePath = state.filePath || null;
+  const key = filePath ? documentKeyForPath(filePath) : 'untitled:' + (++documentSequence);
+  const doc = {
+    key, filePath, name: state.name || (filePath ? baseNameForPath(filePath) : 'untitled.js'),
+    language: state.language || 'plaintext', content: String(state.content || ''),
+    savedContent: state.savedContent == null ? String(state.content || '') : String(state.savedContent),
+    dirty: false, model: state.model || null, recoveredFromPath: state.recoveredFromPath || null
+  };
+  doc.dirty = doc.content !== doc.savedContent;
+  openDocuments.set(key, doc);
+  return doc;
+}
+function syncActiveDocumentState(schedule = true) {
+  const doc = getActiveDocument();
+  if (!doc) return;
+  doc.content = getValue();
+  doc.dirty = doc.content !== doc.savedContent;
+  currentPath = doc.filePath;
+  currentName = doc.name;
+  currentLanguage = doc.language;
+  $('languageStatus').textContent = currentLanguage;
+  renderDocumentTabs();
+  if (schedule) scheduleRecoverySave();
+}
+function renderDocumentTabs() {
+  const container = $('tabs');
+  if (!container) return;
+  const status = $('statusPill');
+  container.replaceChildren();
+  const activeDoc = getActiveDocument();
+  const orderedDocs = activeDoc ? [activeDoc, ...Array.from(openDocuments.values()).filter(doc => doc.key !== activeDoc.key)] : Array.from(openDocuments.values());
+  for (const doc of orderedDocs) {
+    const tab = document.createElement('div');
+    tab.className = 'tab' + (doc.key === activeDocumentKey ? ' active' : '');
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('tabindex', doc.key === activeDocumentKey ? '0' : '-1');
+    tab.setAttribute('aria-selected', doc.key === activeDocumentKey ? 'true' : 'false');
+    tab.dataset.docKey = doc.key;
+    tab.title = doc.filePath || doc.name;
+    const name = document.createElement('span');
+    name.className = 'tab-name';
+    name.textContent = doc.name;
+    tab.appendChild(name);
+    const dirty = document.createElement('span');
+    dirty.className = 'tab-dirty';
+    dirty.textContent = doc.dirty || !doc.filePath && doc.name !== 'welcome.md' ? '●' : '';
+    dirty.title = doc.dirty ? 'Unsaved changes' : '';
+    tab.appendChild(dirty);
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'tab-close';
+    close.title = 'Close ' + doc.name;
+    close.setAttribute('aria-label', 'Close ' + doc.name);
+    close.textContent = '×';
+    close.addEventListener('click', event => { event.stopPropagation(); void requestCloseDocument(doc.key); });
+    tab.appendChild(close);
+    tab.addEventListener('click', event => {
+      if (event.target && event.target.closest && event.target.closest('.tab-close')) return;
+      activateDocument(doc.key);
+    });
+    tab.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activateDocument(doc.key); }
+    });
+    container.appendChild(tab);
+  }
+  const spacer = document.createElement('div');
+  spacer.className = 'tab-spacer';
+  container.appendChild(spacer);
+  if (status) container.appendChild(status);
+}
+function activateDocument(key) {
+  const next = openDocuments.get(key);
+  if (!next) return;
+  syncActiveDocumentState(false);
+  activeDocumentKey = key;
+  if (monacoReady && editor) {
+    // Closing/reopening tabs or changing editor views can leave a stale model
+    // reference behind. Never attach a disposed Monaco model to an editor.
+    if (!next.model || (typeof next.model.isDisposed === 'function' && next.model.isDisposed())) {
+      next.model = monaco.editor.createModel(next.content, next.language);
+    }
+    if (editor.getModel() !== next.model) editor.setModel(next.model);
+    if (splitEditor && splitEditor.getModel() !== next.model) splitEditor.setModel(next.model);
+    monaco.editor.setModelLanguage(next.model, next.language);
+  } else if (!$('fallbackEditor').hidden) {
+    $('plainEditor').value = next.content;
+    if (splitViewEnabled) $('splitPlainEditor').value = next.content;
+  } else {
+    pendingNewDocument = { filePath: next.filePath, name: next.name, language: next.language, content: next.content, savedContent: next.savedContent };
+  }
+  currentPath = next.filePath; currentName = next.name; currentLanguage = next.language;
+  $('languageStatus').textContent = currentLanguage;
+  document.querySelectorAll('.file-item').forEach(row => row.classList.toggle('selected', row.title === currentPath));
+  renderDocumentTabs();
+  setStatus(next.dirty ? 'Unsaved changes · ' + next.name : (next.filePath ? 'Opened · ' + next.filePath : 'Ready · ' + next.name));
+  if (splitViewEnabled && !monacoReady) $('splitPlainEditor').value = next.content;
+  scheduleLanguageServerSync();
+}
+function scheduleRecoverySave() {
+  if (recoveryTimer) clearTimeout(recoveryTimer);
+  recoveryTimer = setTimeout(() => { void persistRecoveryDrafts(); }, 700);
+}
+async function persistRecoveryDrafts() {
+  const drafts = Array.from(openDocuments.values())
+    .filter(doc => doc.dirty || (!doc.filePath && doc.name !== 'welcome.md'))
+    .slice(-20)
+    .map(doc => ({ name: doc.name, language: doc.language, filePath: doc.filePath, content: doc.content, savedContent: doc.savedContent }));
+  try {
+    if (!drafts.length) { await window.forge.clearRecoveryDrafts(); return; }
+    await window.forge.saveRecoveryDrafts({ drafts });
+  } catch (error) {
+    setStatus('Recovery snapshot warning');
+  }
+}
+async function checkRecoveryDrafts() {
+  if (recoveryPromptShown) return;
+  recoveryPromptShown = true;
+  try {
+    const result = await window.forge.getRecoveryDrafts();
+    if (!result || !result.available || !Array.isArray(result.drafts) || !result.drafts.length) return;
+    pendingRecoveryDrafts = result.drafts;
+    $('recoveryDetails').textContent = result.drafts.length + ' recoverable document(s) were saved ' + (result.savedAt ? 'at ' + new Date(result.savedAt).toLocaleString() : 'during a previous session') + '.';
+    $('recoveryModal').hidden = false;
+  } catch {}
+}
+async function restoreRecoveryDrafts() {
+  const drafts = pendingRecoveryDrafts || [];
+  $('recoveryModal').hidden = true;
+  for (const draft of drafts) {
+    const existing = draft.filePath ? openDocuments.get(documentKeyForPath(draft.filePath)) : null;
+    if (existing) {
+      existing.content = draft.content;
+      existing.savedContent = draft.savedContent;
+      existing.dirty = existing.content !== existing.savedContent;
+      if (existing.model) existing.model.setValue(existing.content);
+      if (existing.key === activeDocumentKey && !monacoReady) $('plainEditor').value = existing.content;
+      continue;
+    }
+    const recovered = createDocumentRecord({
+      // Do not trust/auto-approve old filesystem paths after restart. Recover content
+      // into an untitled draft and require Save As to choose its destination.
+      filePath: null, name: draft.name, language: draft.language,
+      content: draft.content, savedContent: '', recoveredFromPath: draft.filePath || null
+    });
+    recovered.dirty = true;
+    if (monacoReady && editor) recovered.model = monaco.editor.createModel(recovered.content, recovered.language);
+    else if (!$('fallbackEditor').hidden && !activeDocumentKey) $('plainEditor').value = recovered.content;
+  }
+  pendingRecoveryDrafts = null;
+  const latest = Array.from(openDocuments.values()).filter(d => d.key.startsWith('untitled:')).at(-1);
+  if (latest) activateDocument(latest.key);
+  renderDocumentTabs();
+  setStatus('Recovered drafts · Save As to choose a safe destination');
+  scheduleRecoverySave();
+}
+async function discardRecoveryDrafts() {
+  $('recoveryModal').hidden = true;
+  pendingRecoveryDrafts = null;
+  try { await window.forge.clearRecoveryDrafts(); } catch {}
+}
+function removeDocument(key) {
+  const doc = openDocuments.get(key);
+  if (!doc) return;
+  const wasActive = activeDocumentKey === key;
+  openDocuments.delete(key);
+  if (wasActive) {
+    const remaining = Array.from(openDocuments.values()).at(-1);
+    if (remaining) activateDocument(remaining.key);
+    else {
+      const fallback = createDocumentRecord({ name:'welcome.md', language:'javascript', content:welcome, savedContent:welcome, model:monacoReady && editor ? monaco.editor.createModel(welcome, 'javascript') : null });
+      activateDocument(fallback.key);
+    }
+  } else renderDocumentTabs();
+
+  // Switch the visible editors away before disposing a closed document's
+  // model; both the main and split editors may hold a reference to it.
+  if (doc.model && monacoReady && editor) {
+    const attachedToMain = editor.getModel() === doc.model;
+    const attachedToSplit = !!(splitEditor && splitEditor.getModel() === doc.model);
+    const alreadyDisposed = typeof doc.model.isDisposed === 'function' && doc.model.isDisposed();
+    if (!attachedToMain && !attachedToSplit && !alreadyDisposed) doc.model.dispose();
+  }
+  scheduleRecoverySave();
+}
+async function requestCloseDocument(key) {
+  const doc = openDocuments.get(key);
+  if (!doc) return;
+  if (!doc.dirty && (doc.filePath || doc.name === 'welcome.md')) { removeDocument(key); return; }
+  pendingCloseDocumentKey = key;
+  $('closeDocumentTitle').textContent = 'Unsaved changes';
+  $('closeDocumentDetails').textContent = doc.name + ' has unsaved changes. Save before closing, discard the draft, or cancel.';
+  $('closeDocumentModal').hidden = false;
+}
+async function saveAndClosePendingDocument() {
+  if (!pendingCloseDocumentKey) return;
+  const key = pendingCloseDocumentKey;
+  $('closeDocumentModal').hidden = true;
+  if (key !== activeDocumentKey) activateDocument(key);
+  await saveCurrentFile(false);
+  const doc = openDocuments.get(pendingCloseDocumentKey);
+  if (doc && !doc.dirty && doc.filePath) removeDocument(key);
+  pendingCloseDocumentKey = null;
+}
+$('restoreRecoveryBtn').addEventListener('click', () => { void restoreRecoveryDrafts(); });
+$('discardRecoveryBtn').addEventListener('click', () => { void discardRecoveryDrafts(); });
+$('cancelCloseDocumentBtn').addEventListener('click', () => { pendingCloseDocumentKey = null; $('closeDocumentModal').hidden = true; });
+$('discardCloseDocumentBtn').addEventListener('click', () => {
+  const key = pendingCloseDocumentKey; pendingCloseDocumentKey = null; $('closeDocumentModal').hidden = true;
+  if (key) removeDocument(key);
+});
+$('saveCloseDocumentBtn').addEventListener('click', () => { void saveAndClosePendingDocument(); });
+window.addEventListener('beforeunload', event => {
+  const hasUnsaved = Array.from(openDocuments.values()).some(doc => doc.dirty || (!doc.filePath && doc.name !== 'welcome.md'));
+  if (hasUnsaved) { void persistRecoveryDrafts(); event.preventDefault(); event.returnValue = ''; }
 });
 
 /* ─────────────────────────────────────────────
@@ -100,7 +350,7 @@ require(['vs/editor/editor.main'], () => {
 function getValue() { return monacoReady && editor ? editor.getValue() : $('plainEditor').value; }
 function setValue(value, language) {
   if (monacoReady && editor) { editor.setValue(value); monaco.editor.setModelLanguage(editor.getModel(), language || 'javascript'); }
-  else $('plainEditor').value = value;
+  else { $('plainEditor').value = value; $('plainEditor').dispatchEvent(new Event('input', { bubbles: true })); }
 }
 function setStatus(text) { $('statusText').textContent = text; }
 function inferLanguage(name) { const ext = (name.split('.').pop() || 'js').toLowerCase(); return languageMap[ext] || 'plaintext'; }
@@ -134,10 +384,21 @@ function renderTree(items, container, depth = 0) {
 }
 function iconFor(name) { const e = name.split('.').pop(); return ({ js:'JS',py:'Py',cpp:'C+',c:'C',html:'◇',css:'#',json:'{}',md:'M',ts:'TS' })[e] || '·'; }
 function loadFile(filePath, content) {
-  currentPath = filePath;
-  recentFiles = [filePath, ...recentFiles.filter(item => item !== filePath)].slice(0, 12); currentName = filePath.split(/[\\/]/).pop();
-  setValue(content, inferLanguage(currentName)); showLanguage(inferLanguage(currentName));
-  $('tabs').querySelector('.tab').textContent = currentName;
+  recentFiles = [filePath, ...recentFiles.filter(item => item !== filePath)].slice(0, 12);
+  const key = documentKeyForPath(filePath);
+  if (openDocuments.has(key)) {
+    activateDocument(key);
+    setStatus('Opened tab · ' + filePath);
+    return;
+  }
+  const name = filePath.split(/[\\/]/).pop(), language = inferLanguage(name);
+  if (!monacoReady && $('fallbackEditor').hidden) {
+    pendingNewDocument = { filePath, name, language, content, savedContent: content };
+    return;
+  }
+  const model = monacoReady && editor ? monaco.editor.createModel(content, language) : null;
+  const doc = createDocumentRecord({ filePath, name, language, content, savedContent: content, model });
+  activateDocument(doc.key);
   setStatus('Opened · ' + filePath);
   document.querySelectorAll('.file-item').forEach(x => x.classList.toggle('selected', x.title === filePath));
 }
@@ -146,34 +407,59 @@ function loadFile(filePath, content) {
    File buttons
    ───────────────────────────────────────────── */
 
-$('openBtn').onclick = async () => { try { const f = await window.forge.openFile(); if (f) loadFile(f.filePath, f.content); } catch (e) { addOutput('stderr', e.message); } };
+$('openBtn').onclick = async () => { try { const f = await window.forge.openFile(); if (f) { currentWorkspaceRoot = String(f.filePath).replace(/[\\/][^\\/]*$/, ''); loadFile(f.filePath, f.content); } } catch (e) { addOutput('stderr', e.message); } };
 $('openFolderBtn').onclick = async () => {
   try {
     const f = await window.forge.openFolder(); if (!f) return;
+    currentWorkspaceRoot = f.folder;
     $('folderName').textContent = f.folder.split(/[\\/]/).pop().toUpperCase();
     $('fileTree').innerHTML = ''; renderTree(f.tree, $('fileTree'));
     setStatus('Folder opened · ' + f.folder);
   } catch (e) { addOutput('stderr', e.message); }
 };
 async function saveCurrentFile(forceDialog = false) {
+  const doc = getActiveDocument();
+  if (!doc) { setStatus('Nothing to save'); return null; }
   try {
+    syncActiveDocumentState(false);
     const f = await window.forge.saveFile({
-      filePath: forceDialog ? null : currentPath,
-      name: currentName,
+      filePath: forceDialog ? null : doc.filePath,
+      name: doc.name,
       content: getValue(),
       forceDialog
     });
     if (f) {
-      currentPath = f.filePath;
+      const newKey = documentKeyForPath(f.filePath);
+      if (newKey !== doc.key && openDocuments.has(newKey)) {
+        addOutput('stderr', 'That path is already open in another tab. Switch to that tab instead.');
+        activateDocument(newKey);
+        return null;
+      }
+      const oldKey = doc.key;
+      doc.filePath = f.filePath;
+      doc.name = f.name;
+      doc.content = getValue();
+      doc.savedContent = doc.content;
+      doc.dirty = false;
+      if (newKey !== oldKey) {
+        openDocuments.delete(oldKey);
+        doc.key = newKey;
+        openDocuments.set(newKey, doc);
+        activeDocumentKey = newKey;
+      }
+      currentPath = doc.filePath; currentName = doc.name;
       recentFiles = [currentPath, ...recentFiles.filter(item => item !== currentPath)].slice(0, 12);
-      currentName = f.name;
-      $('tabs').querySelector('.tab').textContent = currentName;
+      renderDocumentTabs();
+      scheduleRecoverySave();
       setStatus('Saved · ' + currentPath);
       document.querySelectorAll('.file-item').forEach(x => x.classList.toggle('selected', x.title === currentPath));
+      return f;
     }
+    return null;
   } catch (e) {
     addOutput('stderr', e.message);
     setStatus('Save failed');
+    return null;
   }
 }
 $('saveBtn').onclick = () => saveCurrentFile(false);
@@ -224,27 +510,23 @@ function createNewDocument(name, language) {
     : language === 'c'
       ? '#include <stdio.h>\n\nint main(void) {\n    printf("Hello, Nidavellir!\\n");\n    return 0;\n}\n'
       : '';
-  const documentState = { name, language, content: starterCode };
-  currentPath = null;
-  currentName = documentState.name;
-  currentLanguage = documentState.language;
-  $('tabs').querySelector('.tab').textContent = currentName;
-  $('languageStatus').textContent = currentLanguage;
-  setStatus('New unsaved file · ' + currentName);
-
+  const docState = { name, language, content: starterCode, savedContent: starterCode, filePath: null };
   if (monacoReady && editor) {
-    setValue(documentState.content, documentState.language);
-    showLanguage(documentState.language);
+    const doc = createDocumentRecord({ name, language, content: starterCode, savedContent: starterCode, model: monaco.editor.createModel(starterCode, language) });
+    activateDocument(doc.key);
     editor.focus();
     editor.setPosition({ lineNumber: 1, column: 1 });
+    setStatus('New unsaved file · ' + name);
     return;
   }
   if (!$('fallbackEditor').hidden) {
-    $('plainEditor').value = documentState.content;
+    const doc = createDocumentRecord({ name, language, content: starterCode, savedContent: starterCode });
+    activateDocument(doc.key);
     $('plainEditor').focus();
     return;
   }
-  pendingNewDocument = documentState;
+  pendingNewDocument = docState;
+  setStatus('New unsaved file · ' + name);
 }
 
 $('newFileName').addEventListener('input', updateNewFilePreview);
@@ -755,6 +1037,52 @@ async function initPluginUI() {
 }
 
 
+
+function toggleSplitEditor() {
+  const wrap = document.querySelector('.editor-wrap');
+  if (!wrap) return;
+  splitViewEnabled = !splitViewEnabled;
+  const splitPane = $('splitPane');
+  if (splitViewEnabled) {
+    splitPane.hidden = false;
+    wrap.classList.add('split-enabled');
+    $('splitEditorBtn').classList.add('primary');
+    if (monacoReady && editor) {
+      splitEditor = monaco.editor.create($('splitEditor'), {
+        model: editor.getModel(), theme: 'vs-dark', automaticLayout: true, fontSize: 13,
+        minimap: { enabled: false }, fontFamily: 'Consolas, "Cascadia Code", monospace',
+        scrollBeyondLastLine: false, tabSize: 2, padding: { top: 14 }, wordWrap: wordWrapEnabled ? 'on' : 'off'
+      });
+      splitEditor.focus();
+    } else {
+      $('splitPlainEditor').hidden = false;
+      $('splitPlainEditor').value = getValue();
+      $('splitPlainEditor').focus();
+    }
+    setStatus('Split view enabled · both panes edit the active document');
+  } else {
+    if (splitEditor) {
+      splitEditor.dispose();
+      splitEditor = null;
+    }
+    $('splitPlainEditor').hidden = true;
+    splitPane.hidden = true;
+    wrap.classList.remove('split-enabled');
+    $('splitEditorBtn').classList.remove('primary');
+    if (monacoReady && editor) editor.focus();
+    else $('plainEditor').focus();
+    setStatus('Split view closed');
+  }
+  if (monacoReady && editor) editor.layout();
+}
+$('splitEditorBtn').addEventListener('click', toggleSplitEditor);
+$('splitPlainEditor').addEventListener('input', () => {
+  if (!splitViewEnabled || monacoReady) return;
+  $('plainEditor').value = $('splitPlainEditor').value;
+  syncActiveDocumentState(true);
+  if ($('findBar') && !$('findBar').hidden) collectFindMatches();
+});
+
 /* ─────────────────────────────────────────────
    Command Palette and Quick Open
    ───────────────────────────────────────────── */
@@ -788,6 +1116,7 @@ function getPaletteCommands() {
     { label: 'Show Run History', detail: 'Review recent code executions', run: () => $('runHistoryBtn').click() },
     { label: 'Manage Plugins', detail: 'View and enable installed plugins', run: () => $('pluginsBtn').click() },
     { label: 'AI Settings', detail: 'Configure assistant API keys', run: () => $('settingsBtn').click() },
+    { label: 'Toggle Split Editor', detail: splitViewEnabled ? 'Close the second editor view' : 'Show a synchronized side-by-side editor', run: toggleSplitEditor },
     { label: 'Toggle Word Wrap', detail: 'Currently ' + (wordWrapEnabled ? 'on' : 'off') + ' · wrap long editor lines', run: toggleWordWrap }
   ];
 }
@@ -799,6 +1128,8 @@ function toggleWordWrap() {
     fallback.style.whiteSpace = wordWrapEnabled ? 'pre-wrap' : 'pre';
     fallback.style.overflowWrap = wordWrapEnabled ? 'anywhere' : 'normal';
   }
+  if (splitEditor) splitEditor.updateOptions({ wordWrap: wordWrapEnabled ? 'on' : 'off' });
+  if (!$('splitPlainEditor').hidden) { $('splitPlainEditor').style.whiteSpace = wordWrapEnabled ? 'pre-wrap' : 'pre'; $('splitPlainEditor').style.overflowWrap = wordWrapEnabled ? 'anywhere' : 'normal'; }
   setStatus('Word wrap ' + (wordWrapEnabled ? 'enabled' : 'disabled'));
 }
 function getQuickOpenFiles() {
@@ -1054,6 +1385,9 @@ function replaceAllMatches() {
   setStatus(`Replaced ${ranges.length} occurrence${ranges.length === 1 ? '' : 's'}`);
 }
 $('plainEditor').addEventListener('input', () => {
+  if (splitViewEnabled && !monacoReady && $('splitPlainEditor').value !== $('plainEditor').value) $('splitPlainEditor').value = $('plainEditor').value;
+  syncActiveDocumentState(true);
+  scheduleLanguageServerSync();
   if ($('findBar') && !$('findBar').hidden) collectFindMatches();
 });
 $('findInput').addEventListener('input', () => { collectFindMatches(); if (findMatches.length) selectFindMatch(0, false); });
@@ -1164,3 +1498,729 @@ if (window.forge && typeof window.forge.getUpdateStatus === 'function') {
   $('updateStatus').disabled = true;
   $('updatesEnabled').disabled = true;
 }
+
+
+/* ─────────────────────────────────────────────
+   Studio Tools: project search, Environment Doctor, Git, AI review and security
+   ───────────────────────────────────────────── */
+function setStudioTab(tabName) {
+  document.querySelectorAll('[data-studio-tab]').forEach(button => {
+    const active = button.dataset.studioTab === tabName;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-studio-page]').forEach(page => { page.hidden = page.dataset.studioPage !== tabName; });
+  if (tabName === 'git') void refreshGitStatus();
+  if (tabName === 'debug-security') void refreshPluginSecurityReport();
+}
+function openStudioTools(tabName = 'search') {
+  $('studioToolsModal').hidden = false;
+  setStudioTab(tabName);
+  if (tabName === 'search') $('workspaceSearchQuery').focus();
+}
+$('studioToolsBtn').addEventListener('click', () => openStudioTools('search'));
+$('closeStudioTools').addEventListener('click', () => { $('studioToolsModal').hidden = true; });
+$('studioToolsModal').addEventListener('click', event => { if (event.target === $('studioToolsModal')) $('studioToolsModal').hidden = true; });
+document.querySelectorAll('[data-studio-tab]').forEach(button => button.addEventListener('click', () => setStudioTab(button.dataset.studioTab)));
+
+function requireWorkspaceForTools() {
+  if (!currentWorkspaceRoot) {
+    throw new Error('Open a project folder first. Use Open Folder so workspace tools can safely operate on that folder.');
+  }
+  return currentWorkspaceRoot;
+}
+function renderStudioEmpty(container, message) {
+  container.replaceChildren();
+  const empty = document.createElement('div');
+  empty.className = 'studio-empty';
+  empty.textContent = message;
+  container.appendChild(empty);
+}
+function renderProjectSearchResults() {
+  const list = $('workspaceSearchResults');
+  list.replaceChildren();
+  if (!projectSearchResults.length) {
+    renderStudioEmpty(list, 'No matches found. Try another query or check the selected workspace.');
+    return;
+  }
+  projectSearchResults.forEach((match, index) => {
+    const row = document.createElement('div');
+    row.className = 'studio-result-item';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = true;
+    checkbox.dataset.searchIndex = String(index);
+    checkbox.setAttribute('aria-label', 'Select ' + match.path);
+    const copy = document.createElement('div');
+    copy.className = 'studio-result-copy';
+    const title = document.createElement('strong');
+    title.textContent = match.path + ':' + match.line + ':' + match.column;
+    const preview = document.createElement('pre');
+    preview.textContent = match.text;
+    copy.append(title, preview);
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.textContent = 'Open';
+    open.addEventListener('click', async () => {
+      try {
+        const filePath = currentWorkspaceRoot.replace(/[\\/]+$/, '') + '/' + match.path;
+        const file = await window.forge.readPath(filePath);
+        if (file) {
+          loadFile(file.filePath, file.content);
+          if (monacoReady && editor) {
+            editor.focus();
+            editor.setPosition({ lineNumber: match.line, column: match.column });
+            editor.revealLineInCenter(match.line);
+          } else {
+            const lines = file.content.split('\n');
+            const offset = lines.slice(0, match.line - 1).reduce((sum, line) => sum + line.length + 1, 0) + match.column - 1;
+            $('plainEditor').focus();
+            $('plainEditor').setSelectionRange(offset, offset);
+          }
+        }
+      } catch (error) { $('workspaceSearchMessage').textContent = error.message; }
+    });
+    row.append(checkbox, copy, open);
+    list.appendChild(row);
+  });
+}
+async function performWorkspaceSearch() {
+  const query = $('workspaceSearchQuery').value;
+  if (!query.trim()) { $('workspaceSearchMessage').textContent = 'Enter text to search.'; return; }
+  $('workspaceSearchBtn').disabled = true;
+  $('workspaceSearchMessage').textContent = 'Searching workspace…';
+  try {
+    const result = await window.forge.searchWorkspace({
+      root: requireWorkspaceForTools(),
+      options: { query, matchCase: $('workspaceSearchCase').checked, regex: $('workspaceSearchRegex').checked }
+    });
+    projectSearchResults = result.matches || [];
+    renderProjectSearchResults();
+    $('workspaceSearchSummary').textContent = result.totalMatches + ' matching line(s) · ' + result.filesScanned + ' file(s) scanned';
+    $('workspaceSearchMessage').textContent = result.truncated ? 'Results are capped for performance; refine the query for more precise results.' : 'Search complete.';
+  } catch (error) {
+    projectSearchResults = [];
+    renderProjectSearchResults();
+    $('workspaceSearchSummary').textContent = 'Search failed';
+    $('workspaceSearchMessage').textContent = error.message || String(error);
+  } finally { $('workspaceSearchBtn').disabled = false; }
+}
+$('workspaceSearchForm').addEventListener('submit', event => { event.preventDefault(); void performWorkspaceSearch(); });
+$('workspaceSearchSelectAll').addEventListener('click', () => document.querySelectorAll('#workspaceSearchResults input[type="checkbox"]').forEach(input => { input.checked = true; }));
+$('workspaceSearchClear').addEventListener('click', () => { projectSearchResults = []; renderStudioEmpty($('workspaceSearchResults'), 'Search results cleared.'); $('workspaceSearchSummary').textContent = 'No search performed'; });
+async function prepareWorkspaceReplacementPreview() {
+  try {
+    const paths = Array.from($('workspaceSearchResults').querySelectorAll('input[type="checkbox"]:checked'))
+      .map(input => projectSearchResults[Number(input.dataset.searchIndex)]?.path).filter(Boolean);
+    const uniquePaths = [...new Set(paths)];
+    if (!uniquePaths.length) throw new Error('Select one or more search results first.');
+    const query = $('workspaceSearchQuery').value;
+    if (!query.trim()) throw new Error('Enter the original search query first.');
+    const payload = {
+      root: requireWorkspaceForTools(),
+      options: { paths: uniquePaths, query, replacement: $('workspaceReplaceText').value,
+        matchCase: $('workspaceSearchCase').checked, regex: $('workspaceSearchRegex').checked }
+    };
+    $('workspaceReplaceSelectedBtn').disabled = true;
+    $('workspaceSearchMessage').textContent = 'Generating a read-only replacement preview…';
+    const result = await window.forge.previewWorkspaceReplace(payload);
+    pendingWorkspaceReplacement = payload;
+    $('workspaceReplacePreview').hidden = false;
+    $('workspaceReplacePreviewSummary').textContent = result.filesChanged + ' file(s) · ' + result.replacements + ' replacement(s)';
+    $('workspaceReplacePreviewText').textContent = (result.previews || []).map(item =>
+      'FILE: ' + item.path + ' (' + item.replacements + ' replacement(s))\n' +
+      '--- BEFORE ---\n' + item.before + '\n--- AFTER PREVIEW ---\n' + item.after + '\n'
+    ).join('\n') || 'No changes would be made.';
+    $('workspaceApplyReplacementBtn').disabled = !result.replacements;
+    $('workspaceSearchMessage').textContent = result.warning || 'Preview ready. No files have been changed.';
+  } catch (error) {
+    pendingWorkspaceReplacement = null;
+    $('workspaceReplacePreview').hidden = true;
+    $('workspaceSearchMessage').textContent = error.message || String(error);
+  } finally { $('workspaceReplaceSelectedBtn').disabled = false; }
+}
+$('workspaceReplaceSelectedBtn').addEventListener('click', () => { void prepareWorkspaceReplacementPreview(); });
+$('workspaceApplyReplacementBtn').addEventListener('click', async () => {
+  if (!pendingWorkspaceReplacement) { $('workspaceSearchMessage').textContent = 'Create a fresh preview before applying.'; return; }
+  const button = $('workspaceApplyReplacementBtn');
+  button.disabled = true;
+  try {
+    const result = await window.forge.replaceWorkspace(pendingWorkspaceReplacement);
+    if (result.cancelled) { $('workspaceSearchMessage').textContent = 'Replacement cancelled.'; return; }
+    pendingWorkspaceReplacement = null;
+    $('workspaceReplacePreview').hidden = true;
+    $('workspaceSearchMessage').textContent = 'Replaced ' + result.replacements + ' occurrence(s) in ' + result.filesChanged + ' file(s). Recovery backups were created.';
+    await performWorkspaceSearch();
+  } catch (error) { $('workspaceSearchMessage').textContent = error.message || String(error); }
+  finally { button.disabled = false; }
+});
+$('workspaceCancelReplacementBtn').addEventListener('click', () => {
+  pendingWorkspaceReplacement = null;
+  $('workspaceReplacePreview').hidden = true;
+  $('workspaceApplyReplacementBtn').disabled = true;
+  $('workspaceSearchMessage').textContent = 'Replacement preview dismissed; no files were changed.';
+});
+for (const id of ['workspaceSearchQuery','workspaceReplaceText']) {
+  $(id).addEventListener('input', () => {
+    pendingWorkspaceReplacement = null;
+    $('workspaceReplacePreview').hidden = true;
+    $('workspaceApplyReplacementBtn').disabled = true;
+  });
+}
+
+async function scanEnvironment() {
+  const button = $('scanEnvironmentBtn');
+  button.disabled = true;
+  $('environmentSummary').textContent = 'Checking installed tools…';
+  try {
+    const result = await window.forge.detectEnvironment();
+    const list = $('environmentResults');
+    list.replaceChildren();
+    const grouped = new Map();
+    for (const item of result.tools) {
+      if (!grouped.has(item.category)) grouped.set(item.category, []);
+      grouped.get(item.category).push(item);
+    }
+    for (const [category, items] of grouped) {
+      const heading = document.createElement('div');
+      heading.className = 'studio-result-item';
+      const copy = document.createElement('div');
+      copy.className = 'studio-result-copy';
+      const title = document.createElement('strong');
+      title.textContent = category.toUpperCase();
+      const detail = document.createElement('small');
+      detail.textContent = items.length + ' detectable tool(s)';
+      copy.append(title, detail);
+      heading.appendChild(copy);
+      list.appendChild(heading);
+      for (const item of items) {
+        const row = document.createElement('div');
+        row.className = 'studio-result-item';
+        const copy = document.createElement('div');
+        copy.className = 'studio-result-copy';
+        const title = document.createElement('strong');
+        title.textContent = item.name + ' (' + item.command + ')';
+        const detail = document.createElement('small');
+        detail.className = item.available ? 'studio-state-ok' : 'studio-state-missing';
+        detail.textContent = item.available ? item.version : 'Not found in PATH';
+        copy.append(title, detail);
+        row.appendChild(copy);
+        list.appendChild(row);
+      }
+    }
+    $('environmentSummary').textContent = result.platform + ' · Node ' + result.nodeRuntime + ' · Electron ' + result.electronRuntime + ' · scanned ' + new Date(result.scannedAt).toLocaleTimeString();
+  } catch (error) { $('environmentSummary').textContent = error.message || String(error); }
+  finally { button.disabled = false; }
+}
+$('scanEnvironmentBtn').addEventListener('click', () => { void scanEnvironment(); });
+
+function selectedGitPaths() {
+  return Array.from($('gitChangedFiles').querySelectorAll('input[type="checkbox"]:checked')).map(input => input.dataset.gitPath).filter(Boolean);
+}
+function renderGitStatus(status) {
+  gitStatusCache = status;
+  const list = $('gitChangedFiles');
+  list.replaceChildren();
+  $('gitStatusSummary').textContent = 'Branch: ' + status.branch + ' · ' + status.changes.length + ' changed path(s) · ' + (status.hasRemote ? 'remote configured' : 'no remote detected');
+  if (!status.changes.length) { renderStudioEmpty(list, 'Working tree clean.'); return; }
+  status.changes.forEach(change => {
+    const row = document.createElement('div');
+    row.className = 'studio-result-item';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.dataset.gitPath = change.path;
+    const copy = document.createElement('div');
+    copy.className = 'studio-result-copy';
+    const title = document.createElement('strong');
+    title.textContent = change.path;
+    const detail = document.createElement('small');
+    detail.textContent = 'Index: ' + (change.index || ' ') + ' · Working tree: ' + (change.worktree || ' ') + ' · ' + change.status;
+    copy.append(title, detail);
+    const diff = document.createElement('button');
+    diff.type = 'button';
+    diff.textContent = 'Diff';
+    diff.addEventListener('click', async () => {
+      try { $('gitOutput').hidden = false; $('gitOutput').textContent = await window.forge.gitDiff({ root: requireWorkspaceForTools(), path: change.path }); }
+      catch (error) { $('gitMessage').textContent = error.message || String(error); }
+    });
+    row.append(checkbox, copy, diff);
+    list.appendChild(row);
+  });
+}
+function renderGitBranches(branches) {
+  const select = $('gitBranchSelect');
+  const current = (branches || []).find(branch => branch.current);
+  select.replaceChildren();
+  if (!branches || !branches.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No local branches';
+    select.appendChild(option);
+    return;
+  }
+  for (const branch of branches) {
+    const option = document.createElement('option');
+    option.value = branch.name;
+    option.textContent = branch.name + (branch.current ? ' (current)' : '') + (branch.upstream ? ' · ' + branch.upstream : '');
+    select.appendChild(option);
+  }
+  if (current) select.value = current.name;
+}
+async function refreshGitStatus() {
+  try {
+    const root = requireWorkspaceForTools();
+    const [status, branches] = await Promise.all([window.forge.gitStatus(root), window.forge.gitBranches(root)]);
+    renderGitStatus(status);
+    renderGitBranches(branches);
+    $('gitMessage').textContent = '';
+  } catch (error) {
+    $('gitStatusSummary').textContent = error.message || String(error);
+    renderStudioEmpty($('gitChangedFiles'), 'Open the repository root, and verify Git is installed.');
+    renderGitBranches([]);
+  }
+}
+async function runGitAction(action) {
+  try {
+    const root = requireWorkspaceForTools();
+    let result;
+    if (action === 'switchBranch') {
+      const name = $('gitBranchSelect').value;
+      if (!name) throw new Error('Select a local branch first.');
+      result = await window.forge.gitSwitchBranch({ root, name });
+      $('gitOutput').hidden = false;
+      $('gitOutput').textContent = result.output || 'Switched branch.';
+    } else if (action === 'createBranch') {
+      const name = $('gitNewBranchInput').value.trim();
+      if (!name) throw new Error('Enter a new branch name first.');
+      result = await window.forge.gitCreateBranch({ root, name });
+      $('gitNewBranchInput').value = '';
+      $('gitOutput').hidden = false;
+      $('gitOutput').textContent = result.output || 'Created and switched to ' + name + '.';
+    } else if (action === 'stage') {
+      const paths = selectedGitPaths();
+      result = await window.forge.gitStage({ root, paths, all: false });
+    } else if (action === 'stageAll') result = await window.forge.gitStage({ root, all: true });
+    else if (action === 'unstage') {
+      const paths = selectedGitPaths();
+      result = await window.forge.gitUnstage({ root, paths, all: false });
+    } else if (action === 'commit') {
+      result = await window.forge.gitCommit({ root, message: $('gitCommitMessage').value });
+      $('gitCommitMessage').value = '';
+      $('gitOutput').hidden = false;
+      $('gitOutput').textContent = result.output || 'Commit created.';
+    } else if (action === 'pull') {
+      result = await window.forge.gitPull(root);
+      $('gitOutput').hidden = false;
+      $('gitOutput').textContent = result.cancelled ? 'Pull cancelled.' : result.output || 'Pull completed.';
+    } else if (action === 'push') {
+      result = await window.forge.gitPush(root);
+      $('gitOutput').hidden = false;
+      $('gitOutput').textContent = result.cancelled ? 'Push cancelled.' : result.output || 'Push completed.';
+    } else if (action === 'diff') {
+      $('gitOutput').hidden = false;
+      $('gitOutput').textContent = await window.forge.gitDiff({ root, staged: false });
+      return;
+    } else if (action === 'stagedDiff') {
+      $('gitOutput').hidden = false;
+      $('gitOutput').textContent = await window.forge.gitDiff({ root, staged: true });
+      return;
+    } else if (action === 'log') {
+      const entries = await window.forge.gitLog(root);
+      $('gitOutput').hidden = false;
+      $('gitOutput').textContent = entries.map(entry => entry.hash + '  ' + entry.date + '  ' + entry.subject).join('\n') || 'No commits yet.';
+      return;
+    }
+    if (result && result.status) renderGitStatus(result.status);
+    else if (result && result.changes) renderGitStatus(result);
+    if (result && result.branches) renderGitBranches(result.branches);
+    $('gitMessage').textContent = 'Git action completed.';
+  } catch (error) { $('gitMessage').textContent = error.message || String(error); }
+}
+$('refreshGitBtn').addEventListener('click', () => { void refreshGitStatus(); });
+$('gitSwitchBranchBtn').addEventListener('click', () => { void runGitAction('switchBranch'); });
+$('gitCreateBranchBtn').addEventListener('click', () => { void runGitAction('createBranch'); });
+$('showWorkingDiffBtn').addEventListener('click', () => { void runGitAction('diff'); });
+$('showStagedDiffBtn').addEventListener('click', () => { void runGitAction('stagedDiff'); });
+$('showGitLogBtn').addEventListener('click', () => { void runGitAction('log'); });
+$('gitStageSelectedBtn').addEventListener('click', () => { void runGitAction('stage'); });
+$('gitStageAllBtn').addEventListener('click', () => { void runGitAction('stageAll'); });
+$('gitUnstageSelectedBtn').addEventListener('click', () => { void runGitAction('unstage'); });
+$('gitCommitBtn').addEventListener('click', () => { void runGitAction('commit'); });
+$('gitPullBtn').addEventListener('click', () => { void runGitAction('pull'); });
+$('gitPushBtn').addEventListener('click', () => { void runGitAction('push'); });
+
+function renderAiProjectChanges() {
+  const list = $('aiProjectChangeList');
+  list.replaceChildren();
+  if (!aiProjectChanges.length) { renderStudioEmpty(list, 'No plan is loaded.'); $('applyAiChangesBtn').disabled = true; return; }
+  aiProjectChanges.forEach((change, index) => {
+    const row = document.createElement('div');
+    row.className = 'studio-result-item';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = change.selected !== false;
+    checkbox.dataset.aiChangeIndex = String(index);
+    const copy = document.createElement('div');
+    copy.className = 'studio-result-copy';
+    const title = document.createElement('strong');
+    title.textContent = change.path;
+    const detail = document.createElement('small');
+    detail.textContent = (change.action || 'modify').toUpperCase() + ' · ' + (change.summary || 'No summary provided');
+    copy.append(title, detail);
+    const preview = document.createElement('button');
+    preview.type = 'button';
+    preview.textContent = 'Preview';
+    preview.addEventListener('click', () => {
+      $('aiProjectChangePreview').textContent = change.action === 'delete'
+        ? 'This plan deletes ' + change.path + '. A backup of the original will be kept.'
+        : String(change.content || '');
+    });
+    checkbox.addEventListener('change', () => {
+      change.selected = checkbox.checked;
+      $('applyAiChangesBtn').disabled = !aiProjectChanges.some(item => item.selected !== false);
+    });
+    row.append(checkbox, copy, preview);
+    row.addEventListener('click', event => {
+      if (event.target === checkbox || event.target === preview || event.target.tagName === 'BUTTON') return;
+      $('aiProjectChangePreview').textContent = change.action === 'delete' ? 'This plan deletes ' + change.path + '.' : String(change.content || '');
+    });
+    list.appendChild(row);
+  });
+  $('applyAiChangesBtn').disabled = !aiProjectChanges.some(item => item.selected !== false);
+  $('aiProjectChangePreview').textContent = 'Select Preview to inspect the proposed file content.';
+}
+async function planAiProjectChanges() {
+  if (Array.from(openDocuments.values()).some(doc => doc.dirty)) {
+    $('aiProjectChangeMessage').textContent = 'Save or close unsaved documents before planning multi-file changes. The AI plan reads the saved files on disk.';
+    return;
+  }
+  const button = $('planProjectChangesBtn');
+  button.disabled = true;
+  $('aiProjectPlanStatus').textContent = 'Reading project context and asking AI…';
+  $('aiProjectChangeMessage').textContent = '';
+  try {
+    const plan = await window.forge.planProjectChanges({ root: requireWorkspaceForTools(), prompt: $('aiProjectPrompt').value });
+    aiProjectChanges = (plan.changes || []).map(change => ({ ...change, selected: true }));
+    $('aiProjectPlanSummary').hidden = false;
+    $('aiProjectPlanSummary').textContent = plan.summary + ' · Provider: ' + plan.provider + ' · Context files: ' + plan.contextFiles + (plan.contextTruncated ? ' (context capped)' : '');
+    $('aiProjectPlanStatus').textContent = aiProjectChanges.length + ' proposed file change(s)';
+    renderAiProjectChanges();
+  } catch (error) {
+    $('aiProjectPlanStatus').textContent = 'Planning failed';
+    $('aiProjectChangeMessage').textContent = error.message || String(error);
+  } finally { button.disabled = false; }
+}
+$('planProjectChangesBtn').addEventListener('click', () => { void planAiProjectChanges(); });
+$('selectAllAiChangesBtn').addEventListener('click', () => {
+  aiProjectChanges.forEach(change => { change.selected = true; });
+  renderAiProjectChanges();
+});
+$('applyAiChangesBtn').addEventListener('click', async () => {
+  const changes = aiProjectChanges.filter(change => change.selected !== false).map(({ selected, ...change }) => change);
+  if (!changes.length) { $('aiProjectChangeMessage').textContent = 'Select one or more changes first.'; return; }
+  if (Array.from(openDocuments.values()).some(doc => doc.dirty)) {
+    $('aiProjectChangeMessage').textContent = 'Save unsaved editor changes before applying a multi-file patch.';
+    return;
+  }
+  const button = $('applyAiChangesBtn');
+  button.disabled = true;
+  try {
+    const result = await window.forge.applyProjectChanges({ root: requireWorkspaceForTools(), changes });
+    if (result.cancelled) { $('aiProjectChangeMessage').textContent = 'Application cancelled.'; return; }
+    $('aiProjectChangeMessage').textContent = 'Applied ' + result.count + ' file change(s). Backups are stored in the Nidavellir user-data folder.';
+    const applied = new Set(result.applied.map(item => item.path.replace(/\\/g, '/')));
+    for (const doc of openDocuments.values()) {
+      if (!doc.filePath || !doc.filePath.startsWith(currentWorkspaceRoot)) continue;
+      const relative = doc.filePath.slice(currentWorkspaceRoot.replace(/[\\/]+$/, '').length).replace(/^[\\/]/, '').replace(/\\/g, '/');
+      if (!applied.has(relative) || result.applied.some(item => item.path === relative && item.action === 'delete')) continue;
+      try {
+        const file = await window.forge.readPath(doc.filePath);
+        doc.content = file.content; doc.savedContent = file.content; doc.dirty = false;
+        if (doc.model) doc.model.setValue(file.content);
+        if (doc.key === activeDocumentKey && !monacoReady) $('plainEditor').value = file.content;
+      } catch {}
+    }
+    renderDocumentTabs();
+    void refreshGitStatus();
+    scheduleRecoverySave();
+  } catch (error) {
+    $('aiProjectChangeMessage').textContent = error.message || String(error);
+  } finally { button.disabled = !aiProjectChanges.some(item => item.selected !== false); }
+});
+
+async function refreshPluginSecurityReport() {
+  try {
+    const plugins = await window.forge.listPlugins();
+    const list = $('pluginSecurityReport');
+    list.replaceChildren();
+    if (!plugins.length) { renderStudioEmpty(list, 'No plugins are installed.'); return; }
+    for (const plugin of plugins) {
+      const row = document.createElement('div');
+      row.className = 'studio-result-item';
+      const copy = document.createElement('div');
+      copy.className = 'studio-result-copy';
+      const title = document.createElement('strong');
+      title.textContent = plugin.name + (plugin.enabled ? ' · ENABLED' : ' · disabled');
+      const detail = document.createElement('small');
+      const permissions = Array.isArray(plugin.permissions) && plugin.permissions.length ? plugin.permissions.join(', ') : 'none';
+      const declaration = plugin.permissionsDeclared ? 'declared' : 'legacy manifest; restricted defaults applied';
+      detail.textContent = 'v' + plugin.version + ' · ' + (plugin.description || 'No description') + ' · Permissions (' + declaration + '): ' + permissions + ' · Execution: ' + (plugin.executionModel || 'unknown') + '.';
+      copy.append(title, detail);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = plugin.enabled ? 'Disable' : 'Review / enable';
+      button.addEventListener('click', async () => {
+        try {
+          await window.forge.togglePlugin({ name: plugin.name, enabled: !plugin.enabled });
+          await refreshPluginSecurityReport();
+          await refreshPluginList();
+        } catch (error) { $('debugStatus').textContent = error.message || String(error); }
+      });
+      row.append(copy, button);
+      list.appendChild(row);
+    }
+  } catch (error) { renderStudioEmpty($('pluginSecurityReport'), error.message || String(error)); }
+}
+$('refreshPluginSecurityBtn').addEventListener('click', () => { void refreshPluginSecurityReport(); });
+$('debugCurrentFileBtn').addEventListener('click', async () => {
+  if (currentLanguage !== 'javascript') { $('debugStatus').textContent = 'Node Inspector currently supports JavaScript only.'; return; }
+  $('debugStatus').textContent = 'Starting Node Inspector…';
+  addOutput('info', 'Starting JavaScript debug run. Use the ws://127.0.0.1 URL printed below to attach Chrome DevTools or a compatible debugger.');
+  try {
+    const result = await window.forge.runSafe({ language: currentLanguage, content: getValue(), filePath: currentPath, debug: true, timeout: 120000 });
+    $('debugStatus').textContent = 'Debug process ended with exit code ' + result.code;
+  } catch (error) { $('debugStatus').textContent = error.message || String(error); }
+});
+
+
+$('diagnoseCurrentFileBtn').addEventListener('click', async () => {
+  const button = $('diagnoseCurrentFileBtn');
+  button.disabled = true;
+  $('sourceDiagnosticsSummary').textContent = 'Checking ' + currentName + '…';
+  $('sourceDiagnosticsOutput').hidden = false;
+  $('sourceDiagnosticsOutput').textContent = '';
+  try {
+    const result = await window.forge.diagnoseSource({
+      language: currentLanguage, fileName: currentName, filePath: currentPath, content: getValue()
+    });
+    $('sourceDiagnosticsSummary').textContent = result.status.toUpperCase() + ' · ' + result.tool;
+    $('sourceDiagnosticsOutput').textContent = result.diagnostics || 'No diagnostics returned.';
+  } catch (error) {
+    $('sourceDiagnosticsSummary').textContent = 'CHECK FAILED';
+    $('sourceDiagnosticsOutput').textContent = error.message || String(error);
+  } finally { button.disabled = false; }
+});
+
+
+/* ─────────────────────────────────────────────
+   Language Server Protocol: navigation, hover, completion, formatting, diagnostics
+   ───────────────────────────────────────────── */
+function setLanguageServerUi(active, language, root, message) {
+  languageServerActive = Boolean(active);
+  languageServerLanguage = active ? language : null;
+  languageServerRoot = active ? root : null;
+  $('languageServerStatus').textContent = message || (active ? 'Running · ' + language : 'No language server running');
+  $('startLanguageServerBtn').disabled = active;
+  $('stopLanguageServerBtn').disabled = !active;
+  const enabled = active && Boolean(currentPath) && currentLanguage === languageServerLanguage;
+  for (const id of ['lspDefinitionBtn','lspReferencesBtn','lspHoverBtn','lspCompletionBtn','lspFormatBtn']) $(id).disabled = !enabled;
+}
+function showLanguageServerOutput(value) {
+  $('languageServerOutput').hidden = false;
+  $('languageServerOutput').textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+}
+function currentEditorPosition() {
+  if (monacoReady && editor) {
+    const position = editor.getPosition();
+    return { line: Math.max(0, position.lineNumber - 1), character: Math.max(0, position.column - 1) };
+  }
+  const field = $('plainEditor'), before = field.value.slice(0, field.selectionStart || 0), lines = before.split('\n');
+  return { line: lines.length - 1, character: lines[lines.length - 1].length };
+}
+function scheduleLanguageServerSync() {
+  if (!languageServerActive || !languageServerRoot || !currentPath || currentLanguage !== languageServerLanguage) return;
+  if (languageServerTimer) clearTimeout(languageServerTimer);
+  languageServerTimer = setTimeout(async () => {
+    try {
+      await window.forge.changeLanguageServerDocument({
+        root: languageServerRoot, filePath: currentPath, language: currentLanguage, text: getValue()
+      });
+    } catch (error) {
+      $('languageServerStatus').textContent = 'Sync warning · ' + (error.message || String(error));
+    }
+  }, 240);
+}
+async function startLanguageServer() {
+  const button = $('startLanguageServerBtn');
+  button.disabled = true;
+  $('languageServerStatus').textContent = 'Starting ' + currentLanguage + ' language server…';
+  try {
+    const root = requireWorkspaceForTools();
+    if (!currentPath) throw new Error('Save the current document inside the opened workspace before starting language intelligence.');
+    const result = await window.forge.startLanguageServer({ root, language: currentLanguage });
+    languageServerActive = true;
+    languageServerLanguage = currentLanguage;
+    languageServerRoot = root;
+    await window.forge.openLanguageServerDocument({ root, filePath: currentPath, language: currentLanguage, text: getValue() });
+    setLanguageServerUi(true, currentLanguage, root, 'Running · ' + result.label + ' · ' + (result.capabilities || []).length + ' capabilities');
+    showLanguageServerOutput('Language server initialized.\nWorkspace: ' + root + '\nLanguage: ' + currentLanguage + '\nCapabilities: ' + (result.capabilities || []).join(', ') + '\n\nIf startup fails, install the required server shown by Environment Doctor and ensure it is on PATH.');
+  } catch (error) {
+    setLanguageServerUi(false, null, null, 'Start failed');
+    showLanguageServerOutput(error.message || String(error));
+    $('languageServerStatus').textContent = 'Start failed · ' + (error.message || String(error));
+  } finally { button.disabled = languageServerActive; }
+}
+async function stopLanguageServer() {
+  $('stopLanguageServerBtn').disabled = true;
+  try {
+    await window.forge.stopLanguageServer();
+    lspDiagnosticsByUri.clear();
+    setLanguageServerUi(false, null, null, 'Language server stopped');
+  } catch (error) {
+    $('languageServerStatus').textContent = 'Stop failed · ' + (error.message || String(error));
+  } finally { $('stopLanguageServerBtn').disabled = !languageServerActive; }
+}
+function toLocalFileUri(filePath) {
+  let normalized = String(filePath).replace(/\\/g, '/');
+  const windows = /^[A-Za-z]:\//.test(normalized);
+  if (windows) {
+    const parts = normalized.split('/');
+    return 'file:///' + parts.map((part, index) => index === 0 ? part : encodeURIComponent(part)).join('/');
+  }
+  const parts = normalized.split('/');
+  return 'file://' + (normalized.startsWith('/') ? '' : '/') + parts.map((part, index) => index === 0 ? part : encodeURIComponent(part)).join('/');
+}
+function filePathFromUri(uri) {
+  try {
+    const parsed = new URL(uri);
+    if (parsed.protocol !== 'file:') return null;
+    let filePath = decodeURIComponent(parsed.pathname);
+    if (/^\/[A-Za-z]:\//.test(filePath)) filePath = filePath.slice(1);
+    if (navigator.platform && /^Win/i.test(navigator.platform)) filePath = filePath.replace(/\//g, '\\');
+    return filePath;
+  } catch { return null; }
+}
+function normalizeLspLocation(location) {
+  if (!location || typeof location !== 'object') return null;
+  const uri = location.targetUri || location.uri;
+  const range = location.targetSelectionRange || location.targetRange || location.range;
+  if (typeof uri !== 'string' || !range || !range.start) return null;
+  return { uri, range };
+}
+async function navigateToLspLocation(location) {
+  const normalized = normalizeLspLocation(location);
+  if (!normalized) throw new Error('Language server did not return a navigable source location.');
+  const filePath = filePathFromUri(normalized.uri);
+  if (!filePath) throw new Error('Language server returned a non-local URI. Remote navigation is blocked.');
+  const root = requireWorkspaceForTools();
+  const prefix = root.replace(/[\\/]+$/, '') + (navigator.platform && /^Win/i.test(navigator.platform) ? '\\' : '/');
+  if (filePath !== root && !filePath.startsWith(prefix)) throw new Error('Language server returned a location outside the open workspace; navigation was blocked.');
+  const opened = await window.forge.readPath(filePath);
+  if (!opened) throw new Error('The target source file could not be opened.');
+  loadFile(opened.filePath, opened.content);
+  const line = normalized.range.start.line + 1, column = normalized.range.start.character + 1;
+  if (monacoReady && editor) {
+    editor.focus(); editor.setPosition({ lineNumber: line, column }); editor.revealLineInCenter(line);
+  } else {
+    const value = $('plainEditor').value, lines = value.split('\n');
+    const offset = lines.slice(0, line - 1).reduce((sum, item) => sum + item.length + 1, 0) + column - 1;
+    $('plainEditor').focus(); $('plainEditor').setSelectionRange(Math.min(offset, value.length), Math.min(offset, value.length));
+  }
+}
+async function runLanguageServerRequest(method) {
+  if (!languageServerActive) { $('languageServerStatus').textContent = 'Start a language server first.'; return; }
+  if (!currentPath) { showLanguageServerOutput('Save the current file inside the opened workspace first.'); return; }
+  if (currentLanguage !== languageServerLanguage) { showLanguageServerOutput('Restart the server to match the current file language.'); return; }
+  const buttons = {
+    'textDocument/definition':'lspDefinitionBtn','textDocument/references':'lspReferencesBtn',
+    'textDocument/hover':'lspHoverBtn','textDocument/completion':'lspCompletionBtn','textDocument/formatting':'lspFormatBtn'
+  };
+  const button = $(buttons[method]);
+  if (button) button.disabled = true;
+  try {
+    const result = await window.forge.languageServerRequest({
+      root: languageServerRoot, filePath: currentPath, language: currentLanguage,
+      text: getValue(), method, position: currentEditorPosition(), context: { includeDeclaration: true }
+    });
+    if (method === 'textDocument/definition') {
+      const locations = (Array.isArray(result) ? result : result ? [result] : []).map(normalizeLspLocation).filter(Boolean);
+      if (!locations.length) showLanguageServerOutput('No definition found.');
+      else await navigateToLspLocation(locations[0]);
+    } else if (method === 'textDocument/references') {
+      const refs = Array.isArray(result) ? result : [];
+      showLanguageServerOutput(refs.length ? refs.map(item => {
+        const loc = normalizeLspLocation(item);
+        if (!loc) return '(unrecognized reference)';
+        return (filePathFromUri(loc.uri) || loc.uri) + ':' + (loc.range.start.line + 1) + ':' + (loc.range.start.character + 1);
+      }).join('\n') : 'No references found.');
+    } else if (method === 'textDocument/hover') {
+      const contents = result && result.contents;
+      showLanguageServerOutput(typeof contents === 'string' ? contents :
+        Array.isArray(contents) ? contents.map(item => typeof item === 'string' ? item : item.value || JSON.stringify(item)).join('\n\n') :
+        contents && typeof contents.value === 'string' ? contents.value : 'No hover information returned.');
+    } else if (method === 'textDocument/completion') {
+      const items = Array.isArray(result) ? result : result && Array.isArray(result.items) ? result.items : [];
+      showLanguageServerOutput(items.length ? items.slice(0, 100).map(item => (item.label || '(unnamed)') + (item.detail ? ' — ' + item.detail : '')).join('\n') : 'No completion items returned.');
+    } else if (method === 'textDocument/formatting') {
+      const edits = Array.isArray(result) ? result : [];
+      if (!edits.length) { showLanguageServerOutput('The language server returned no formatting edits.'); return; }
+      if (monacoReady && editor) {
+        editor.executeEdits('lsp-format', edits.map(edit => ({
+          range: new monaco.Range(edit.range.start.line + 1, edit.range.start.character + 1, edit.range.end.line + 1, edit.range.end.character + 1),
+          text: edit.newText, forceMoveMarkers: true
+        })));
+      } else {
+        const source = getValue();
+        const offsetAt = position => source.split('\n').slice(0, position.line).reduce((sum, line) => sum + line.length + 1, 0) + position.character;
+        const changes = edits.map(edit => ({ start: offsetAt(edit.range.start), end: offsetAt(edit.range.end), text: edit.newText })).sort((a,b) => b.start - a.start);
+        let formatted = source;
+        for (const change of changes) formatted = formatted.slice(0, change.start) + change.text + formatted.slice(change.end);
+        setValue(formatted, currentLanguage);
+      }
+      showLanguageServerOutput('Applied ' + edits.length + ' formatting edit(s).');
+    }
+  } catch (error) {
+    showLanguageServerOutput(error.message || String(error));
+  } finally {
+    if (button) button.disabled = !languageServerActive || !currentPath || currentLanguage !== languageServerLanguage;
+  }
+}
+function showLanguageDiagnostics(params) {
+  const uri = params && params.uri;
+  if (!uri) return;
+  const diagnostics = Array.isArray(params.diagnostics) ? params.diagnostics.slice(0, 500) : [];
+  lspDiagnosticsByUri.set(uri, diagnostics);
+  if (!currentPath || uri !== toLocalFileUri(currentPath)) return;
+  const panel = $('problems');
+  panel.replaceChildren();
+  if (!diagnostics.length) {
+    const line = document.createElement('div'); line.className = 'term-line muted'; line.textContent = 'No language-server diagnostics.'; panel.appendChild(line); return;
+  }
+  for (const diagnostic of diagnostics) {
+    const line = document.createElement('div');
+    line.className = 'term-line ' + (diagnostic.severity === 1 ? 'stderr' : diagnostic.severity === 2 ? 'warning' : 'muted');
+    const start = diagnostic.range && diagnostic.range.start;
+    line.textContent = (start ? (start.line + 1) + ':' + (start.character + 1) + ' · ' : '') + (diagnostic.message || 'Diagnostic');
+    line.title = String(diagnostic.source || diagnostic.code || '');
+    panel.appendChild(line);
+  }
+}
+window.forge.onLanguageServerNotification(notification => {
+  if (!notification || typeof notification.method !== 'string') return;
+  if (notification.method === 'nidavellir/languageServerState') {
+    const params = notification.params || {};
+    setLanguageServerUi(params.active, params.language, params.root, params.message || (params.active ? 'Running · ' + params.label : 'Stopped'));
+  } else if (notification.method === 'textDocument/publishDiagnostics') {
+    showLanguageDiagnostics(notification.params || {});
+  } else if (notification.method === 'window/showMessage' || notification.method === 'window/logMessage') {
+    const params = notification.params || {};
+    showLanguageServerOutput(String(params.message || ''));
+  }
+});
+$('startLanguageServerBtn').addEventListener('click', () => { void startLanguageServer(); });
+$('stopLanguageServerBtn').addEventListener('click', () => { void stopLanguageServer(); });
+$('lspDefinitionBtn').addEventListener('click', () => { void runLanguageServerRequest('textDocument/definition'); });
+$('lspReferencesBtn').addEventListener('click', () => { void runLanguageServerRequest('textDocument/references'); });
+$('lspHoverBtn').addEventListener('click', () => { void runLanguageServerRequest('textDocument/hover'); });
+$('lspCompletionBtn').addEventListener('click', () => { void runLanguageServerRequest('textDocument/completion'); });
+$('lspFormatBtn').addEventListener('click', () => { void runLanguageServerRequest('textDocument/formatting'); });
