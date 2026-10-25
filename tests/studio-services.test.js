@@ -142,3 +142,23 @@ test('environment doctor reports capabilities with explicit available flags', as
   assert.ok(result.nodeRuntime);
   assert.ok(result.tools.every(tool => typeof tool.available === 'boolean' && typeof tool.name === 'string'));
 });
+
+
+test('current-file syntax diagnostics use JSON parser and report malformed JSON', async () => {
+  const good = await studio.diagnoseSource({ language:'json', fileName:'config.json', content:'{"valid":true}' });
+  assert.equal(good.status, 'passed');
+  const bad = await studio.diagnoseSource({ language:'json', fileName:'config.json', content:'{"valid":}' });
+  assert.equal(bad.status, 'issues');
+  assert.ok(bad.diagnostics);
+});
+
+test('JavaScript diagnostics run a local syntax check without touching the source file', async t => {
+  const root = await tempDir(t);
+  const filePath = path.join(root, 'input.js');
+  await fs.writeFile(filePath, 'const original = true;', 'utf8');
+  const good = await studio.diagnoseSource({ language:'javascript', fileName:'input.js', filePath, content:'const valid = 1;' });
+  assert.equal(good.status, 'passed');
+  const bad = await studio.diagnoseSource({ language:'javascript', fileName:'input.js', filePath, content:'const = ;' });
+  assert.equal(bad.status, 'issues');
+  assert.equal(await fs.readFile(filePath, 'utf8'), 'const original = true;');
+});
