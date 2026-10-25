@@ -507,15 +507,16 @@ async function loadProviderKeys(provider) {
 ipcMain.handle('ai:set-key', async (_event, payload = {}) => {
   const provider = payload.provider, key = typeof payload.key === 'string' ? payload.key.trim() : '';
   const label = typeof payload.label === 'string' ? payload.label.trim().slice(0, 80) : '';
+  const agentCount = Number.isInteger(payload.agentCount) ? Math.max(1, Math.min(8, payload.agentCount)) : 1;
   if (!allowedProviders.has(provider)) throw new Error('Unknown AI provider.');
   if (!key || key.length > 8192) throw new Error('Enter an API key between 1 and 8,192 characters.');
   const keys = await loadProviderKeys(provider), id = randomUUID();
-  await persistProviderKeys(provider, [...keys, { id, label: label || `Key ${keys.length + 1}`, key, active: keys.length === 0, createdAt: Date.now() }]);
+  await persistProviderKeys(provider, [...keys, { id, label: label || `Key ${keys.length + 1}`, key, active: keys.length === 0, agentCount, createdAt: Date.now() }]);
   return { saved: true, id };
 });
 ipcMain.handle('ai:list-keys', async () => {
   const result = {};
-  for (const provider of allowedProviders) result[provider] = (await loadProviderKeys(provider)).map(({ id, label, active, createdAt, key }) => ({ id, label, active: Boolean(active), createdAt, lastFour: key.slice(-4) }));
+  for (const provider of allowedProviders) result[provider] = (await loadProviderKeys(provider)).map(({ id, label, active, createdAt, agentCount, key }) => ({ id, label, active: Boolean(active), createdAt, agentCount: Math.max(1, Math.min(8, Number(agentCount) || 1)), lastFour: key.slice(-4) }));
   return result;
 });
 ipcMain.handle('ai:set-active-key', async (_event, { provider, id } = {}) => {
@@ -538,6 +539,14 @@ async function getKey(provider) {
   const keys = await loadProviderKeys(provider);
   return keys.find(item => item.active)?.key || keys[0]?.key || '';
 }
+ipcMain.handle('ai:ask-key', async (_event, { provider, keyId, prompt, system, model } = {}) => {
+  if (!allowedProviders.has(provider) || typeof keyId !== 'string') throw new Error('Invalid agent key selection.');
+  if (typeof prompt !== 'string' || prompt.length > 100000) throw new Error('Prompt is empty or too large.');
+  const keys = await loadProviderKeys(provider);
+  const item = keys.find(entry => entry.id === keyId);
+  if (!item) throw new Error('The API key for this agent no longer exists.');
+  return callProvider(provider, item.key, prompt, system, model);
+});
 ipcMain.handle('ai:key-status', async () => {
   const result = {};
   for (const provider of allowedProviders) result[provider] = (await loadProviderKeys(provider)).length > 0;
