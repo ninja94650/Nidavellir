@@ -539,45 +539,73 @@ $('settingsBtn').onclick = () => { $('settingsModal').hidden = false; refreshKey
 $('closeSettings').onclick = () => $('settingsModal').hidden = true;
 $('settingsModal').addEventListener('click', e => { if (e.target === $('settingsModal')) $('settingsModal').hidden = true; });
 const apiKeyProviders = ['openai','gemini','claude'];
+const apiKeyProviderNames = { openai: 'OpenAI / GPT', gemini: 'Google Gemini', claude: 'Anthropic Claude' };
+function closeApiKeyEditor() {
+  $('apiKeyEditorModal').hidden = true;
+  $('apiKeyEditorMessage').textContent = '';
+}
+$('openApiKeyEditor').onclick = () => {
+  $('apiKeyName').value = '';
+  $('apiKeyValue').value = '';
+  $('apiKeyProvider').value = 'openai';
+  $('apiKeyEditorTitle').textContent = 'Add API key';
+  $('addApiKeyConfirm').textContent = 'Save API key';
+  $('apiKeyEditorModal').hidden = false;
+  $('apiKeyName').focus();
+};
+$('closeApiKeyEditor').onclick = closeApiKeyEditor;
+$('cancelApiKeyEditor').onclick = closeApiKeyEditor;
+$('apiKeyEditorModal').addEventListener('click', event => { if (event.target === $('apiKeyEditorModal')) closeApiKeyEditor(); });
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && !$('apiKeyEditorModal').hidden) closeApiKeyEditor(); });
 async function refreshKeyStatus() {
   try {
-    const [status, keysByProvider] = await Promise.all([window.forge.keyStatus(), window.forge.listKeys()]);
-    for (const provider of apiKeyProviders) {
-      const keys = keysByProvider[provider] || [];
-      $(provider + 'State').textContent = keys.length + (keys.length === 1 ? ' key' : ' keys');
-      const list = $(provider + 'KeyList'); list.replaceChildren();
-      if (!keys.length) { const empty = document.createElement('p'); empty.className = 'api-key-empty'; empty.textContent = 'No keys added yet.'; list.appendChild(empty); continue; }
-      for (const item of keys) {
-        const row = document.createElement('div'); row.className = 'saved-api-key' + (item.active ? ' active' : '');
-        const details = document.createElement('div'); details.className = 'saved-api-key-details';
-        const label = document.createElement('strong'); label.textContent = item.label || 'API key';
-        const suffix = document.createElement('span'); suffix.textContent = '•••• ' + (item.lastFour || '••••') + (item.active ? ' · Active' : '');
-        details.append(label, suffix);
-        const actions = document.createElement('div'); actions.className = 'saved-api-key-actions';
-        if (!item.active) {
-          const use = document.createElement('button'); use.type = 'button'; use.textContent = 'Use'; use.title = 'Use this key for ' + provider;
-          use.addEventListener('click', async () => { try { await window.forge.setActiveKey({ provider, id: item.id }); $('settingsMessage').textContent = 'Active key changed for ' + provider + '.'; await refreshKeyStatus(); } catch (error) { $('settingsMessage').textContent = error.message; } });
-          actions.appendChild(use);
-        }
-        const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'danger-subtle'; remove.textContent = 'Remove';
-        remove.addEventListener('click', async () => { if (!window.confirm('Remove API key "' + (item.label || 'API key') + '"?')) return; try { await window.forge.deleteKey({ provider, id: item.id }); $('settingsMessage').textContent = 'API key removed.'; await refreshKeyStatus(); } catch (error) { $('settingsMessage').textContent = error.message; } });
-        actions.appendChild(remove); row.append(details, actions); list.appendChild(row);
-      }
-      if (status[provider] !== (keys.length > 0)) $('settingsMessage').textContent = 'Key status was refreshed from the secure key store.';
+    const keysByProvider = await window.forge.listKeys();
+    const allKeys = apiKeyProviders.flatMap(provider => (keysByProvider[provider] || []).map(item => ({ ...item, provider })));
+    $('apiKeyCount').textContent = allKeys.length + (allKeys.length === 1 ? ' saved key' : ' saved keys');
+    const list = $('savedApiKeyList');
+    list.replaceChildren();
+    if (!allKeys.length) {
+      const empty = document.createElement('div'); empty.className = 'api-key-empty-state';
+      const heading = document.createElement('strong'); heading.textContent = 'No API keys yet';
+      const hint = document.createElement('span'); hint.textContent = 'Add a key to connect an AI provider.';
+      empty.append(heading, hint); list.appendChild(empty); return;
     }
-  } catch (e) { $('settingsMessage').textContent = e.message; }
+    for (const item of allKeys) {
+      const row = document.createElement('div'); row.className = 'saved-api-key' + (item.active ? ' active' : '');
+      const details = document.createElement('div'); details.className = 'saved-api-key-details';
+      const label = document.createElement('strong'); label.textContent = item.label || 'API key';
+      const meta = document.createElement('span'); meta.textContent = apiKeyProviderNames[item.provider] + ' · •••• ' + (item.lastFour || '••••') + (item.active ? ' · Active' : '');
+      details.append(label, meta);
+      const actions = document.createElement('div'); actions.className = 'saved-api-key-actions';
+      if (!item.active) {
+        const use = document.createElement('button'); use.type = 'button'; use.textContent = 'Use'; use.title = 'Use this key for ' + apiKeyProviderNames[item.provider];
+        use.addEventListener('click', async () => { try { await window.forge.setActiveKey({ provider: item.provider, id: item.id }); $('settingsMessage').textContent = 'Active key changed for ' + apiKeyProviderNames[item.provider] + '.'; await refreshKeyStatus(); } catch (error) { $('settingsMessage').textContent = error.message; } });
+        actions.appendChild(use);
+      }
+      const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'danger-subtle'; remove.textContent = 'Remove';
+      remove.addEventListener('click', async () => { if (!window.confirm('Remove API key "' + (item.label || 'API key') + '"?')) return; try { await window.forge.deleteKey({ provider: item.provider, id: item.id }); $('settingsMessage').textContent = 'API key removed.'; await refreshKeyStatus(); } catch (error) { $('settingsMessage').textContent = error.message; } });
+      actions.appendChild(remove); row.append(details, actions); list.appendChild(row);
+    }
+  } catch (error) { $('settingsMessage').textContent = error.message; }
 }
 $('checkKeysBtn').onclick = refreshKeyStatus;
-document.querySelectorAll('[data-add-key]').forEach(button => button.addEventListener('click', async () => {
-  const provider = button.dataset.addKey, keyInput = $(provider + 'Key'), labelInput = $(provider + 'Label');
-  const key = keyInput.value.trim(), label = labelInput.value.trim();
-  if (!key) { $('settingsMessage').textContent = 'Paste an API key for ' + provider + ' first.'; keyInput.focus(); return; }
-  button.disabled = true;
-  try { await window.forge.setKey({ provider, key, label }); keyInput.value = ''; labelInput.value = ''; $('settingsMessage').textContent = 'API key added and encrypted securely.'; await refreshKeyStatus(); }
-  catch (e) { $('settingsMessage').textContent = 'Could not add key: ' + e.message; }
+async function saveApiKeyFromEditor() {
+  const provider = $('apiKeyProvider').value;
+  const key = $('apiKeyValue').value.trim();
+  const label = $('apiKeyName').value.trim();
+  if (!label) { $('apiKeyEditorMessage').textContent = 'Enter a name for this API key.'; $('apiKeyName').focus(); return; }
+  if (!key) { $('apiKeyEditorMessage').textContent = 'Paste an API key before saving.'; $('apiKeyValue').focus(); return; }
+  const button = $('addApiKeyConfirm'); button.disabled = true;
+  try {
+    await window.forge.setKey({ provider, key, label });
+    $('settingsMessage').textContent = '“' + label + '” was added securely.';
+    closeApiKeyEditor();
+    await refreshKeyStatus();
+  } catch (error) { $('apiKeyEditorMessage').textContent = 'Could not save API key: ' + error.message; }
   finally { button.disabled = false; }
-}));
-for (const provider of apiKeyProviders) $(provider + 'Key').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); document.querySelector('[data-add-key="' + provider + '"]').click(); } });
+}
+$('addApiKeyConfirm').onclick = saveApiKeyFromEditor;
+for (const inputId of ['apiKeyName','apiKeyValue']) $(inputId).addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); saveApiKeyFromEditor(); } });
 
 /* ─────────────────────────────────────────────
    AI workbench — core
