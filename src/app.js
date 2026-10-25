@@ -882,6 +882,8 @@ function replaceAllMatches() {
   setStatus(`Replaced ${ranges.length} occurrence${ranges.length === 1 ? '' : 's'}`);
 }
 $('plainEditor').addEventListener('input', () => {
+  const doc = openDocuments.get(activeDocumentId);
+  if (doc) { doc.content = $('plainEditor').value; doc.dirty = true; renderDocumentTabs(); }
   if ($('findBar') && !$('findBar').hidden) collectFindMatches();
 });
 $('findInput').addEventListener('input', () => { collectFindMatches(); if (findMatches.length) selectFindMatch(0, false); });

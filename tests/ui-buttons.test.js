@@ -31,7 +31,7 @@ const assert = require('node:assert/strict');
       openFile: async () => { record('openFile'); return { filePath: '/tmp/example.js', content: 'alpha alpha\n' }; },
       openFolder: async () => { record('openFolder'); return { folder: '/tmp/project', tree: [{ name: 'main.js', path: '/tmp/project/main.js', directory: false }] }; },
       saveFile: async p => { record('saveFile', p); return { filePath: p.filePath || '/tmp/new-file.js', name: p.name || 'new-file.js' }; },
-      readPath: async filePath => { record('readPath', filePath); return { filePath, content: 'alpha alpha\n' }; },
+      readPath: async filePath => { record('readPath', filePath); return { filePath, content: filePath.endsWith('/main.js') ? 'const mainOnly = true;\n' : 'alpha alpha\n' }; },
       runSafe: async p => { record('runSafe', p); state.runner?.({ running: true }); await new Promise(r => setTimeout(r, 10)); state.runner?.({ running: false }); return { durationMs: 10, code: 0 }; },
       killRun: async () => { record('killRun'); state.runner?.({ running: false }); },
       writeRunInput: async text => { record('writeRunInput', text); return { accepted: true }; },
@@ -66,9 +66,23 @@ const assert = require('node:assert/strict');
   await check('Open file', async () => { await click('#openBtn'); await called('openFile'); assert.match(await page.locator('#statusText').textContent(), /Opened/); });
   await check('Open folder', async () => { await click('#openFolderBtn'); await called('openFolder'); assert.equal(await page.locator('#folderName').textContent(), 'PROJECT'); });
   await check('Explorer file item', async () => { await click('.file-item'); await called('readPath'); });
+  await check('Multi-file tabs keep independent edits', async () => {
+    const tabs = page.locator('#tabs .document-tab');
+    assert.equal(await tabs.count(), 3, 'welcome, example.js, and main.js should remain open');
+    await tabs.filter({ hasText: 'main.js' }).last().click();
+    assert.equal(await page.locator('#tabs .document-tab.active .tab-label').textContent(), 'main.js');
+    const edited = await page.evaluate(() => { const model = monaco.editor.getModels().find(m => m.getValue().includes('mainOnly = true')); if (!model) return false; model.setValue('const mainOnly = true;\\nconst retainedAfterSwitch = 42;\\n'); return true; });
+    assert.equal(edited, true, 'main.js model should be independently editable');
+    assert.equal(await page.locator('#tabs .document-tab.active .tab-dirty').textContent(), '●');
+    await tabs.filter({ hasText: 'example.js' }).first().click();
+    assert.equal(await page.locator('#tabs .document-tab.active .tab-label').textContent(), 'example.js');
+    await tabs.filter({ hasText: 'main.js' }).last().click();
+    const retained = await page.evaluate(() => monaco.editor.getModels().some(m => m.getValue().includes('retainedAfterSwitch = 42')));
+    assert.equal(retained, true, 'editing main.js should survive switching away and back');
+  });
   await check('Save', async () => { await click('#saveBtn'); await called('saveFile'); });
   await check('New File sidebar button', async () => { await click('#newFileBtn'); assert.equal(await page.locator('#newFileModal').isVisible(), true); await click('#cancelNewFile'); });
-  await check('New File banner + C++ create', async () => { await click('#newFileBannerBtn'); await page.locator('#newFileName').fill('click_test'); await page.locator('#newFileType').selectOption('cpp'); assert.equal(await page.locator('#newFilePreview').textContent(), 'click_test.cpp'); await click('#newFileForm button[type="submit"]'); assert.match(await page.locator('#tabs .tab').textContent(), /click_test\.cpp/); });
+  await check('New File banner + C++ create', async () => { await click('#newFileBannerBtn'); await page.locator('#newFileName').fill('click_test'); await page.locator('#newFileType').selectOption('cpp'); assert.equal(await page.locator('#newFilePreview').textContent(), 'click_test.cpp'); await click('#newFileForm button[type="submit"]'); assert.match(await page.locator('#tabs .document-tab.active .tab-label').textContent(), /click_test\.cpp/); });
   await check('New File cancel action', async () => { await click('#newFileBtn'); await click('#cancelNewFileAction'); assert.equal(await page.locator('#newFileModal').isVisible(), false); });
   await check('Run', async () => { await click('#runBtn'); await called('runSafe'); });
   await check('Run history', async () => { await click('#runHistoryBtn'); await called('runHistory'); assert.equal(await page.locator('#runHistoryDropdown').isVisible(), true); await click('#runHistoryBtn'); });

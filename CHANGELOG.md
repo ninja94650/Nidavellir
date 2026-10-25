@@ -1,3 +1,8 @@
+# 0.4.8
+
+- Fixes the browser-style multi-file UI test selector and adds regression coverage for switching tabs while retaining independent unsaved edits.
+- Corrects dirty-state indicators in the fallback editor mode.
+
 # 0.4.7
 
 - Adds browser-style multi-file tabs with independent editor models, unsaved-change indicators, tab switching, and close controls.
