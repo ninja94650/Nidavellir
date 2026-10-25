@@ -213,9 +213,7 @@ class LanguageServerManager {
     let canonicalRoot;
     try { canonicalRoot = await fs.realpath(path.resolve(root)); }
     catch { canonicalRoot = typeof root === 'string' ? path.resolve(root) : ''; }
-    const sameRoot = process.platform === 'win32'
-      ? canonicalRoot.toLocaleLowerCase() === session.root.toLocaleLowerCase()
-      : canonicalRoot === session.root;
+    const sameRoot = normalizePathForComparison(canonicalRoot) === normalizePathForComparison(session.root);
     if (typeof root !== 'string' || !sameRoot) throw new Error('Language server workspace changed; restart the server from Studio Tools.');
     if (String(language || '').toLowerCase() !== session.language) throw new Error('The active file uses a different language. Stop and start the matching language server.');
     return session;
