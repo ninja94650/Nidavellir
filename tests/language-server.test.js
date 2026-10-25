@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { LanguageServerManager, REQUEST_ALLOWLIST } = require('../src/language-server');
 
-const MOCK_SERVER = String.raw\`
+const MOCK_SERVER = String.raw`
 let buffer = Buffer.alloc(0);
 function send(message) {
   const body = Buffer.from(JSON.stringify(message), 'utf8');
@@ -41,7 +41,7 @@ process.stdin.on('data', chunk => {
     }
   }
 });
-\`;
+`;
 
 async function makeProject(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nidavellir-lsp-'));
