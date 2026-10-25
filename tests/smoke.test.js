@@ -69,6 +69,7 @@ test('main process imports new modules', () => {
   assert.match(main, /require\(['"]\.\/coordinator['"]\)/);
   assert.match(main, /require\(['"]\.\/plugins['"]\)/);
   assert.match(main, /require\(['"]\.\/studio-ipc['"]\)/);
+  assert.match(main, /require\(['"]\.\/language-server['"]\)/);
   assert.match(main, /registerStudioIpc\(/);
 });
 
