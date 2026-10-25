@@ -4,6 +4,7 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
+const { randomUUID } = require('node:crypto');
 
 const { createSafeRunner } = require('./safe-runner');
 const { synthesizeResponses } = require('./coordinator');
@@ -15,7 +16,7 @@ const { prepareUserPluginsDir } = require('./user-plugins');
 /* ─── globals ─── */
 let win;
 let updateService = null;
-const keyCache = {};
+const providerKeyCache = {};
 const allowedProviders = new Set(['openai', 'gemini', 'claude']);
 const approvedRoots = new Set();
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
@@ -473,31 +474,73 @@ ipcMain.handle('terminal:stop', () => ({ stopped: stopIntegratedTerminal() }));
    AI — KEY STORAGE
    ═══════════════════════════════════════════════════════════ */
 
-ipcMain.handle('ai:set-key', async (_event, { provider, key }) => {
+async function persistProviderKeys(provider, keys) {
   if (!allowedProviders.has(provider)) throw new Error('Unknown AI provider.');
   if (!safeStorage.isEncryptionAvailable()) throw new Error('Secure credential storage is unavailable on this system.');
-  const encrypted = safeStorage.encryptString(String(key || ''));
-  const keyPath = path.join(app.getPath('userData'), `key-${provider}.bin`);
-  await fs.writeFile(keyPath, encrypted);
-  keyCache[provider] = String(key || '');
-  return { saved: true };
-});
-
-async function getKey(provider) {
-  if (keyCache[provider]) return keyCache[provider];
-  const keyPath = path.join(app.getPath('userData'), `key-${provider}.bin`);
-  try {
-    if (!safeStorage.isEncryptionAvailable()) return '';
-    const encrypted = await fs.readFile(keyPath);
-    const key = safeStorage.decryptString(encrypted);
-    keyCache[provider] = key;
-    return key;
-  } catch { return ''; }
+  const encrypted = safeStorage.encryptString(JSON.stringify(keys));
+  await fs.writeFile(path.join(app.getPath('userData'), `keys-${provider}.bin`), encrypted, { mode: 0o600 });
+  providerKeyCache[provider] = keys;
 }
-
+async function loadProviderKeys(provider) {
+  if (!allowedProviders.has(provider)) throw new Error('Unknown AI provider.');
+  if (providerKeyCache[provider]) return providerKeyCache[provider];
+  if (!safeStorage.isEncryptionAvailable()) return [];
+  try {
+    const parsed = JSON.parse(safeStorage.decryptString(await fs.readFile(path.join(app.getPath('userData'), `keys-${provider}.bin`)));
+    if (Array.isArray(parsed)) {
+      providerKeyCache[provider] = parsed.filter(item => item && typeof item.id === 'string' && typeof item.key === 'string');
+      return providerKeyCache[provider];
+    }
+  } catch {}
+  // Migrate existing encrypted single-key storage.
+  try {
+    const oldKey = safeStorage.decryptString(await fs.readFile(path.join(app.getPath('userData'), `key-${provider}.bin`)));
+    if (oldKey) {
+      const migrated = [{ id: randomUUID(), label: 'Existing key', key: oldKey, active: true, createdAt: Date.now() }];
+      await persistProviderKeys(provider, migrated);
+      return migrated;
+    }
+  } catch {}
+  providerKeyCache[provider] = [];
+  return providerKeyCache[provider];
+}
+ipcMain.handle('ai:set-key', async (_event, payload = {}) => {
+  const provider = payload.provider, key = typeof payload.key === 'string' ? payload.key.trim() : '';
+  const label = typeof payload.label === 'string' ? payload.label.trim().slice(0, 80) : '';
+  if (!allowedProviders.has(provider)) throw new Error('Unknown AI provider.');
+  if (!key || key.length > 8192) throw new Error('Enter an API key between 1 and 8,192 characters.');
+  const keys = await loadProviderKeys(provider), id = randomUUID();
+  await persistProviderKeys(provider, [...keys, { id, label: label || `Key ${keys.length + 1}`, key, active: keys.length === 0, createdAt: Date.now() }]);
+  return { saved: true, id };
+});
+ipcMain.handle('ai:list-keys', async () => {
+  const result = {};
+  for (const provider of allowedProviders) result[provider] = (await loadProviderKeys(provider)).map(({ id, label, active, createdAt, key }) => ({ id, label, active: Boolean(active), createdAt, lastFour: key.slice(-4) }));
+  return result;
+});
+ipcMain.handle('ai:set-active-key', async (_event, { provider, id } = {}) => {
+  if (!allowedProviders.has(provider) || typeof id !== 'string') throw new Error('Invalid API key selection.');
+  const keys = await loadProviderKeys(provider);
+  if (!keys.some(item => item.id === id)) throw new Error('That API key no longer exists.');
+  await persistProviderKeys(provider, keys.map(item => ({ ...item, active: item.id === id })));
+  return { active: id };
+});
+ipcMain.handle('ai:delete-key', async (_event, { provider, id } = {}) => {
+  if (!allowedProviders.has(provider) || typeof id !== 'string') throw new Error('Invalid API key removal request.');
+  const keys = await loadProviderKeys(provider);
+  if (!keys.some(item => item.id === id)) throw new Error('That API key no longer exists.');
+  let next = keys.filter(item => item.id !== id);
+  if (keys.find(item => item.id === id)?.active && next.length) next = next.map((item, index) => ({ ...item, active: index === 0 }));
+  await persistProviderKeys(provider, next);
+  return { deleted: true };
+});
+async function getKey(provider) {
+  const keys = await loadProviderKeys(provider);
+  return keys.find(item => item.active)?.key || keys[0]?.key || '';
+}
 ipcMain.handle('ai:key-status', async () => {
   const result = {};
-  for (const p of allowedProviders) result[p] = Boolean(await getKey(p));
+  for (const provider of allowedProviders) result[provider] = (await loadProviderKeys(provider)).length > 0;
   return result;
 });
 
