@@ -222,7 +222,7 @@ function scheduleRecoverySave() {
 }
 async function persistRecoveryDrafts() {
   const drafts = Array.from(openDocuments.values())
-    .filter(doc => doc.filePath || doc.dirty || (doc.name !== 'welcome.md' && doc.key.startsWith('untitled:')))
+    .filter(doc => doc.dirty || (!doc.filePath && doc.name !== 'welcome.md'))
     .slice(-20)
     .map(doc => ({ name: doc.name, language: doc.language, filePath: doc.filePath, content: doc.content, savedContent: doc.savedContent }));
   try {
@@ -1867,8 +1867,9 @@ async function refreshPluginSecurityReport() {
       const title = document.createElement('strong');
       title.textContent = plugin.name + (plugin.enabled ? ' · ENABLED' : ' · disabled');
       const detail = document.createElement('small');
-      const permissions = Array.isArray(plugin.permissions) && plugin.permissions.length ? plugin.permissions.join(', ') : 'unrestricted native plugin code (legacy manifest)';
-      detail.textContent = 'v' + plugin.version + ' · ' + (plugin.description || 'No description') + ' · Declared permissions: ' + permissions + '. Not sandboxed.';
+      const permissions = Array.isArray(plugin.permissions) && plugin.permissions.length ? plugin.permissions.join(', ') : 'none';
+      const declaration = plugin.permissionsDeclared ? 'declared' : 'legacy manifest; restricted defaults applied';
+      detail.textContent = 'v' + plugin.version + ' · ' + (plugin.description || 'No description') + ' · Permissions (' + declaration + '): ' + permissions + ' · Execution: ' + (plugin.executionModel || 'unknown') + '.';
       copy.append(title, detail);
       const button = document.createElement('button');
       button.type = 'button';
