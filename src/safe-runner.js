@@ -103,7 +103,10 @@ function createSafeRunner(sendOutputFn) {
       } else if (language === 'javascript') {
         command = process.execPath;
         args = payload.debug === true ? ['--inspect-brk=127.0.0.1:0', source] : [source];
-        if (payload.debug === true) out('info', 'Node Inspector debug mode: execution is paused at startup. Copy the ws://127.0.0.1 debugger URL below into Chrome DevTools or a compatible debugger.');
+        if (payload.debug === true) {
+          out('info', 'NIDAVELLIR_DEBUG_SOURCE:' + source);
+          out('info', 'Node Inspector debug mode: execution is paused at startup. Use the in-app debugger controls to continue, step, inspect variables, or evaluate an expression.');
+        }
       } else if (language === 'python') {
         command = process.platform === 'win32' ? 'python' : 'python3'; args = [source];
       } else if (language === 'go') {
