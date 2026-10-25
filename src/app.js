@@ -206,6 +206,100 @@ function renderTree(items, container, depth = 0) {
 function iconFor(name) { const e=name.split('.').pop().toLowerCase(); return ({js:'JS',py:'Py',cpp:'C+',c:'C',html:'◇',css:'#',json:'{}',md:'M',ts:'TS'})[e]||'·'; }
 function loadFile(filePath,content){const name=filePath.split(/[\\/]/).pop();recordFileSnapshot(filePath,content,'Opened');openDocument(filePath,name,content,inferLanguage(name));}
 
+
+function ensureFileContextMenu(){let m=$('fileContextMenu');if(!m){m=document.createElement('div');m.id='fileContextMenu';m.className='file-context-menu';m.setAttribute('role','menu');m.hidden=true;document.body.appendChild(m);}return m;}
+function hideFileContextMenu(){const m=$('fileContextMenu');if(m)m.hidden=true;}
+function showFileContextMenu(item,x,y){
+  const m=ensureFileContextMenu();m.innerHTML='';
+  const entries=!item.directory?[
+    ['run','Run Code','Ctrl+Alt+N'],['side','Open to the Side','Ctrl+Enter'],['openWith','Open With…',''],['reveal','Reveal in File Explorer','Shift+Alt+R'],['compare','Select for Compare',''],['timeline','Open Timeline',''],['chat','Add File to Chat',''],['separator'],['cut','Cut','Ctrl+X'],['copy','Copy','Ctrl+C'],['paste','Paste','Ctrl+V'],['separator'],['copyPath','Copy Path','Shift+Alt+C'],['copyRelative','Copy Relative Path','Ctrl+K Ctrl+Shift+C'],['rename','Rename…','F2'],['delete','Delete','Del']
+  ]:[['reveal','Reveal in File Explorer',''],['paste','Paste','Ctrl+V'],['separator'],['copyPath','Copy Path','Shift+Alt+C'],['copyRelative','Copy Relative Path','Ctrl+K Ctrl+Shift+C']];
+  for(const entry of entries){const action=entry[0],text=entry[1],shortcut=entry[2];if(action==='separator'){const d=document.createElement('div');d.className='file-menu-divider';m.appendChild(d);continue;}
+    const b=document.createElement('button');b.type='button';b.className='file-menu-item';b.dataset.action=action;b.setAttribute('role','menuitem');
+    const label=document.createElement('span');label.textContent=text;b.appendChild(label);
+    if(shortcut){const key=document.createElement('span');key.className='file-menu-shortcut';key.textContent=shortcut;b.appendChild(key);}
+    if(action==='paste'&&!explorerClipboard)b.disabled=true;
+    b.addEventListener('click',async()=>{hideFileContextMenu();await performFileAction(action,item);});m.appendChild(b);
+  }
+  m.hidden=false;m.style.left=Math.max(8,Math.min(x,window.innerWidth-288))+'px';m.style.top=Math.max(8,Math.min(y,window.innerHeight-Math.min(m.scrollHeight,window.innerHeight-16)-8))+'px';
+}
+function fileNameFromPath(value){return String(value||'').split(/[\\/]/).pop()||'';}
+function parentDirectory(value){const p=String(value||''),i=Math.max(p.lastIndexOf('/'),p.lastIndexOf('\\'));return i>0?p.slice(0,i):p;}
+function rememberFilePath(oldPath,newPath,newName){
+  const doc=openDocuments.get(oldPath);if(!doc)return;const content=doc.model?doc.model.getValue():doc.content,wasDirty=doc.dirty;
+  openDocuments.delete(oldPath);doc.id=newPath;doc.path=newPath;doc.name=newName;doc.content=content;doc.dirty=wasDirty;openDocuments.set(newPath,doc);
+  if(activeDocumentId===oldPath){activeDocumentId=newPath;currentPath=newPath;currentName=newName;currentLanguage=inferLanguage(newName);if(doc.model&&monacoReady)monaco.editor.setModelLanguage(doc.model,currentLanguage);$('languageStatus').textContent=currentLanguage;}
+  if(sideOpenDocumentId===oldPath)sideOpenDocumentId=newPath;renderDocumentTabs();
+}
+async function refreshWorkspace(){if(!workspaceRoot)return;const result=await window.forge.refreshFolder(workspaceRoot);workspaceRoot=result.folder;$('fileTree').innerHTML='';renderTree(result.tree,$('fileTree'));}
+async function renameExplorerFile(item){
+  const dlg=createDialogFrame('fileRenameDialog','Rename file','Enter a new name. Existing files will not be overwritten.'),overlay=dlg.overlay,panel=dlg.panel;
+  const input=document.createElement('input');input.type='text';input.value=item.name;input.maxLength=255;input.className='file-rename-input';input.setAttribute('aria-label','New filename');panel.insertBefore(input,panel.lastChild);
+  const actions=document.createElement('div');actions.className='modal-actions file-action-buttons';const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Cancel';const rename=document.createElement('button');rename.type='button';rename.className='primary';rename.textContent='Rename';actions.append(cancel,rename);panel.appendChild(actions);
+  const newName=await new Promise(resolve=>{const finish=v=>{overlay.remove();resolve(v);};cancel.addEventListener('click',()=>finish(null));rename.addEventListener('click',()=>finish(input.value.trim()));input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();finish(input.value.trim());}if(e.key==='Escape')finish(null);});overlay.addEventListener('click',e=>{if(e.target===overlay)finish(null);});input.focus();input.select();});
+  if(!newName||newName===item.name)return;const result=await window.forge.renamePath({filePath:item.path,newName});rememberFilePath(item.path,result.filePath,result.name);
+  if(documentTimeline.has(item.path)){documentTimeline.set(result.filePath,documentTimeline.get(item.path));documentTimeline.delete(item.path);}await refreshWorkspace();setStatus('Renamed · '+result.name);
+}
+async function addExplorerFileToChat(item){
+  const doc=openDocuments.get(item.path),file=doc?{content:doc.model?doc.model.getValue():doc.content}:await window.forge.readPath(item.path);
+  const original=String(file.content||''),content=original.slice(0,30000),lang=inferLanguage(item.name),fence=String.fromCharCode(96).repeat(3);
+  const attachment='Additional file context: '+item.name+'\n'+fence+lang+'\n'+content+'\n'+fence+(original.length>30000?'\n[File truncated to 30,000 characters for context.]':'');
+  const input=$('promptInput');input.value=input.value.trim()?input.value.trim()+'\n\n'+attachment:'Please help me with this file:\n\n'+attachment;input.focus();setStatus('Added '+item.name+' to AI chat context');
+}
+async function openExplorerFileToSide(item){
+  let doc=openDocuments.get(item.path);if(!doc){const file=await window.forge.readPath(item.path);doc={id:item.path,path:item.path,name:item.name,language:inferLanguage(item.name),content:file.content,model:monacoReady?monaco.editor.createModel(file.content,inferLanguage(item.name)):null,dirty:false};openDocuments.set(doc.id,doc);recordFileSnapshot(item.path,file.content,'Opened');}
+  const wrap=document.querySelector('.editor-wrap');let panel=$('sideEditorPanel');
+  if(!panel){panel=document.createElement('section');panel.id='sideEditorPanel';panel.className='side-editor-panel';const header=document.createElement('div');header.className='side-editor-header';const title=document.createElement('span');title.id='sideEditorTitle';title.textContent=item.name;
+    const close=document.createElement('button');close.type='button';close.textContent='×';close.title='Close side editor';close.setAttribute('aria-label','Close side editor');close.addEventListener('click',()=>{panel.hidden=true;wrap.classList.remove('split-view');if(sideEditorInstance)sideEditorInstance.setModel(null);sideOpenDocumentId=null;});
+    header.append(title,close);const host=document.createElement('div');host.id='sideEditor';host.className='side-editor-host';const fallback=document.createElement('textarea');fallback.id='sidePlainEditor';fallback.className='side-plain-editor';fallback.spellcheck=false;fallback.hidden=true;panel.append(header,host,fallback);wrap.appendChild(panel);
+    fallback.addEventListener('input',()=>{const d=openDocuments.get(sideOpenDocumentId);if(d){d.content=fallback.value;d.dirty=true;renderDocumentTabs();}});
+  }
+  panel.hidden=false;wrap.classList.add('split-view');$('sideEditorTitle').textContent=item.name;sideOpenDocumentId=doc.id;
+  if(monacoReady&&window.monaco){if(!sideEditorInstance){sideEditorInstance=monaco.editor.create($('sideEditor'),{theme:'vs-dark',automaticLayout:true,fontSize:13,minimap:{enabled:false},scrollBeyondLastLine:false,wordWrap:'on'});sideEditorInstance.onDidChangeModelContent(()=>{const d=openDocuments.get(sideOpenDocumentId);if(d){d.content=sideEditorInstance.getValue();d.dirty=true;renderDocumentTabs();}});}
+    $('sideEditor').hidden=false;$('sidePlainEditor').hidden=true;if(!doc.model)doc.model=monaco.editor.createModel(doc.content||'',doc.language);sideEditorInstance.setModel(doc.model);
+  }else{$('sideEditor').hidden=true;$('sidePlainEditor').hidden=false;$('sidePlainEditor').value=doc.content||'';}
+  setStatus('Opened to the side · '+item.name);
+}
+async function showFileComparison(firstPath,secondPath){
+  if(firstPath===secondPath){setStatus('Choose two different files to compare');return;}
+  const getContent=async filePath=>{const doc=openDocuments.get(filePath);return doc?(doc.model?doc.model.getValue():doc.content):(await window.forge.readPath(filePath)).content;};
+  const values=await Promise.all([getContent(firstPath),getContent(secondPath)]),dlg=createDialogFrame('fileCompareOverlay','Compare Files',fileNameFromPath(firstPath)+' ↔ '+fileNameFromPath(secondPath)),overlay=dlg.overlay,panel=dlg.panel;
+  panel.classList.add('file-compare-modal');const host=document.createElement('div');host.id='fileCompareEditor';host.className='file-compare-editor';panel.appendChild(host);
+  const actions=document.createElement('div');actions.className='modal-actions file-action-buttons';const close=document.createElement('button');close.type='button';close.textContent='Close';actions.appendChild(close);panel.appendChild(actions);
+  const finish=()=>{if(compareEditorInstance){const models=compareEditorInstance.getModel();compareEditorInstance.dispose();if(models&&models.original)models.original.dispose();if(models&&models.modified)models.modified.dispose();compareEditorInstance=null;}overlay.remove();};
+  close.addEventListener('click',finish);overlay.addEventListener('click',e=>{if(e.target===overlay)finish();});
+  if(monacoReady&&window.monaco){const original=monaco.editor.createModel(values[0],inferLanguage(fileNameFromPath(firstPath))),modified=monaco.editor.createModel(values[1],inferLanguage(fileNameFromPath(secondPath)));compareEditorInstance=monaco.editor.createDiffEditor(host,{theme:'vs-dark',automaticLayout:true,readOnly:true,renderSideBySide:true});compareEditorInstance.setModel({original,modified});}
+  else{const cols=document.createElement('div');cols.className='file-compare-columns';[[firstPath,values[0]],[secondPath,values[1]]].forEach(pair=>{const col=document.createElement('div'),heading=document.createElement('strong'),pre=document.createElement('pre');heading.textContent=fileNameFromPath(pair[0]);pre.textContent=pair[1];col.append(heading,pre);cols.appendChild(col);});host.appendChild(cols);}
+}
+async function showFileTimeline(item){
+  const info=await window.forge.fileInfo(item.path),history=documentTimeline.get(item.path)||[],dlg=createDialogFrame('fileTimelineOverlay','File Timeline',item.path),overlay=dlg.overlay,panel=dlg.panel;
+  const meta=document.createElement('p');meta.className='file-timeline-meta';meta.textContent=info.size.toLocaleString()+' bytes · Modified '+new Date(info.modifiedAt).toLocaleString()+' · Created '+new Date(info.createdAt).toLocaleString();panel.appendChild(meta);
+  if(!history.length){const empty=document.createElement('p');empty.textContent='No snapshots have been recorded in this session yet.';panel.appendChild(empty);}
+  const list=document.createElement('div');list.className='file-timeline-list';
+  history.slice().reverse().forEach(snapshot=>{const row=document.createElement('div');row.className='file-timeline-row';const text=document.createElement('span');text.textContent=snapshot.label+' · '+new Date(snapshot.timestamp).toLocaleString();const open=document.createElement('button');open.type='button';open.textContent='Open snapshot';open.addEventListener('click',()=>{openDocument(null,item.name+' (snapshot)',snapshot.content,inferLanguage(item.name));overlay.remove();});row.append(text,open);list.appendChild(row);});
+  panel.appendChild(list);const actions=document.createElement('div');actions.className='modal-actions file-action-buttons';const close=document.createElement('button');close.type='button';close.textContent='Close';close.addEventListener('click',()=>overlay.remove());actions.appendChild(close);panel.appendChild(actions);overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+}
+function repathDeletedOpenDocument(filePath){const doc=openDocuments.get(filePath);if(!doc)return;const content=doc.model?doc.model.getValue():doc.content,oldId=doc.id,nextId=documentKey();openDocuments.delete(oldId);doc.id=nextId;doc.path=null;doc.name=fileNameFromPath(filePath);doc.content=content;doc.dirty=true;openDocuments.set(nextId,doc);if(activeDocumentId===oldId){activeDocumentId=nextId;currentPath=null;currentName=doc.name;}renderDocumentTabs();}
+async function performFileAction(action,item){
+  try{
+    if(action==='run'){const doc=openDocuments.get(item.path);if(doc)switchDocument(doc.id);else{const file=await window.forge.readPath(item.path);loadFile(file.filePath,file.content);}$('runBtn').click();return;}
+    if(action==='side'){await openExplorerFileToSide(item);return;}
+    if(action==='openWith'){await window.forge.openWith(item.path);setStatus('Open With completed for '+item.name);return;}
+    if(action==='reveal'){await window.forge.revealPath(item.path);setStatus('Revealed · '+item.name);return;}
+    if(action==='compare'){if(!compareSelectionPath){compareSelectionPath=item.path;setStatus('Selected '+item.name+' for comparison. Choose a second file.');return;}const first=compareSelectionPath;compareSelectionPath=null;await showFileComparison(first,item.path);return;}
+    if(action==='timeline'){await showFileTimeline(item);return;}
+    if(action==='chat'){await addExplorerFileToChat(item);return;}
+    if(action==='cut'||action==='copy'){if(item.directory)throw new Error('Cut and Copy are supported for files.');explorerClipboard={path:item.path,mode:action==='cut'?'move':'copy'};document.querySelectorAll('.file-item').forEach(row=>row.classList.toggle('cut-pending',row.dataset.path===item.path&&action==='cut'));setStatus((action==='cut'?'Cut':'Copied')+' '+item.name+' — choose Paste in a destination folder');return;}
+    if(action==='paste'){if(!explorerClipboard)throw new Error('Use Cut or Copy on a file before pasting.');const dest=item.directory?item.path:parentDirectory(item.path);const result=await window.forge.transferPath({sourcePath:explorerClipboard.path,destinationDirectory:dest,mode:explorerClipboard.mode});if(result.mode==='move')rememberFilePath(result.sourcePath,result.filePath,fileNameFromPath(result.filePath));explorerClipboard=null;document.querySelectorAll('.file-item').forEach(row=>row.classList.remove('cut-pending'));await refreshWorkspace();setStatus((result.mode==='move'?'Moved':'Copied')+' · '+fileNameFromPath(result.filePath));return;}
+    if(action==='copyPath'){await window.forge.copyText(item.path);setStatus('Copied path · '+item.name);return;}
+    if(action==='copyRelative'){if(!workspaceRoot)throw new Error('Open a folder first to copy a relative path.');const relative=await window.forge.relativePath({root:workspaceRoot,filePath:item.path});await window.forge.copyText(relative);setStatus('Copied relative path · '+relative);return;}
+    if(action==='rename'){await renameExplorerFile(item);return;}
+    if(action==='delete'){const result=await window.forge.deletePath(item.path);if(result&&result.canceled)return;repathDeletedOpenDocument(item.path);documentTimeline.delete(item.path);await refreshWorkspace();setStatus('Deleted · '+item.name);return;}
+  }catch(error){addOutput('stderr',error.message||String(error));setStatus('File action failed');}
+}
+document.addEventListener('click',e=>{const m=$('fileContextMenu');if(m&&!m.hidden&&!e.target.closest('#fileContextMenu')&&!e.target.closest('.file-actions-trigger'))hideFileContextMenu();});
+document.addEventListener('keydown',e=>{const inExplorer=!!(document.activeElement&&document.activeElement.closest&&document.activeElement.closest('.file-tree'));if(!inExplorer||!currentExplorerSelection)return;if(e.key==='Escape'){hideFileContextMenu();return;}if((e.ctrlKey||e.metaKey)&&['x','c','v'].includes(e.key.toLowerCase())){e.preventDefault();if(e.key.toLowerCase()==='v')void performFileAction('paste',currentExplorerSelection);else void performFileAction(e.key.toLowerCase()==='x'?'cut':'copy',currentExplorerSelection);}});
+$('fileTree').addEventListener('contextmenu',e=>{if(!workspaceRoot)return;if(e.target===$('fileTree')||e.target.classList.contains('empty-hint')){e.preventDefault();const item={name:fileNameFromPath(workspaceRoot),path:workspaceRoot,directory:true,children:[]};currentExplorerSelection=item;showFileContextMenu(item,e.clientX,e.clientY);}});
 /* ─────────────────────────────────────────────
    File buttons
    ───────────────────────────────────────────── */
