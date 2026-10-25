@@ -48,10 +48,10 @@ const assert = require('node:assert/strict');
       terminalStart: async p => { record('terminalStart', p); return { cwd: '/tmp/project' }; },
       terminalWrite: async s => { record('terminalWrite', s); return { running: true }; },
       terminalStop: async () => { record('terminalStop'); return { stopped: true }; },
-      askAI: async p => { record('askAI', p); return 'Suggested change:\n' + String.fromCharCode(96).repeat(3) + 'javascript\nconst fixed = true;\n' + String.fromCharCode(96).repeat(3); },
+      askAI: async p => { record('askAI', p); return 'Suggested change:\n' + String.fromCharCode(96).repeat(3) + 'javascript\nconst fixed = true;\n' + String.fromCharCode(96).repeat(3); },\n      askKey: async p => { record('askKey', p); return 'Agent proposal:\n' + String.fromCharCode(96).repeat(3) + 'javascript\nconst fixed = true;\n' + String.fromCharCode(96).repeat(3); },
       synthesize: async p => { record('synthesize', p); return 'Combined recommendation.'; },
       generateTests: async p => { record('generateTests', p); return 'console.assert(true);'; },
-      setKey: async p => { record('setKey', { provider: p.provider, label: p.label, key: '***' }); const list = state.keys[p.provider]; list.push({ id: 'key-' + (list.length + 1), label: p.label || 'Key ' + (list.length + 1), active: list.length === 0, lastFour: String(p.key).slice(-4) }); },
+      setKey: async p => { record('setKey', { provider: p.provider, label: p.label, key: '***' }); const list = state.keys[p.provider]; list.push({ id: 'key-' + (list.length + 1), label: p.label || 'Key ' + (list.length + 1), active: list.length === 0, lastFour: String(p.key).slice(-4), agentCount: p.agentCount || 1 }); },
       listKeys: async () => { record('listKeys'); return Object.fromEntries(Object.entries(state.keys).map(([provider, keys]) => [provider, keys.map(k => ({ ...k }))])); },
       setActiveKey: async p => { record('setActiveKey', p); state.keys[p.provider] = state.keys[p.provider].map(k => ({ ...k, active: k.id === p.id })); },
       deleteKey: async p => { record('deleteKey', p); state.keys[p.provider] = state.keys[p.provider].filter(k => k.id !== p.id); if (!state.keys[p.provider].some(k => k.active) && state.keys[p.provider].length) state.keys[p.provider][0].active = true; },
@@ -177,17 +177,17 @@ const assert = require('node:assert/strict');
     await click('#openApiKeyEditor');
     assert.equal(await page.locator('#apiKeyEditorModal').isVisible(), true);
     await page.locator('#apiKeyName').fill('Personal key');
-    await page.locator('#apiKeyProvider').selectOption('openai');
-    await page.locator('#apiKeyValue').fill('fake-test-key-1111');
+    await page.locator('#apiKeyAgentCount').fill('2');
+    await page.locator('#apiKeyValue').fill('sk-proj-fake-test-key-1111');
     await click('#addApiKeyConfirm');
     await page.waitForFunction(() => document.querySelectorAll('#savedApiKeyList .saved-api-key').length === 1);
     assert.equal(await page.locator('#apiKeyCount').textContent(), '1 saved key');
     assert.equal(await page.locator('#savedApiKeyList .saved-api-key strong').textContent(), 'Personal key');
-    assert.match(await page.locator('#savedApiKeyList .saved-api-key span').textContent(), /OpenAI \/ GPT/);
+    assert.match(await page.locator('#savedApiKeyList .saved-api-key span').textContent(), /OpenAI \/ GPT/);\n    assert.match(await page.locator('#savedApiKeyList .saved-api-key span').textContent(), /2 agents/);
     await click('#openApiKeyEditor');
     await page.locator('#apiKeyName').fill('Work key');
-    await page.locator('#apiKeyProvider').selectOption('openai');
-    await page.locator('#apiKeyValue').fill('fake-test-key-2222');
+    await page.locator('#apiKeyAgentCount').fill('1');
+    await page.locator('#apiKeyValue').fill('sk-proj-fake-test-key-2222');
     await click('#addApiKeyConfirm');
     await page.waitForFunction(() => document.querySelectorAll('#savedApiKeyList .saved-api-key').length === 2);
     assert.equal(await page.locator('#apiKeyCount').textContent(), '2 saved keys');
@@ -206,8 +206,8 @@ const assert = require('node:assert/strict');
     await called('togglePlugin');
     await click('#closePlugins'); assert.equal(await page.locator('#pluginModal').isVisible(), false);
   });
-  await check('Ask team', async () => { await page.locator('#useGemini').uncheck(); await page.locator('#useClaude').uncheck(); await page.locator('#promptInput').fill('Explain test'); await click('#askBtn'); await called('askAI'); });
-  await check('AI quick prompts', async () => { for (const label of ['Explain code', 'Find bugs', 'Fix error', 'Write tests']) { await page.locator('.quick-actions button').filter({ hasText: label }).first().click(); } await called('askAI'); });
+  await check('Ask configured coworking agents', async () => { await page.locator('#promptInput').fill('Explain test'); await click('#askBtn'); await called('askKey'); await page.waitForFunction(() => document.querySelectorAll('.answer-card').length >= 3); });
+  await check('AI quick prompts', async () => { for (const label of ['Explain code', 'Find bugs', 'Fix error', 'Write tests']) { await page.locator('.quick-actions button').filter({ hasText: label }).first().click(); } await called('askKey'); });
   await check('Generate tests', async () => { await click('.quick-actions button[data-action="generate-tests"]'); await called('generateTests'); });
   await check('Diff review apply/copy/dismiss', async () => {
     await page.locator('#useOpenAI').check(); await page.locator('#useGemini').uncheck(); await page.locator('#useClaude').uncheck();
