@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('forge', {
   gitStatus: root => ipcRenderer.invoke('git:status', root),
   gitDiff: payload => ipcRenderer.invoke('git:diff', payload),
   gitBranches: root => ipcRenderer.invoke('git:branches', root),
+  gitSwitchBranch: payload => ipcRenderer.invoke('git:switch-branch', payload),
+  gitCreateBranch: payload => ipcRenderer.invoke('git:create-branch', payload),
   gitLog: root => ipcRenderer.invoke('git:log', root),
   gitStage: payload => ipcRenderer.invoke('git:stage', payload),
   gitUnstage: payload => ipcRenderer.invoke('git:unstage', payload),
