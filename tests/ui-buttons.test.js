@@ -29,9 +29,18 @@ const assert = require('node:assert/strict');
     window.prompt = (_message, value) => value || 'javascript';
     window.forge = {
       openFile: async () => { record('openFile'); return { filePath: '/tmp/example.js', content: 'alpha alpha\n' }; },
-      openFolder: async () => { record('openFolder'); return { folder: '/tmp/project', tree: [{ name: 'main.js', path: '/tmp/project/main.js', directory: false }] }; },
+      openFolder: async () => { record('openFolder'); return { folder: '/tmp/project', tree: [{ name: 'main.js', path: '/tmp/project/main.js', directory: false }, { name: 'other.cpp', path: '/tmp/project/other.cpp', directory: false }, { name: 'destination', path: '/tmp/project/destination', directory: true, children: [] }] }; },
       saveFile: async p => { record('saveFile', p); return { filePath: p.filePath || '/tmp/new-file.js', name: p.name || 'new-file.js' }; },
-      readPath: async filePath => { record('readPath', filePath); return { filePath, content: filePath.endsWith('/main.js') ? 'const mainOnly = true;\n' : 'alpha alpha\n' }; },
+      revealPath: async filePath => { record('revealPath', filePath); return { success: true }; },
+      openWith: async filePath => { record('openWith', filePath); return { canceled: true }; },
+      renamePath: async p => { record('renamePath', p); return { filePath: p.filePath.replace(/[^/]+$/, p.newName), name: p.newName }; },
+      deletePath: async filePath => { record('deletePath', filePath); return { success: true, filePath }; },
+      transferPath: async p => { record('transferPath', p); return { filePath: p.destinationDirectory + '/' + p.sourcePath.split('/').pop(), sourcePath: p.sourcePath, mode: p.mode }; },
+      refreshFolder: async folder => { record('refreshFolder', folder); return { folder, tree: [{ name: 'main.js', path: '/tmp/project/main.js', directory: false }, { name: 'other.cpp', path: '/tmp/project/other.cpp', directory: false }, { name: 'destination', path: '/tmp/project/destination', directory: true, children: [] }] }; },
+      fileInfo: async filePath => { record('fileInfo', filePath); return { filePath, name: filePath.split('/').pop(), size: 18, modifiedAt: new Date().toISOString(), createdAt: new Date().toISOString() }; },
+      relativePath: async p => { record('relativePath', p); return p.filePath.replace(p.root + '/', ''); },
+      copyText: async value => { record('copyText', value); return { success: true }; },
+      readPath: async filePath => { record('readPath', filePath); return { filePath, content: filePath.endsWith('/main.js') ? 'const mainOnly = true;\n' : filePath.endsWith('/other.cpp') ? 'int other = 1;\n' : 'alpha alpha\n' }; },
       runSafe: async p => { record('runSafe', p); state.runner?.({ running: true }); await new Promise(r => setTimeout(r, 10)); state.runner?.({ running: false }); return { durationMs: 10, code: 0 }; },
       killRun: async () => { record('killRun'); state.runner?.({ running: false }); },
       writeRunInput: async text => { record('writeRunInput', text); return { accepted: true }; },
@@ -66,6 +75,51 @@ const assert = require('node:assert/strict');
   await check('Open file', async () => { await click('#openBtn'); await called('openFile'); assert.match(await page.locator('#statusText').textContent(), /Opened/); });
   await check('Open folder', async () => { await click('#openFolderBtn'); await called('openFolder'); assert.equal(await page.locator('#folderName').textContent(), 'PROJECT'); });
   await check('Explorer file item', async () => { await click('.file-item'); await called('readPath'); });
+  await check('Tab close X asks before discarding unsaved work', async () => {
+    await click('#newFileBtn'); await page.locator('#newFileName').fill('close_me'); await click('#newFileForm button[type="submit"]');
+    await page.locator('#tabs .document-tab.active .tab-close').click();
+    await page.locator('#fileCloseConfirm').waitFor({ state: 'visible' });
+    await click('#fileCloseConfirm [data-close-action="discard"]');
+    assert.equal(await page.locator('#tabs .document-tab').filter({ hasText: 'close_me.cpp' }).count(), 0);
+  });
+  await check('Explorer menu exposes requested file actions', async () => {
+    const row = page.locator('.file-item[data-path="/tmp/project/main.js"]');
+    await row.locator('.file-actions-trigger').click();
+    for (const label of ['Run Code','Open to the Side','Open With…','Reveal in File Explorer','Select for Compare','Open Timeline','Add File to Chat','Cut','Copy','Paste','Copy Path','Copy Relative Path','Rename…','Delete']) {
+      assert.ok(await page.locator('#fileContextMenu .file-menu-item').filter({ hasText: label }).count(), 'missing action ' + label);
+    }
+    await click('#fileContextMenu [data-action="copyPath"]'); await called('copyText');
+    await row.locator('.file-actions-trigger').click(); await click('#fileContextMenu [data-action="reveal"]'); await called('revealPath');
+    await row.locator('.file-actions-trigger').click(); await click('#fileContextMenu [data-action="openWith"]'); await called('openWith');
+  });
+  await check('Open to Side displays a second editor', async () => {
+    const row = page.locator('.file-item[data-path="/tmp/project/main.js"]');
+    await row.locator('.file-actions-trigger').click(); await click('#fileContextMenu [data-action="side"]');
+    await page.locator('#sideEditorPanel').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#sideEditorTitle').textContent(), 'main.js');
+    await click('#sideEditorPanel button[aria-label="Close side editor"]');
+    assert.equal(await page.locator('#sideEditorPanel').isVisible(), false);
+  });
+  await check('Timeline and Add File to Chat work', async () => {
+    const row=page.locator('.file-item[data-path="/tmp/project/main.js"]');
+    await row.locator('.file-actions-trigger').click(); await click('#fileContextMenu [data-action="timeline"]');
+    await page.locator('#fileTimelineOverlay').waitFor({state:'visible'}); await click('#fileTimelineOverlay .file-action-buttons button');
+    await row.locator('.file-actions-trigger').click(); await click('#fileContextMenu [data-action="chat"]');
+    assert.match(await page.locator('#promptInput').inputValue(), /Additional file context: main\.js/);
+  });
+  await check('Compare selects two files and opens diff view', async () => {
+    await page.locator('.file-item[data-path="/tmp/project/main.js"] .file-actions-trigger').click(); await click('#fileContextMenu [data-action="compare"]');
+    await page.locator('.file-item[data-path="/tmp/project/other.cpp"] .file-actions-trigger').click(); await click('#fileContextMenu [data-action="compare"]');
+    await page.locator('#fileCompareOverlay').waitFor({state:'visible'}); await click('#fileCompareOverlay .file-action-buttons button');
+    assert.equal(await page.locator('#fileCompareOverlay').count(),0);
+  });
+  await check('Cut/paste, rename and delete call their file APIs', async () => {
+    await page.locator('.file-item[data-path="/tmp/project/main.js"] .file-actions-trigger').click(); await click('#fileContextMenu [data-action="cut"]');
+    await page.locator('.file-item[data-path="/tmp/project/destination"] .file-actions-trigger').click(); await click('#fileContextMenu [data-action="paste"]'); await called('transferPath'); await called('refreshFolder');
+    await page.locator('.file-item[data-path="/tmp/project/other.cpp"] .file-actions-trigger').click(); await click('#fileContextMenu [data-action="rename"]');
+    await page.locator('#fileRenameDialog input').fill('other-renamed.cpp'); await click('#fileRenameDialog .primary'); await called('renamePath');
+    await page.locator('.file-item[data-path="/tmp/project/other.cpp"] .file-actions-trigger').click(); await click('#fileContextMenu [data-action="delete"]'); await called('deletePath');
+  });
   await check('Multi-file tabs keep independent edits', async () => {
     const tabs = page.locator('#tabs .document-tab');
     assert.equal(await tabs.count(), 3, 'welcome, example.js, and main.js should remain open');
