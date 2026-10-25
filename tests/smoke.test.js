@@ -50,7 +50,7 @@ test('AI provider adapters exist', () => {
 
 test('preload exposes safe runner and plugin channels', () => {
   const preload = fs.readFileSync(path.join(root, 'src/preload.js'), 'utf8');
-  for (const channel of ['runSafe', 'killRun', 'runHistory', 'synthesize', 'generateTests', 'listPlugins', 'togglePlugin', 'getRecoveryDrafts', 'saveRecoveryDrafts', 'clearRecoveryDrafts', 'searchWorkspace', 'replaceWorkspace', 'detectEnvironment', 'diagnoseSource', 'gitStatus', 'gitDiff', 'gitBranches', 'gitLog', 'gitStage', 'gitUnstage', 'gitCommit', 'gitPull', 'gitPush', 'planProjectChanges', 'applyProjectChanges']) {
+  for (const channel of ['runSafe', 'killRun', 'runHistory', 'synthesize', 'generateTests', 'listPlugins', 'togglePlugin', 'getRecoveryDrafts', 'saveRecoveryDrafts', 'clearRecoveryDrafts', 'searchWorkspace', 'previewWorkspaceReplace', 'replaceWorkspace', 'detectEnvironment', 'diagnoseSource', 'gitStatus', 'gitDiff', 'gitBranches', 'gitSwitchBranch', 'gitCreateBranch', 'gitLog', 'gitStage', 'gitUnstage', 'gitCommit', 'gitPull', 'gitPush', 'planProjectChanges', 'applyProjectChanges']) {
     assert.ok(preload.includes(channel), `preload missing ${channel}`);
   }
 });
