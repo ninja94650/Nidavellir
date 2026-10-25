@@ -1,3 +1,9 @@
+# 0.4.9
+
+- Fixes file-tab close handling with an accessible Save & Close / Close Without Saving / Cancel prompt.
+- Adds left-click Explorer action buttons and right-click menus for running, side-by-side editing, open-with, reveal, compare, timeline, AI chat context, cut/copy/paste, path copying, rename, and delete.
+- Restricts destructive Explorer operations to regular files within approved workspace paths and prevents overwriting existing destinations.
+
 # 0.4.8
 
 - Fixes the browser-style multi-file UI test selector and adds regression coverage for switching tabs while retaining independent unsaved edits.
