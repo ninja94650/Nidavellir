@@ -72,10 +72,17 @@ const assert = require('node:assert/strict');
     };
   });
   const errors = [];
-  page.on('pageerror', e => errors.push(e.message));
+  page.on('pageerror', e => errors.push(e.stack || e.message));
   await page.goto(baseUrl + '/src/index.html');
   await page.waitForSelector('#statusText');
   await page.waitForTimeout(1800);
+  const startupWiring = await page.evaluate(() => ({
+    openFile: typeof document.getElementById('openBtn')?.onclick,
+    save: typeof document.getElementById('saveBtn')?.onclick,
+    studioTools: typeof document.getElementById('studioToolsBtn')?.onclick,
+    commandButton: typeof document.getElementById('commandPaletteBtn')?.onclick,
+    splitButton: typeof document.getElementById('splitEditorBtn')?.onclick
+  }));
   const click = async s => { const el = page.locator(s); await el.waitFor({ state: 'visible', timeout: 5000 }); await el.click({ timeout: 5000 }); };
   const called = async name => assert.ok((await page.evaluate(() => window.__uiCalls)).some(c => c.name === name), 'expected call ' + name);
   const results = [];
@@ -266,7 +273,7 @@ const assert = require('node:assert/strict');
   });
 
   const inventory = await page.locator('button:visible').evaluateAll(bs => bs.map(b => ({ label: (b.innerText || b.getAttribute('aria-label') || b.title || '').trim(), id: b.id, type: b.type })));
-  const summary = { totalChecks: results.length, passed: results.filter(x => x.result === 'PASS').length, failed: results.filter(x => x.result === 'FAIL').length, results, visibleButtonsAtEnd: inventory, pageErrors: errors };
+  const summary = { startupWiring, totalChecks: results.length, passed: results.filter(x => x.result === 'PASS').length, failed: results.filter(x => x.result === 'FAIL').length, results, visibleButtonsAtEnd: inventory, pageErrors: errors };
   console.log(JSON.stringify(summary, null, 2));
   await browser.close();
   await new Promise(resolve => server.close(resolve));
