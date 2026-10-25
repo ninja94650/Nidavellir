@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('forge', {
   saveRecoveryDrafts: payload => ipcRenderer.invoke('recovery:save', payload),
   clearRecoveryDrafts: () => ipcRenderer.invoke('recovery:clear'),
   searchWorkspace: payload => ipcRenderer.invoke('workspace:search', payload),
+  previewWorkspaceReplace: payload => ipcRenderer.invoke('workspace:preview-replace', payload),
   replaceWorkspace: payload => ipcRenderer.invoke('workspace:replace', payload),
   detectEnvironment: () => ipcRenderer.invoke('studio:environment'),
   diagnoseSource: payload => ipcRenderer.invoke('studio:diagnose', payload),
