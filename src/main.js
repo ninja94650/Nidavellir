@@ -104,6 +104,9 @@ function installApplicationMenu() {
       { label: 'Go to Line', accelerator: 'CmdOrCtrl+G', click: () => sendEditorCommand('gotoLine') }
     ]},
     { label: 'View', submenu: [
+      { label: 'Command Palette…', accelerator: 'CmdOrCtrl+Shift+P', click: () => sendEditorCommand('commandPalette') },
+      { label: 'Quick Open…', accelerator: 'CmdOrCtrl+P', click: () => sendEditorCommand('quickOpen') },
+      { type: 'separator' },
       { role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'togglefullscreen' }
     ]},
     { label: 'Help', submenu: [

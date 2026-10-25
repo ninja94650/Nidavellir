@@ -66,6 +66,16 @@ const assert = require('node:assert/strict');
   await check('Open file', async () => { await click('#openBtn'); await called('openFile'); assert.match(await page.locator('#statusText').textContent(), /Opened/); });
   await check('Open folder', async () => { await click('#openFolderBtn'); await called('openFolder'); assert.equal(await page.locator('#folderName').textContent(), 'PROJECT'); });
   await check('Explorer file item', async () => { await click('.file-item'); await called('readPath'); });
+  await check('Quick Open filters and opens workspace file', async () => {
+    await page.keyboard.press('Control+P');
+    assert.equal(await page.locator('#commandPalette').isVisible(), true);
+    await page.locator('#commandPaletteInput').fill('main.js');
+    assert.equal(await page.locator('.palette-item').count(), 1);
+    assert.match(await page.locator('.palette-item').first().textContent(), /main\.js/);
+    await page.locator('.palette-item').first().click();
+    await called('readPath');
+    assert.equal(await page.locator('#commandPalette').isVisible(), false);
+  });
   await check('Save', async () => { await click('#saveBtn'); await called('saveFile'); });
   await check('Save As opens destination picker request', async () => {
     await click('#saveAsBtn');
@@ -78,6 +88,28 @@ const assert = require('node:assert/strict');
     await page.keyboard.press('Control+Shift+S');
     const calls = await page.evaluate(() => window.__uiCalls.filter(c => c.name === 'saveFile'));
     assert.equal(calls.at(-1).payload.forceDialog, true);
+  });
+  await check('Command Palette filters and runs actions', async () => {
+    await page.keyboard.press('Control+Shift+P');
+    assert.equal(await page.locator('#commandPalette').isVisible(), true);
+    await page.locator('#commandPaletteInput').fill('run current file');
+    assert.equal(await page.locator('.palette-item').count(), 1);
+    assert.match(await page.locator('.palette-item').first().textContent(), /Run Current File/);
+    await page.keyboard.press('Enter');
+    await called('runSafe');
+    assert.equal(await page.locator('#commandPalette').isVisible(), false);
+  });
+  await check('Word Wrap can be toggled from the palette', async () => {
+    await click('#commandPaletteBtn');
+    await page.locator('#commandPaletteInput').fill('toggle word wrap');
+    assert.equal(await page.locator('.palette-item').count(), 1);
+    assert.match(await page.locator('.palette-item').first().textContent(), /Currently on/);
+    await page.locator('.palette-item').first().click();
+    await click('#commandPaletteBtn');
+    await page.locator('#commandPaletteInput').fill('toggle word wrap');
+    assert.match(await page.locator('.palette-item').first().textContent(), /Currently off/);
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#commandPalette').isVisible(), false);
   });
   await check('New File sidebar button', async () => { await click('#newFileBtn'); assert.equal(await page.locator('#newFileModal').isVisible(), true); await click('#cancelNewFile'); });
   await check('New File banner + C++ create', async () => { await click('#newFileBannerBtn'); await page.locator('#newFileName').fill('click_test'); await page.locator('#newFileType').selectOption('cpp'); assert.equal(await page.locator('#newFilePreview').textContent(), 'click_test.cpp'); await click('#newFileForm button[type="submit"]'); assert.match(await page.locator('#tabs .tab').textContent(), /click_test\.cpp/); });

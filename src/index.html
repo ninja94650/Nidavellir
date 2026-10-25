@@ -16,7 +16,7 @@
   <header class="topbar">
     <div class="brand"><span class="logo">N</span><span>Nidavellir <small>AI IDE</small></span></div>
     <div class="top-actions">
-      <button id="openFolderBtn">Open folder</button><button id="openBtn">Open file</button><button id="saveBtn" title="Save (Ctrl+S)">Save</button><button id="saveAsBtn" title="Save As (Ctrl+Shift+S)">Save As</button>
+      <button id="openFolderBtn">Open folder</button><button id="openBtn">Open file</button><button id="saveBtn" title="Save (Ctrl+S)">Save</button><button id="saveAsBtn" title="Save As (Ctrl+Shift+S)">Save As</button><button id="commandPaletteBtn" title="Command Palette (Ctrl+Shift+P)">⌘ Commands</button>
       <button class="primary" id="runBtn">▶ Run</button>
       <button id="pluginsBtn">🧩 Plugins</button>
       <button id="settingsBtn">⚙ AI Settings</button>
@@ -138,6 +138,18 @@
     <button id="updateStatus" class="update-status" type="button" title="Check for updates">Preparing updates…</button>
     <span>Nidavellir 0.4.3</span>
   </footer>
+</div>
+
+<div class="command-palette-backdrop" id="commandPalette" hidden>
+  <section class="command-palette" role="dialog" aria-modal="true" aria-labelledby="commandPaletteTitle">
+    <div class="command-palette-head">
+      <div><h2 id="commandPaletteTitle">Command Palette</h2><p id="commandPaletteHint">Type a command to search available actions.</p></div>
+      <kbd>ESC</kbd>
+    </div>
+    <input id="commandPaletteInput" type="text" autocomplete="off" spellcheck="false" aria-label="Search commands" aria-controls="commandPaletteList" placeholder="Search commands…">
+    <div id="commandPaletteList" class="command-palette-list" role="listbox" aria-label="Available commands"></div>
+    <div class="command-palette-foot"><span>↑↓ Navigate</span><span>↵ Run</span><span>Esc Close</span></div>
+  </section>
 </div>
 
 <!-- ── New file dialog ── -->
