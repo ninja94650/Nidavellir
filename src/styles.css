@@ -1299,3 +1299,92 @@ input:focus, textarea:focus, select:focus, .composer textarea:focus {
 .update-setting .updates-toggle { display: flex; align-items: center; gap: 9px; flex-direction: row; cursor: pointer; }
 .update-setting .updates-toggle input { width: auto; flex: 0 0 auto; margin: 0; }
 .update-setting small { display: block; margin-top: 5px; }
+
+
+/* ── Unified premium cyan header ──
+   Keep the native window controls, hide the separate menu strip, and make
+   the app header visually continuous with the workspace. */
+:root {
+  --bg: #071217;
+  --panel: #0a1a20;
+  --panel2: #0d232b;
+  --border: #173d48;
+  --text: #e4f7fa;
+  --muted: #91b0b8;
+  --accent: #67e8f9;
+  --accent2: #0e7490;
+}
+body,
+.app,
+.topbar {
+  background: #071217;
+}
+.topbar {
+  border-bottom: 1px solid #16414c;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .14);
+}
+.brand small,
+.sparkle,
+.terminal-prompt,
+.activity button.active {
+  color: #67e8f9;
+}
+.logo {
+  background: linear-gradient(140deg, #b9f7ff, #22b8cf);
+  color: #06232a;
+  box-shadow: 0 0 14px rgba(34, 211, 238, .2);
+}
+button {
+  background: #0b2028;
+  border-color: #1b4652;
+}
+button:hover {
+  background: #10313b;
+  border-color: #48cfe3;
+}
+button.primary {
+  background: linear-gradient(135deg, #0e7490, #155e75);
+  border-color: #39bfd2;
+  color: #f0fdff;
+}
+button.primary:hover {
+  background: linear-gradient(135deg, #0891b2, #0e7490);
+}
+.activity,
+.sidebar,
+.ai-panel {
+  background: #08171d;
+}
+.tabs,
+.panel,
+.panel-head,
+.composer,
+.provider-row {
+  background-color: #0a1a20;
+}
+.tab {
+  background: #071217;
+  border-bottom-color: #67e8f9;
+}
+.beginner-card {
+  border-color: #1c5663;
+  background: linear-gradient(145deg, rgba(12, 48, 58, .8), rgba(7, 23, 29, .9));
+}
+.beginner-card strong,
+.panel-tab.active {
+  color: #8beeff;
+}
+.coordinator-card {
+  border-color: #237d8d;
+  background: linear-gradient(135deg, #0c2932, #0a1a20);
+}
+.coordinator-head {
+  background: linear-gradient(90deg, #104451, #0d2730);
+}
+.composer textarea,
+#plainEditor {
+  background: #061116;
+}
+.composer textarea:focus {
+  border-color: #45d8e9;
+}
