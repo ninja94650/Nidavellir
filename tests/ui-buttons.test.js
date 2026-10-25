@@ -290,6 +290,13 @@ const assert = require('node:assert/strict');
     await click('#closeStudioTools');
   });
   await check('AI multi-file plan, per-file review, and application', async () => {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const dirtyTab = page.locator('#tabs .tab .tab-dirty').filter({ hasText: '●' }).first();
+      if (!await dirtyTab.count()) break;
+      await dirtyTab.locator('xpath=..').click();
+      await click('#saveBtn');
+      await called('saveFile');
+    }
     await click('#studioToolsBtn');
     await click('[data-studio-tab="ai-changes"]');
     await page.locator('#aiProjectPrompt').fill('Add a small helper and update the previous helper.');
