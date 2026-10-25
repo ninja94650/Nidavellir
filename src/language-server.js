@@ -26,24 +26,25 @@ function toUri(filePath) { return pathToFileURL(path.resolve(filePath)).href; }
 function normalizePathForComparison(value) {
   if (process.platform !== 'win32') return path.resolve(value);
 
-  // Strip Win32 extended-length prefixes before resolving. Resolving first can
-  // preserve the prefix on some Node/Windows versions and make equivalent
-  // workspace/editor paths appear unrelated.
+  // Win32 can represent the same path as either C:\\path or \\\\?\\C:\\path.
+  // Strip device prefixes first, then normalize with Win32 semantics. Preserve
+  // filesystem roots (for example C:\\ and \\\\server\\share\\) while
+  // trimming redundant trailing separators from ordinary directories.
   let input = String(value);
-  if (input.startsWith('\\\\?\\UNC\\')) input = '\\\\' + input.slice(8);
-  else if (input.startsWith('\\\\?\\')) input = input.slice(4);
-  return path.win32.resolve(input).replace(/\\\\+$/, '').toLocaleLowerCase();
+  if (/^\\\\\\\\\\?\\\\UNC\\\\/i.test(input)) input = '\\\\' + input.slice(8);
+  else if (/^\\\\\\\\\\?\\\\/.test(input)) input = input.slice(4);
+  let normalized = path.win32.resolve(input);
+  const root = path.win32.parse(normalized).root;
+  if (normalized.length > root.length) normalized = normalized.replace(/[\\\\/]+$/, '');
+  return normalized.toLowerCase();
 }
 
 function insideRoot(root, target) {
   const normalizedRoot = normalizePathForComparison(root);
   const normalizedTarget = normalizePathForComparison(target);
-  const relative = (process.platform === 'win32' ? path.win32 : path).relative(normalizedRoot, normalizedTarget);
-  return relative === '' || (
-    relative !== '..' &&
-    !relative.startsWith('..' + path.sep) &&
-    !path.isAbsolute(relative)
-  );
+  if (normalizedRoot === normalizedTarget) return true;
+  const rootPrefix = normalizedRoot.endsWith('\\\\') ? normalizedRoot : normalizedRoot + '\\\\';
+  return normalizedTarget.startsWith(rootPrefix);
 }
 
 class LanguageServerManager {
