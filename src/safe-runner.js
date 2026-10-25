@@ -58,6 +58,7 @@ function createSafeRunner(sendOutputFn) {
     if (!payload || typeof payload !== 'object') throw new Error('Invalid run request.');
     const { language, content, filePath } = payload;
     if (!Object.hasOwn(LANGUAGES, language)) throw new Error('Supported run targets: JavaScript, Python, C, C++, Java, Go, Rust, Ruby, PHP, Bash, and PowerShell.');
+    if (payload.debug === true && language !== 'javascript') throw new Error('The current debugger integration supports JavaScript through the Node Inspector.');
     if (typeof content !== 'string') throw new Error('Source code must be text.');
     if (Buffer.byteLength(content, 'utf8') > MAX_SOURCE_BYTES) throw new Error('Source file exceeds the 2 MB run limit.');
     if (filePath != null && (typeof filePath !== 'string' || filePath.length > 4096)) throw new Error('Invalid source file path.');
@@ -100,7 +101,9 @@ function createSafeRunner(sendOutputFn) {
           args = ['-cp', tempDir, path.basename(source, '.java')];
         } else { command = binary; args = []; }
       } else if (language === 'javascript') {
-        command = process.execPath; args = [source];
+        command = process.execPath;
+        args = payload.debug === true ? ['--inspect-brk=127.0.0.1:0', source] : [source];
+        if (payload.debug === true) out('info', 'Node Inspector debug mode: execution is paused at startup. Copy the ws://127.0.0.1 debugger URL below into Chrome DevTools or a compatible debugger.');
       } else if (language === 'python') {
         command = process.platform === 'win32' ? 'python' : 'python3'; args = [source];
       } else if (language === 'go') {
