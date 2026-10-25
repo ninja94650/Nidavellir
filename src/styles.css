@@ -1537,3 +1537,26 @@ button:focus-visible,.ai-panel input:focus-visible,.ai-panel textarea:focus-visi
 #teamAgentSummary { color:var(--muted); font-size:11px; line-height:1.4; }
 .api-key-editor .api-key-field { margin-bottom:12px; }
 .api-key-editor .api-key-field input { width:100%; box-sizing:border-box; }
+
+
+/* Fix AI Workbench scrolling: allow the chat flex child to shrink and own overflow. */
+.ai-panel {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.ai-panel > .chat {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.ai-panel > .chat > * {
+  flex-shrink: 0;
+}
+.ai-panel > .composer,
+.ai-panel > .ai-foot {
+  flex-shrink: 0;
+}
