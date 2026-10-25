@@ -252,6 +252,8 @@
       <p class="studio-help">Detect installed runtimes, compilers, version-control tools, debuggers and language servers. Missing tools are reported; Nidavellir will not install software silently.</p>
       <div class="studio-toolbar"><button id="scanEnvironmentBtn" class="primary" type="button">Scan toolchains</button><span id="environmentSummary">Not scanned yet</span></div>
       <div id="environmentResults" class="studio-result-list"><div class="studio-empty">Run a toolchain scan to see what is installed.</div></div>
+      <div class="studio-toolbar"><button id="diagnoseCurrentFileBtn" type="button">Check current file</button><span id="sourceDiagnosticsSummary">No source check performed</span></div>
+      <pre id="sourceDiagnosticsOutput" class="studio-code-preview" hidden></pre>
       <div class="studio-note"><strong>Code intelligence:</strong> Monaco provides built-in language services for JavaScript/TypeScript, JSON, CSS and HTML. Other languages may require the language servers listed here; detection alone does not install or connect a language server.</div>
     </section>
     <section class="studio-tool-page" data-studio-page="git" hidden>
