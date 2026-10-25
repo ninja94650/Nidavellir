@@ -8,7 +8,7 @@ const root = path.resolve(__dirname, '..');
 
 test('project has core app files', () => {
   for (const f of [
-    'package.json', 'src/main.js', 'src/preload.js',
+    'package.json', 'src/main.js', 'src/preload.js', 'src/studio-services.js',
     'src/index.html', 'src/app.js', 'src/styles.css', 'src/updater.js', 'scripts/copy-monaco.js', 'README.md'
   ]) {
     assert.ok(fs.existsSync(path.join(root, f)), `missing ${f}`);
@@ -50,7 +50,7 @@ test('AI provider adapters exist', () => {
 
 test('preload exposes safe runner and plugin channels', () => {
   const preload = fs.readFileSync(path.join(root, 'src/preload.js'), 'utf8');
-  for (const channel of ['runSafe', 'killRun', 'runHistory', 'synthesize', 'generateTests', 'listPlugins', 'togglePlugin']) {
+  for (const channel of ['runSafe', 'killRun', 'runHistory', 'synthesize', 'generateTests', 'listPlugins', 'togglePlugin', 'getRecoveryDrafts', 'saveRecoveryDrafts', 'searchWorkspace', 'replaceWorkspace', 'detectEnvironment', 'gitStatus', 'gitStage', 'gitCommit', 'planProjectChanges', 'applyProjectChanges']) {
     assert.ok(preload.includes(channel), `preload missing ${channel}`);
   }
 });
