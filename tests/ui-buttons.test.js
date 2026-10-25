@@ -170,18 +170,31 @@ const assert = require('node:assert/strict');
     await click('#replaceOne'); await click('#replaceAll'); await click('#findClose');
     assert.equal(await page.locator('#findBar').isVisible(), false);
   });
-  await check('Settings add multiple API keys and select active key', async () => {
-    await click('#settingsBtn'); await click('#checkKeysBtn'); await called('keyStatus');
-    for (const [label, key] of [['Personal','fake-test-key-1111'],['Work','fake-test-key-2222'],['Backup','fake-test-key-3333']]) {
-      await page.locator('#openaiLabel').fill(label); await page.locator('#openaiKey').fill(key); await click('[data-add-key="openai"]');
-    }
-    await page.waitForFunction(() => document.querySelectorAll('#openaiKeyList .saved-api-key').length === 3);
-    assert.equal(await page.locator('#openaiState').textContent(), '3 keys');
-    assert.equal(await page.locator('#openaiKeyList .saved-api-key.active').count(), 1);
-    await click('#openaiKeyList .saved-api-key:nth-child(2) button');
-    await page.waitForFunction(() => document.querySelector('#openaiKeyList .saved-api-key:nth-child(2)').classList.contains('active'));
-    assert.equal(await page.evaluate(() => window.__uiCalls.filter(c => c.name === 'setKey').length), 3);
-    await click('#closeSettings'); assert.equal(await page.locator('#settingsModal').isVisible(), false);
+  await check('Unified API key list and floating add-key panel', async () => {
+    await click('#settingsBtn');
+    await click('#checkKeysBtn');
+    await called('listKeys');
+    await click('#openApiKeyEditor');
+    assert.equal(await page.locator('#apiKeyEditorModal').isVisible(), true);
+    await page.locator('#apiKeyName').fill('Personal key');
+    await page.locator('#apiKeyProvider').selectOption('openai');
+    await page.locator('#apiKeyValue').fill('fake-test-key-1111');
+    await click('#addApiKeyConfirm');
+    await page.waitForFunction(() => document.querySelectorAll('#savedApiKeyList .saved-api-key').length === 1);
+    assert.equal(await page.locator('#apiKeyCount').textContent(), '1 saved key');
+    assert.equal(await page.locator('#savedApiKeyList .saved-api-key strong').textContent(), 'Personal key');
+    assert.match(await page.locator('#savedApiKeyList .saved-api-key span').textContent(), /OpenAI \/ GPT/);
+    await click('#openApiKeyEditor');
+    await page.locator('#apiKeyName').fill('Work key');
+    await page.locator('#apiKeyProvider').selectOption('openai');
+    await page.locator('#apiKeyValue').fill('fake-test-key-2222');
+    await click('#addApiKeyConfirm');
+    await page.waitForFunction(() => document.querySelectorAll('#savedApiKeyList .saved-api-key').length === 2);
+    assert.equal(await page.locator('#apiKeyCount').textContent(), '2 saved keys');
+    await click('#savedApiKeyList .saved-api-key:nth-child(2) button');
+    await page.waitForFunction(() => document.querySelectorAll('#savedApiKeyList .saved-api-key.active').length === 1);
+    await click('#closeSettings');
+    assert.equal(await page.locator('#settingsModal').isVisible(), false);
   });
   await check('Plugin manager toggle/close', async () => {
     await click('#pluginsBtn'); await called('listPlugins');
