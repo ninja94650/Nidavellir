@@ -1510,3 +1510,21 @@ button:focus-visible,.ai-panel input:focus-visible,.ai-panel textarea:focus-visi
 .saved-api-key-actions button { padding:5px 8px; font-size:11px; }
 .saved-api-key-actions .danger-subtle { color:#f2a2a2; }
 @media(max-width:720px) { .api-key-add-row { grid-template-columns:1fr; } .saved-api-key { align-items:flex-start; flex-direction:column; } .api-key-providers { max-height:48vh; } }
+
+
+/* Unified API key list and floating editor */
+.api-key-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:4px 0 12px; }
+.api-key-toolbar > span { color:var(--muted); font-size:12px; }
+.saved-api-key-list { display:flex; flex-direction:column; gap:8px; max-height:42vh; overflow:auto; padding:1px 4px 4px 1px; }
+.saved-api-key-list .saved-api-key { padding:11px 12px; }
+.api-key-empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px; min-height:120px; padding:20px; border:1px dashed var(--border); border-radius:9px; color:var(--muted); text-align:center; }
+.api-key-empty-state strong { color:var(--text); font-size:13px; }
+.api-key-empty-state span { font-size:12px; }
+.api-key-editor-backdrop { z-index:1002; background:rgba(3,7,14,.72); backdrop-filter:blur(7px); }
+.api-key-editor { width:min(440px,calc(100vw - 32px)); max-height:calc(100vh - 48px); overflow:auto; box-shadow:0 24px 90px rgba(0,0,0,.5); }
+.api-key-field { display:flex; flex-direction:column; gap:7px; margin:13px 0; color:var(--muted); font-size:12px; font-weight:600; }
+.api-key-field input,.api-key-field select { width:100%; min-width:0; color:var(--text); background:var(--bg); border:1px solid var(--border); border-radius:7px; padding:10px 11px; font:inherit; font-weight:400; outline:none; }
+.api-key-field input:focus,.api-key-field select:focus { border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 18%,transparent); }
+.api-key-editor .modal-actions { justify-content:flex-end; margin-top:16px; }
+.api-key-editor .settings-message { min-height:18px; margin-top:8px; }
+@media(max-width:720px) { .saved-api-key { align-items:flex-start; flex-direction:column; } .saved-api-key-list { max-height:38vh; } }
