@@ -16,7 +16,7 @@
   <header class="topbar">
     <div class="brand"><span class="logo">N</span><span>Nidavellir <small>AI IDE</small></span></div>
     <div class="top-actions">
-      <button id="openFolderBtn">Open folder</button><button id="openBtn">Open file</button><button id="saveBtn" title="Save (Ctrl+S)">Save</button><button id="saveAsBtn" title="Save As (Ctrl+Shift+S)">Save As</button><button id="commandPaletteBtn" title="Command Palette (Ctrl+Shift+P)">⌘ Commands</button><button id="studioToolsBtn" title="Project search, Git, diagnostics and AI changes">Studio Tools</button>
+      <button id="openFolderBtn">Open folder</button><button id="openBtn">Open file</button><button id="saveBtn" title="Save (Ctrl+S)">Save</button><button id="saveAsBtn" title="Save As (Ctrl+Shift+S)">Save As</button><button id="commandPaletteBtn" title="Command Palette (Ctrl+Shift+P)">⌘ Commands</button><button id="splitEditorBtn" title="Toggle side-by-side editor">Split View</button><button id="studioToolsBtn" title="Project search, Git, diagnostics and AI changes">Studio Tools</button>
       <button class="primary" id="runBtn">▶ Run</button>
       <button id="pluginsBtn">🧩 Plugins</button>
       <button id="settingsBtn">⚙ AI Settings</button>
@@ -68,6 +68,7 @@
       <div class="editor-wrap">
         <div id="editor"></div>
         <div id="fallbackEditor" hidden><textarea id="plainEditor" spellcheck="false"></textarea></div>
+        <div id="splitPane" hidden><div id="splitEditor"></div><textarea id="splitPlainEditor" spellcheck="false" aria-label="Second editor view" hidden></textarea></div>
         <!-- Diff review overlay — sits on top of editor -->
         <div id="diffOverlay" class="diff-overlay" hidden>
           <div class="diff-header">
