@@ -17,6 +17,7 @@ let splitEditor = null, splitViewEnabled = false;
 let pendingRecoveryDrafts = null, recoveryPromptShown = false, pendingCloseDocumentKey = null;
 let currentWorkspaceRoot = null;
 let projectSearchResults = [], aiProjectChanges = [], gitStatusCache = null;
+let pendingWorkspaceReplacement = null;
 
 const languageMap = {
   js:'javascript',mjs:'javascript',cjs:'javascript',py:'python',cpp:'cpp',c:'c',java:'java',go:'go',rs:'rust',rb:'ruby',php:'php',sh:'bash',ps1:'powershell',
@@ -1589,27 +1590,65 @@ async function performWorkspaceSearch() {
 $('workspaceSearchForm').addEventListener('submit', event => { event.preventDefault(); void performWorkspaceSearch(); });
 $('workspaceSearchSelectAll').addEventListener('click', () => document.querySelectorAll('#workspaceSearchResults input[type="checkbox"]').forEach(input => { input.checked = true; }));
 $('workspaceSearchClear').addEventListener('click', () => { projectSearchResults = []; renderStudioEmpty($('workspaceSearchResults'), 'Search results cleared.'); $('workspaceSearchSummary').textContent = 'No search performed'; });
-$('workspaceReplaceSelectedBtn').addEventListener('click', async () => {
+async function prepareWorkspaceReplacementPreview() {
   try {
     const paths = Array.from($('workspaceSearchResults').querySelectorAll('input[type="checkbox"]:checked'))
       .map(input => projectSearchResults[Number(input.dataset.searchIndex)]?.path).filter(Boolean);
     const uniquePaths = [...new Set(paths)];
     if (!uniquePaths.length) throw new Error('Select one or more search results first.');
-    if (!$('workspaceSearchQuery').value.trim()) throw new Error('Enter the original search query first.');
-    const result = await window.forge.replaceWorkspace({
+    const query = $('workspaceSearchQuery').value;
+    if (!query.trim()) throw new Error('Enter the original search query first.');
+    const payload = {
       root: requireWorkspaceForTools(),
-      options: {
-        paths: uniquePaths, query: $('workspaceSearchQuery').value,
-        replacement: $('workspaceReplaceText').value,
-        matchCase: $('workspaceSearchCase').checked,
-        regex: $('workspaceSearchRegex').checked
-      }
-    });
+      options: { paths: uniquePaths, query, replacement: $('workspaceReplaceText').value,
+        matchCase: $('workspaceSearchCase').checked, regex: $('workspaceSearchRegex').checked }
+    };
+    $('workspaceReplaceSelectedBtn').disabled = true;
+    $('workspaceSearchMessage').textContent = 'Generating a read-only replacement preview…';
+    const result = await window.forge.previewWorkspaceReplace(payload);
+    pendingWorkspaceReplacement = payload;
+    $('workspaceReplacePreview').hidden = false;
+    $('workspaceReplacePreviewSummary').textContent = result.filesChanged + ' file(s) · ' + result.replacements + ' replacement(s)';
+    $('workspaceReplacePreviewText').textContent = (result.previews || []).map(item =>
+      'FILE: ' + item.path + ' (' + item.replacements + ' replacement(s))\n' +
+      '--- BEFORE ---\n' + item.before + '\n--- AFTER PREVIEW ---\n' + item.after + '\n'
+    ).join('\n') || 'No changes would be made.';
+    $('workspaceApplyReplacementBtn').disabled = !result.replacements;
+    $('workspaceSearchMessage').textContent = result.warning || 'Preview ready. No files have been changed.';
+  } catch (error) {
+    pendingWorkspaceReplacement = null;
+    $('workspaceReplacePreview').hidden = true;
+    $('workspaceSearchMessage').textContent = error.message || String(error);
+  } finally { $('workspaceReplaceSelectedBtn').disabled = false; }
+}
+$('workspaceReplaceSelectedBtn').addEventListener('click', () => { void prepareWorkspaceReplacementPreview(); });
+$('workspaceApplyReplacementBtn').addEventListener('click', async () => {
+  if (!pendingWorkspaceReplacement) { $('workspaceSearchMessage').textContent = 'Create a fresh preview before applying.'; return; }
+  const button = $('workspaceApplyReplacementBtn');
+  button.disabled = true;
+  try {
+    const result = await window.forge.replaceWorkspace(pendingWorkspaceReplacement);
     if (result.cancelled) { $('workspaceSearchMessage').textContent = 'Replacement cancelled.'; return; }
-    $('workspaceSearchMessage').textContent = 'Replaced ' + result.replacements + ' occurrence(s) in ' + result.filesChanged + ' file(s). Backups are stored in Nidavellir user data.';
+    pendingWorkspaceReplacement = null;
+    $('workspaceReplacePreview').hidden = true;
+    $('workspaceSearchMessage').textContent = 'Replaced ' + result.replacements + ' occurrence(s) in ' + result.filesChanged + ' file(s). Recovery backups were created.';
     await performWorkspaceSearch();
   } catch (error) { $('workspaceSearchMessage').textContent = error.message || String(error); }
+  finally { button.disabled = false; }
 });
+$('workspaceCancelReplacementBtn').addEventListener('click', () => {
+  pendingWorkspaceReplacement = null;
+  $('workspaceReplacePreview').hidden = true;
+  $('workspaceApplyReplacementBtn').disabled = true;
+  $('workspaceSearchMessage').textContent = 'Replacement preview dismissed; no files were changed.';
+});
+for (const id of ['workspaceSearchQuery','workspaceReplaceText']) {
+  $(id).addEventListener('input', () => {
+    pendingWorkspaceReplacement = null;
+    $('workspaceReplacePreview').hidden = true;
+    $('workspaceApplyReplacementBtn').disabled = true;
+  });
+}
 
 async function scanEnvironment() {
   const button = $('scanEnvironmentBtn');
