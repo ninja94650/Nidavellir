@@ -1,3 +1,8 @@
+# 0.4.14
+
+- Fixes AI Workbench chat scrolling so long agent responses remain reachable while the prompt composer stays visible.
+- Keeps the AI chat panel constrained to the available window height and enables contained vertical scrolling.
+
 # 0.4.13
 
 - Simplifies API key setup into one floating form for a user-defined name and key; provider is detected from supported key formats.
