@@ -632,7 +632,7 @@ function addAnswer(provider, body, loading = false) {
   const card = document.createElement('div');
   card.className = 'answer-card';
   card.innerHTML =
-    `<div class="answer-head"><span>${providerName(provider)}</span>` +
+    `<div class="answer-head"><span>${escapeHtml(providerName(provider))}</span>` +
     `<span class="answer-state">${loading ? 'WORKING…' : 'RESPONSE'}</span></div>` +
     `<div class="answer-body">${escapeHtml(body)}</div>`;
   $('chat').appendChild(card);
@@ -733,6 +733,7 @@ async function askTeam() {
     provider: key.provider, keyId: key.id, keyLabel: key.label || 'API key', agentNumber: index + 1,
     name: (key.label || apiKeyProviderNames[key.provider]) + ((key.agentCount || 1) > 1 ? ' · Agent ' + (index + 1) : '')
   })));
+  $('teamAgentSummary').textContent = agents.length + (agents.length === 1 ? ' coworking agent' : ' coworking agents') + ' across ' + keyGroups.length + (keyGroups.length === 1 ? ' saved key' : ' saved keys');
   if (!agents.length) { addAnswer('team', 'Add an API key in Settings to create your coworking agents.'); return; }
 
   if ($('chat').querySelector('.welcome-chat')) $('chat').innerHTML = '';
