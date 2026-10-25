@@ -1299,3 +1299,44 @@ input:focus, textarea:focus, select:focus, .composer textarea:focus {
 .update-setting .updates-toggle { display: flex; align-items: center; gap: 9px; flex-direction: row; cursor: pointer; }
 .update-setting .updates-toggle input { width: auto; flex: 0 0 auto; margin: 0; }
 .update-setting small { display: block; margin-top: 5px; }
+
+/* ── Command Palette / Quick Open ── */
+.command-palette-backdrop {
+  position: fixed; inset: 0; z-index: 40; display: grid; place-items: start center;
+  padding: min(16vh, 130px) 18px 24px; background: rgba(4, 6, 12, .68); backdrop-filter: blur(8px);
+}
+.command-palette-backdrop[hidden] { display: none !important; }
+.command-palette {
+  width: min(700px, 100%); max-height: min(620px, 76vh); overflow: hidden; display: flex; flex-direction: column;
+  border: 1px solid rgba(167, 139, 250, .46); border-radius: 15px;
+  background: linear-gradient(145deg, #1c2231, #121722 72%);
+  box-shadow: 0 32px 110px rgba(0, 0, 0, .62), 0 0 34px rgba(124, 58, 237, .13); color: var(--text, #eef2ff);
+}
+.command-palette-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 18px 20px 12px; }
+.command-palette-head h2 { margin: 0; color: #f2f4ff; font-size: 16px; letter-spacing: .02em; }
+.command-palette-head p { margin: 5px 0 0; color: #9ca8bd; font-size: 12px; }
+.command-palette kbd { flex: 0 0 auto; padding: 3px 7px; border: 1px solid #42495f; border-radius: 6px; color: #bbc5dc; background: #151a26; font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; }
+#commandPaletteInput {
+  width: calc(100% - 32px); margin: 0 16px 12px; padding: 12px 13px; color: #f4f5ff;
+  background: rgba(5, 9, 17, .72); border: 1px solid #454c66; border-radius: 9px; outline: none;
+  font: 13px ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+#commandPaletteInput:focus { border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167, 139, 250, .13); }
+.command-palette-list { min-height: 44px; max-height: min(410px, 48vh); overflow-y: auto; padding: 3px 8px 9px; overscroll-behavior: contain; }
+.palette-item {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  border: 1px solid transparent; border-radius: 8px; padding: 9px 11px; margin: 2px 0;
+  color: #e4e9f7; background: transparent; text-align: left; cursor: pointer;
+}
+.palette-item:hover, .palette-item.active { border-color: rgba(139, 125, 255, .28); background: linear-gradient(90deg, rgba(124, 58, 237, .20), rgba(45, 212, 191, .06)); }
+.palette-item-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.palette-item-copy strong { font-size: 12px; font-weight: 650; }
+.palette-item-copy small { overflow: hidden; color: #93a0b7; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.command-palette-empty { padding: 18px 15px 23px; color: #9ca8bd; font-size: 12px; text-align: center; }
+.command-palette-foot { display: flex; justify-content: flex-end; gap: 16px; padding: 10px 17px; border-top: 1px solid rgba(108, 121, 148, .18); background: rgba(9, 12, 20, .38); color: #8793aa; font-size: 10px; }
+@media (max-width: 620px) {
+  .command-palette-backdrop { padding: 9vh 10px 20px; }
+  .command-palette-head { padding: 15px 14px 10px; }
+  #commandPaletteInput { width: calc(100% - 24px); margin: 0 12px 10px; }
+  .command-palette-foot { justify-content: center; gap: 10px; }
+}

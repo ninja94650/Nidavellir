@@ -5,7 +5,7 @@ on:
   push:
     branches:
       - main
-      - feat/vscode-parity-ai-collaboration
+      - 'feat/**'
       - v0.4-installable
       - fix/startup-and-update-resilience
     paths:

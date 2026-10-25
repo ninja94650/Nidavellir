@@ -8,6 +8,9 @@ let monacoReady = false, isRunning = false;
 // Preserve New File requests made while Monaco is still loading.
 let pendingNewDocument = null;
 let diffEditorInstance = null, proposedCode = '';
+let recentFiles = [];
+let paletteMode = 'commands', paletteItems = [], paletteActiveIndex = 0, palettePreviousFocus = null;
+let wordWrapEnabled = true;
 
 const languageMap = {
   js:'javascript',mjs:'javascript',cjs:'javascript',py:'python',cpp:'cpp',c:'c',java:'java',go:'go',rs:'rust',rb:'ruby',php:'php',sh:'bash',ps1:'powershell',
@@ -118,7 +121,7 @@ function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;'
 
 function renderTree(items, container, depth = 0) {
   for (const item of items) {
-    const row = document.createElement('div'); row.className = 'file-item'; row.style.paddingLeft = (8 + depth * 13) + 'px';
+    const row = document.createElement('div'); row.className = 'file-item'; row.dataset.directory = item.directory ? 'true' : 'false'; row.style.paddingLeft = (8 + depth * 13) + 'px';
     row.innerHTML = `<span class="file-icon">${item.directory ? '▸' : iconFor(item.name)}</span><span>${escapeHtml(item.name)}</span>`;
     row.title = item.path; container.appendChild(row);
     if (item.directory) {
@@ -131,7 +134,8 @@ function renderTree(items, container, depth = 0) {
 }
 function iconFor(name) { const e = name.split('.').pop(); return ({ js:'JS',py:'Py',cpp:'C+',c:'C',html:'◇',css:'#',json:'{}',md:'M',ts:'TS' })[e] || '·'; }
 function loadFile(filePath, content) {
-  currentPath = filePath; currentName = filePath.split(/[\\/]/).pop();
+  currentPath = filePath;
+  recentFiles = [filePath, ...recentFiles.filter(item => item !== filePath)].slice(0, 12); currentName = filePath.split(/[\\/]/).pop();
   setValue(content, inferLanguage(currentName)); showLanguage(inferLanguage(currentName));
   $('tabs').querySelector('.tab').textContent = currentName;
   setStatus('Opened · ' + filePath);
@@ -161,6 +165,7 @@ async function saveCurrentFile(forceDialog = false) {
     });
     if (f) {
       currentPath = f.filePath;
+      recentFiles = [currentPath, ...recentFiles.filter(item => item !== currentPath)].slice(0, 12);
       currentName = f.name;
       $('tabs').querySelector('.tab').textContent = currentName;
       setStatus('Saved · ' + currentPath);
@@ -749,19 +754,183 @@ async function initPluginUI() {
   try { await refreshPluginIntegrations(); } catch {}
 }
 
+
+/* ─────────────────────────────────────────────
+   Command Palette and Quick Open
+   ───────────────────────────────────────────── */
+
+function baseNameForPath(filePath) {
+  const value = String(filePath);
+  return value.slice(Math.max(value.lastIndexOf('/'), value.lastIndexOf('\\')) + 1);
+}
+function getPaletteCommands() {
+  return [
+    { label: 'New File', detail: 'Create a new source or text file', shortcut: 'Ctrl+N', run: () => $('newFileBtn').click() },
+    { label: 'Open File…', detail: 'Open a file from disk', shortcut: 'Ctrl+O', run: () => $('openBtn').click() },
+    { label: 'Open Folder…', detail: 'Browse a project folder', run: () => $('openFolderBtn').click() },
+    { label: 'Save', detail: 'Save the current file', shortcut: 'Ctrl+S', run: () => $('saveBtn').click() },
+    { label: 'Save As…', detail: 'Choose a new file location', shortcut: 'Ctrl+Shift+S', run: () => $('saveAsBtn').click() },
+    { label: 'Run Current File', detail: 'Execute the active file', shortcut: 'F5', run: () => $('runBtn').click() },
+    { label: 'Find in Current File', detail: 'Search text in the editor', shortcut: 'Ctrl+F', run: () => openFindBar('find') },
+    { label: 'Replace in Current File', detail: 'Find and replace text', shortcut: 'Ctrl+H', run: () => openFindBar('replace') },
+    { label: 'Go to Line…', detail: 'Jump to a specific line', shortcut: 'Ctrl+G', run: () => {
+      if (monacoReady && editor) { editor.focus(); editor.trigger('command-palette', 'editor.action.gotoLine'); return; }
+      const field = $('plainEditor');
+      const line = Number.parseInt(window.prompt('Go to line:', '1'), 10);
+      if (!Number.isInteger(line) || line < 1) return;
+      const lines = field.value.split('\\n');
+      const offset = lines.slice(0, Math.min(line - 1, lines.length)).reduce((sum, value) => sum + value.length + 1, 0);
+      field.focus(); field.setSelectionRange(offset, offset);
+    }},
+    { label: 'Ask AI Team', detail: 'Focus the AI Workbench prompt', run: () => { $('focusAiBtn').click(); $('aiPanel').scrollIntoView({ block: 'nearest' }); } },
+    { label: 'Focus Terminal', detail: 'Switch to terminal and focus command input', run: () => $('focusTerminalBtn').click() },
+    { label: 'Toggle Explorer', detail: 'Show or hide the project tree', run: () => $('explorerBtn').click() },
+    { label: 'Show Run History', detail: 'Review recent code executions', run: () => $('runHistoryBtn').click() },
+    { label: 'Manage Plugins', detail: 'View and enable installed plugins', run: () => $('pluginsBtn').click() },
+    { label: 'AI Settings', detail: 'Configure assistant API keys', run: () => $('settingsBtn').click() },
+    { label: 'Toggle Word Wrap', detail: 'Currently ' + (wordWrapEnabled ? 'on' : 'off') + ' · wrap long editor lines', run: toggleWordWrap }
+  ];
+}
+function toggleWordWrap() {
+  wordWrapEnabled = !wordWrapEnabled;
+  if (monacoReady && editor) editor.updateOptions({ wordWrap: wordWrapEnabled ? 'on' : 'off' });
+  const fallback = $('plainEditor');
+  if (fallback) {
+    fallback.style.whiteSpace = wordWrapEnabled ? 'pre-wrap' : 'pre';
+    fallback.style.overflowWrap = wordWrapEnabled ? 'anywhere' : 'normal';
+  }
+  setStatus('Word wrap ' + (wordWrapEnabled ? 'enabled' : 'disabled'));
+}
+function getQuickOpenFiles() {
+  const byPath = new Map();
+  for (const filePath of recentFiles) {
+    if (typeof filePath === 'string' && filePath) byPath.set(filePath, { path: filePath, label: baseNameForPath(filePath), detail: filePath });
+  }
+  document.querySelectorAll('.file-item').forEach(row => {
+    if (row.dataset.directory === 'true' || !row.title) return;
+    byPath.set(row.title, { path: row.title, label: row.querySelector('span:not(.file-icon)')?.textContent || baseNameForPath(row.title), detail: row.title });
+  });
+  return Array.from(byPath.values());
+}
+function paletteMatches(query, item) {
+  const normalized = query.trim().toLocaleLowerCase();
+  if (!normalized) return true;
+  const haystack = (item.label + ' ' + (item.detail || '') + ' ' + (item.shortcut || '')).toLocaleLowerCase();
+  return haystack.includes(normalized) || normalized.split(' ').filter(Boolean).every(part => haystack.includes(part));
+}
+function refreshPaletteItems() {
+  const source = paletteMode === 'files'
+    ? getQuickOpenFiles().map(file => ({ label: file.label, detail: file.detail, filePath: file.path, run: async () => {
+        const result = await window.forge.readPath(file.path);
+        if (result) loadFile(result.filePath, result.content);
+      }}))
+    : getPaletteCommands();
+  paletteItems = source.filter(item => paletteMatches($('commandPaletteInput').value, item));
+  paletteActiveIndex = 0;
+  renderPaletteItems();
+}
+function renderPaletteItems() {
+  const list = $('commandPaletteList');
+  list.replaceChildren();
+  if (!paletteItems.length) {
+    const empty = document.createElement('div');
+    empty.className = 'command-palette-empty';
+    empty.textContent = paletteMode === 'files' ? 'No matching project files. Open a folder to browse more files.' : 'No commands match your search.';
+    list.appendChild(empty);
+    return;
+  }
+  paletteItems.forEach((item, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'palette-item' + (index === paletteActiveIndex ? ' active' : '');
+    button.setAttribute('role', 'option');
+    button.setAttribute('aria-selected', index === paletteActiveIndex ? 'true' : 'false');
+    const copy = document.createElement('span');
+    copy.className = 'palette-item-copy';
+    const label = document.createElement('strong');
+    label.textContent = item.label;
+    const detail = document.createElement('small');
+    detail.textContent = item.detail || '';
+    copy.append(label, detail);
+    button.appendChild(copy);
+    if (item.shortcut) {
+      const shortcut = document.createElement('kbd');
+      shortcut.textContent = item.shortcut;
+      button.appendChild(shortcut);
+    }
+    button.addEventListener('mouseenter', () => setPaletteActiveIndex(index));
+    button.addEventListener('click', () => executePaletteItem(item));
+    list.appendChild(button);
+  });
+  list.querySelector('.palette-item.active')?.scrollIntoView({ block: 'nearest' });
+}
+function setPaletteActiveIndex(index) {
+  if (!paletteItems.length) return;
+  paletteActiveIndex = (index + paletteItems.length) % paletteItems.length;
+  $('commandPaletteList').querySelectorAll('.palette-item').forEach((button, buttonIndex) => {
+    const active = buttonIndex === paletteActiveIndex;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  $('commandPaletteList').querySelector('.palette-item.active')?.scrollIntoView({ block: 'nearest' });
+}
+function openCommandPalette(mode = 'commands') {
+  palettePreviousFocus = document.activeElement;
+  paletteMode = mode;
+  $('commandPaletteTitle').textContent = mode === 'files' ? 'Quick Open' : 'Command Palette';
+  $('commandPaletteHint').textContent = mode === 'files' ? 'Filter recent and workspace files.' : 'Type a command to search available actions.';
+  $('commandPaletteInput').placeholder = mode === 'files' ? 'Search files by name or path…' : 'Search commands…';
+  $('commandPaletteInput').value = '';
+  $('commandPalette').hidden = false;
+  refreshPaletteItems();
+  $('commandPaletteInput').focus();
+}
+function closeCommandPalette(restoreFocus = true) {
+  $('commandPalette').hidden = true;
+  if (!restoreFocus) return;
+  if (palettePreviousFocus && palettePreviousFocus.isConnected && typeof palettePreviousFocus.focus === 'function') palettePreviousFocus.focus();
+  else if (monacoReady && editor) editor.focus();
+  else $('plainEditor').focus();
+}
+async function executePaletteItem(item) {
+  closeCommandPalette();
+  try { await item.run(); }
+  catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    addOutput('stderr', message);
+    setStatus('Action failed');
+  }
+}
+$('commandPaletteBtn').addEventListener('click', () => openCommandPalette('commands'));
+$('commandPalette').addEventListener('click', event => {
+  if (event.target === $('commandPalette')) closeCommandPalette();
+});
+$('commandPaletteInput').addEventListener('input', refreshPaletteItems);
+
 /* ─────────────────────────────────────────────
    Keyboard shortcuts
    ───────────────────────────────────────────── */
 
 document.addEventListener('keydown', e => {
-  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {
-    e.preventDefault();
-    $('saveAsBtn').click();
+  const control = e.ctrlKey || e.metaKey;
+  const key = String(e.key || '').toLowerCase();
+  if (!$('commandPalette').hidden) {
+    if (e.key === 'Escape') { e.preventDefault(); closeCommandPalette(); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setPaletteActiveIndex(paletteActiveIndex + 1); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); setPaletteActiveIndex(paletteActiveIndex - 1); return; }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (paletteItems[paletteActiveIndex]) void executePaletteItem(paletteItems[paletteActiveIndex]);
+      return;
+    }
     return;
   }
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); $('saveBtn').click(); }
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); $('openBtn').click(); }
-  if (e.key === 'F5') { $('runBtn').click(); }
+  if (control && e.shiftKey && key === 'p') { e.preventDefault(); openCommandPalette('commands'); return; }
+  if (control && !e.shiftKey && key === 'p') { e.preventDefault(); openCommandPalette('files'); return; }
+  if (control && e.shiftKey && key === 's') { e.preventDefault(); $('saveAsBtn').click(); return; }
+  if (control && key === 's') { e.preventDefault(); $('saveBtn').click(); return; }
+  if (control && key === 'o') { e.preventDefault(); $('openBtn').click(); return; }
+  if (e.key === 'F5') { e.preventDefault(); $('runBtn').click(); }
 });
 
 /* ─────────────────────────────────────────────
@@ -904,6 +1073,8 @@ $('replaceInput').addEventListener('keydown', e => {
 });
 
 window.forge.onEditorCommand(command => {
+  if (command === 'commandPalette') { openCommandPalette('commands'); return; }
+  if (command === 'quickOpen') { openCommandPalette('files'); return; }
   if (command === 'new') { $('newFileBtn').click(); return; }
   if (command === 'open') { $('openBtn').click(); return; }
   if (command === 'save') { $('saveBtn').click(); return; }
