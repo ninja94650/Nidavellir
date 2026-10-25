@@ -181,21 +181,30 @@ function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;'
    File tree
    ───────────────────────────────────────────── */
 
+
 function renderTree(items, container, depth = 0) {
   for (const item of items) {
-    const row = document.createElement('div'); row.className = 'file-item'; row.style.paddingLeft = (8 + depth * 13) + 'px';
-    row.innerHTML = `<span class="file-icon">${item.directory ? '▸' : iconFor(item.name)}</span><span>${escapeHtml(item.name)}</span>`;
-    row.title = item.path; container.appendChild(row);
-    if (item.directory) {
-      row.addEventListener('click', () => { const next = row.nextElementSibling; if (next && next.dataset.childGroup === 'true') { next.hidden = !next.hidden; row.querySelector('.file-icon').textContent = next.hidden ? '▸' : '▾'; } });
-      const child = document.createElement('div'); child.dataset.childGroup = 'true'; renderTree(item.children || [], child, depth + 1); container.appendChild(child);
+    const row=document.createElement('div'); row.className='file-item'; row.style.paddingLeft=(8+depth*13)+'px';
+    row.dataset.path=item.path; row.dataset.directory=item.directory?'true':'false'; row.title=item.path; row.tabIndex=0; row.setAttribute('role','treeitem');
+    const icon=document.createElement('span'); icon.className='file-icon'; icon.textContent=item.directory?'▸':iconFor(item.name);
+    const label=document.createElement('span'); label.className='file-label'; label.textContent=item.name; row.append(icon,label);
+    if (!item.directory) {
+      const trigger=document.createElement('button'); trigger.type='button'; trigger.className='file-actions-trigger'; trigger.textContent='⋯'; trigger.title='File actions'; trigger.setAttribute('aria-label','File actions for '+item.name);
+      trigger.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();currentExplorerSelection=item;showFileContextMenu(item,e.clientX,e.clientY);}); row.appendChild(trigger);
+    }
+    container.appendChild(row);
+    row.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();currentExplorerSelection=item;showFileContextMenu(item,e.clientX,e.clientY);});
+    if(item.directory){
+      row.setAttribute('aria-expanded','true'); row.addEventListener('click',e=>{if(e.target.closest('.file-actions-trigger'))return;currentExplorerSelection=item;const child=row.nextElementSibling;if(child&&child.dataset.childGroup==='true'){child.hidden=!child.hidden;row.setAttribute('aria-expanded',child.hidden?'false':'true');icon.textContent=child.hidden?'▸':'▾';}});
+      const child=document.createElement('div');child.dataset.childGroup='true';renderTree(item.children||[],child,depth+1);container.appendChild(child);
     } else {
-      row.addEventListener('click', async () => { try { const f = await window.forge.readPath(item.path); loadFile(f.filePath, f.content); } catch (e) { addOutput('stderr', e.message); } });
+      row.addEventListener('click',async e=>{if(e.target.closest('.file-actions-trigger'))return;currentExplorerSelection=item;try{const existing=openDocuments.get(item.path);if(existing){switchDocument(existing.id);return;}const file=await window.forge.readPath(item.path);loadFile(file.filePath,file.content);}catch(error){addOutput('stderr',error.message);}});
+      row.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();row.click();}if(e.key==='F2'){e.preventDefault();void renameExplorerFile(item);}});
     }
   }
 }
-function iconFor(name) { const e = name.split('.').pop(); return ({ js:'JS',py:'Py',cpp:'C+',c:'C',html:'◇',css:'#',json:'{}',md:'M',ts:'TS' })[e] || '·'; }
-function loadFile(filePath, content) { const name = filePath.split(/[\\/]/).pop(); recordFileSnapshot(filePath,content,'Opened'); openDocument(filePath, name, content, inferLanguage(name)); }
+function iconFor(name) { const e=name.split('.').pop().toLowerCase(); return ({js:'JS',py:'Py',cpp:'C+',c:'C',html:'◇',css:'#',json:'{}',md:'M',ts:'TS'})[e]||'·'; }
+function loadFile(filePath,content){const name=filePath.split(/[\\/]/).pop();recordFileSnapshot(filePath,content,'Opened');openDocument(filePath,name,content,inferLanguage(name));}
 
 /* ─────────────────────────────────────────────
    File buttons
@@ -205,6 +214,7 @@ $('openBtn').onclick = async () => { try { const f = await window.forge.openFile
 $('openFolderBtn').onclick = async () => {
   try {
     const f = await window.forge.openFolder(); if (!f) return;
+    workspaceRoot = f.folder;
     $('folderName').textContent = f.folder.split(/[\\/]/).pop().toUpperCase();
     $('fileTree').innerHTML = ''; renderTree(f.tree, $('fileTree'));
     setStatus('Folder opened · ' + f.folder);
