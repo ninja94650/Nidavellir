@@ -61,6 +61,7 @@ function registerStudioIpc({ ipcMain, app, dialog, getWindow, approvedRoots, isW
     return studio.replaceWorkspace(root,payload.options||{},path.join(app.getPath('userData'),'workspace-backups'));
   });
   ipcMain.handle('studio:environment', async () => studio.detectEnvironment());
+  ipcMain.handle('studio:diagnose', async (_event,p={}) => studio.diagnoseSource(p));
 
   ipcMain.handle('git:status', async (_event,root) => studio.gitStatus(await workspaceRoot(root)));
   ipcMain.handle('git:diff', async (_event,p={}) => studio.gitDiff(await workspaceRoot(p.root),p.staged===true,p.path||''));
