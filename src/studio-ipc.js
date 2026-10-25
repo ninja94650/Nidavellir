@@ -50,6 +50,7 @@ function registerStudioIpc({ ipcMain, app, dialog, getWindow, approvedRoots, isW
   });
 
   ipcMain.handle('workspace:search', async (_event, payload={}) => studio.searchWorkspace(await workspaceRoot(payload.root), payload.options || {}));
+  ipcMain.handle('workspace:preview-replace', async (_event, payload={}) => studio.previewWorkspaceReplace(await workspaceRoot(payload.root), payload.options || {}));
   ipcMain.handle('workspace:replace', async (_event, payload={}) => {
     const root=await workspaceRoot(payload.root), win=getWindow();
     const answer=await dialog.showMessageBox(win,{
