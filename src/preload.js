@@ -6,6 +6,25 @@ contextBridge.exposeInMainWorld('forge', {
   openFolder:  ()       => ipcRenderer.invoke('file:open-folder'),
   readPath:    filePath => ipcRenderer.invoke('file:read-path', filePath),
 
+  // ── recovery and workspace tools ──
+  getRecoveryDrafts: () => ipcRenderer.invoke('recovery:get'),
+  saveRecoveryDrafts: payload => ipcRenderer.invoke('recovery:save', payload),
+  clearRecoveryDrafts: () => ipcRenderer.invoke('recovery:clear'),
+  searchWorkspace: payload => ipcRenderer.invoke('workspace:search', payload),
+  replaceWorkspace: payload => ipcRenderer.invoke('workspace:replace', payload),
+  detectEnvironment: () => ipcRenderer.invoke('studio:environment'),
+  gitStatus: root => ipcRenderer.invoke('git:status', root),
+  gitDiff: payload => ipcRenderer.invoke('git:diff', payload),
+  gitBranches: root => ipcRenderer.invoke('git:branches', root),
+  gitLog: root => ipcRenderer.invoke('git:log', root),
+  gitStage: payload => ipcRenderer.invoke('git:stage', payload),
+  gitUnstage: payload => ipcRenderer.invoke('git:unstage', payload),
+  gitCommit: payload => ipcRenderer.invoke('git:commit', payload),
+  gitPull: root => ipcRenderer.invoke('git:pull', root),
+  gitPush: root => ipcRenderer.invoke('git:push', root),
+  planProjectChanges: payload => ipcRenderer.invoke('ai:plan-project-changes', payload),
+  applyProjectChanges: payload => ipcRenderer.invoke('project:apply-changes', payload),
+
   // ── runner ──
   run:         payload  => ipcRenderer.invoke('runner:run', payload),
   runSafe:     payload  => ipcRenderer.invoke('runner:run-safe', payload),
