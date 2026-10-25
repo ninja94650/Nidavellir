@@ -1528,3 +1528,12 @@ button:focus-visible,.ai-panel input:focus-visible,.ai-panel textarea:focus-visi
 .api-key-editor .modal-actions { justify-content:flex-end; margin-top:16px; }
 .api-key-editor .settings-message { min-height:18px; margin-top:8px; }
 @media(max-width:720px) { .saved-api-key { align-items:flex-start; flex-direction:column; } .saved-api-key-list { max-height:38vh; } }
+
+
+/* Provider-agnostic named agent setup */
+.api-key-field > small { display:block; margin-top:5px; color:var(--muted); font-size:11px; line-height:1.45; }
+#apiKeyAgentCount { max-width:180px; }
+.agent-team-toolbar { align-items:center; justify-content:space-between; gap:10px; }
+#teamAgentSummary { color:var(--muted); font-size:11px; line-height:1.4; }
+.api-key-editor .api-key-field { margin-bottom:12px; }
+.api-key-editor .api-key-field input { width:100%; box-sizing:border-box; }
