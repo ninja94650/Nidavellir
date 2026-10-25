@@ -1575,3 +1575,42 @@ input:focus, textarea:focus, select:focus, .composer textarea:focus {
   .studio-git-actions > button { flex: 1 1 130px; }
   .studio-result-item { padding: 7px; }
 }
+
+
+/* ── Synchronized side-by-side editor ── */
+.editor-wrap.split-enabled {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1px;
+  background: #2d3548;
+}
+.editor-wrap.split-enabled #editor,
+.editor-wrap.split-enabled #fallbackEditor,
+.editor-wrap.split-enabled #splitPane {
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+#splitPane[hidden] { display: none !important; }
+#splitEditor, #splitPlainEditor {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+}
+#splitPlainEditor {
+  resize: none;
+  border: 0;
+  outline: 0;
+  padding: 18px;
+  background: #10131b;
+  color: #e6eaf2;
+  font: 13px/1.6 Consolas, monospace;
+}
+.editor-wrap.split-enabled #diffOverlay {
+  grid-column: 1 / -1;
+}
+@media (max-width: 760px) {
+  .editor-wrap.split-enabled { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  .editor-wrap.split-enabled #diffOverlay { grid-row: 1 / -1; }
+}
