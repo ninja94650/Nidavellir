@@ -15,6 +15,11 @@ contextBridge.exposeInMainWorld('forge', {
   replaceWorkspace: payload => ipcRenderer.invoke('workspace:replace', payload),
   detectEnvironment: () => ipcRenderer.invoke('studio:environment'),
   diagnoseSource: payload => ipcRenderer.invoke('studio:diagnose', payload),
+  startLanguageServer: payload => ipcRenderer.invoke('lsp:start', payload),
+  stopLanguageServer: () => ipcRenderer.invoke('lsp:stop'),
+  openLanguageServerDocument: payload => ipcRenderer.invoke('lsp:open-document', payload),
+  changeLanguageServerDocument: payload => ipcRenderer.invoke('lsp:change-document', payload),
+  languageServerRequest: payload => ipcRenderer.invoke('lsp:request', payload),
   gitStatus: root => ipcRenderer.invoke('git:status', root),
   gitDiff: payload => ipcRenderer.invoke('git:diff', payload),
   gitBranches: root => ipcRenderer.invoke('git:branches', root),
@@ -65,6 +70,7 @@ contextBridge.exposeInMainWorld('forge', {
   onTerminalOutput: cb => ipcRenderer.on('terminal:output', (_e, v) => cb(v)),
   onPluginStatusUpdate: cb => ipcRenderer.on('plugins:status-update', (_e, v) => cb(v)),
   onUpdateStatus: cb => ipcRenderer.on('updates:status', (_e, value) => cb(value)),
+  onLanguageServerNotification: cb => ipcRenderer.on('lsp:notification', (_e, notification) => cb(notification)),
   onEditorCommand: cb => ipcRenderer.on('editor:command', (_e, command) => {
     if (['new', 'open', 'save', 'find', 'replace', 'gotoLine', 'commandPalette', 'quickOpen'].includes(command)) cb(command);
   }),
