@@ -1614,3 +1614,35 @@ input:focus, textarea:focus, select:focus, .composer textarea:focus {
   .editor-wrap.split-enabled { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
   .editor-wrap.split-enabled #diffOverlay { grid-row: 1 / -1; }
 }
+
+
+.studio-branch-controls {
+  display: grid;
+  grid-template-columns: minmax(100px, .8fr) minmax(140px, 1fr) auto minmax(140px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+}
+.studio-branch-controls .studio-field-label {
+  margin: 0;
+  grid-column: 1;
+}
+#gitBranchSelect, #gitNewBranchInput {
+  min-width: 0;
+  width: 100%;
+  padding: 8px 9px;
+  color: #e4eaf7;
+  background: #10151f;
+  border: 1px solid #3b4359;
+  border-radius: 7px;
+  font-size: 11px;
+}
+#gitBranchSelect { grid-column: 2; }
+#gitSwitchBranchBtn { grid-column: 3; }
+#gitNewBranchInput { grid-column: 4; }
+#gitCreateBranchBtn { grid-column: 5; }
+@media (max-width: 900px) {
+  .studio-branch-controls { grid-template-columns: 1fr auto; }
+  .studio-branch-controls .studio-field-label { grid-column: 1 / -1; }
+  #gitBranchSelect, #gitNewBranchInput, #gitSwitchBranchBtn, #gitCreateBranchBtn { grid-column: auto; }
+}
