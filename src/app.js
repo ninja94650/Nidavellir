@@ -1312,6 +1312,7 @@ function replaceAllMatches() {
   setStatus(`Replaced ${ranges.length} occurrence${ranges.length === 1 ? '' : 's'}`);
 }
 $('plainEditor').addEventListener('input', () => {
+  syncActiveDocumentState(true);
   if ($('findBar') && !$('findBar').hidden) collectFindMatches();
 });
 $('findInput').addEventListener('input', () => { collectFindMatches(); if (findMatches.length) selectFindMatch(0, false); });
