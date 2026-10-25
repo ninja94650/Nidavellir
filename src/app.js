@@ -791,7 +791,10 @@ function getPaletteCommands() {
     { label: 'Show Run History', detail: 'Review recent code executions', run: () => $('runHistoryBtn').click() },
     { label: 'Manage Plugins', detail: 'View and enable installed plugins', run: () => $('pluginsBtn').click() },
     { label: 'AI Settings', detail: 'Configure assistant API keys', run: () => $('settingsBtn').click() },
-    { label: 'Toggle Word Wrap', detail: 'Currently ' + (wordWrapEnabled ? 'on' : 'off') + ' · wrap long editor lines', run: toggleWordWrap }
+    { label: 'Toggle Word Wrap', detail: 'Currently ' + (wordWrapEnabled ? 'on' : 'off') + ' · wrap long editor lines', run: toggleWordWrap },
+    { label: 'Search in Project', detail: 'Find and replace literal text across workspace files', run: () => $('projectSearchBtn').click() },
+    { label: 'Environment Doctor', detail: 'Detect installed compilers, runtimes, and Git', run: () => $('environmentDoctorBtn').click() },
+    { label: 'Git Workspace', detail: 'Review changes, stage files, and commit locally', run: () => $('gitBtn').click() }
   ];
 }
 function toggleWordWrap() {
@@ -1241,7 +1244,7 @@ function workspaceRestoreDrafts() {
   if (!drafts.length) { localStorage.removeItem(WORKSPACE_RECOVERY_KEY); return; }
   if (!window.confirm('Nidavellir found ' + drafts.length + ' unsaved draft(s) from a previous session. Restore them?\n\nRecovered drafts are not written to disk until you save them.')) return;
   const initial = workspaceActiveDocument();
-  if (initial && !initial.dirty && initial.name === 'welcome.md') { if (initial.model) initial.model.dispose(); workspaceDocuments.delete(initial.key); }
+  if (initial && !initial.dirty && initial.name === 'welcome.md') { if (initial.model) { if (editor && editor.getModel() === initial.model) editor.setModel(null); initial.model.dispose(); } workspaceDocuments.delete(initial.key); }
   for (const draft of drafts) {
     const doc = workspaceCreateDocument({ filePath: null, name: draft.name, language: draft.language || inferLanguage(draft.name), content: draft.content, savedContent: typeof draft.savedContent === 'string' ? draft.savedContent : '', dirty: true });
     if (monacoReady && editor && !doc.model) doc.model = monaco.editor.createModel(doc.content, doc.language);
@@ -1279,7 +1282,7 @@ function loadFile(filePath, content) {
   if (existing) { workspaceActivateDocument(existing); return; }
   const name = String(filePath).split(/[\\/]/).pop();
   const doc = workspaceCreateDocument({ filePath, name, language: inferLanguage(name), content, savedContent: content });
-  if (!workspaceInitialized) { currentPath = filePath; currentName = name; currentLanguage = doc.language; setValue(content, doc.language); return; }
+  if (!workspaceInitialized) { currentPath = filePath; currentName = name; currentLanguage = doc.language; pendingNewDocument = { name, language: doc.language, content }; setValue(content, doc.language); return; }
   if (monacoReady && editor && !doc.model) doc.model = monaco.editor.createModel(content, doc.language);
   workspaceActivateDocument(doc);
   document.querySelectorAll('.file-item').forEach(item => item.classList.toggle('selected', item.title === filePath));
