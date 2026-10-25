@@ -245,6 +245,11 @@ const assert = require('node:assert/strict');
     await click('#closeStudioTools');
   });
   await check('Language Server starts and serves navigation, hover, completion and format requests', async () => {
+    // The earlier UI checks create untitled files outside the workspace. Open
+    // the workspace file explicitly so LSP startup satisfies the real
+    // workspace/path guard instead of silently testing the error path.
+    await click('.file-item');
+    await called('readPath');
     await click('#studioToolsBtn');
     await click('[data-studio-tab="environment"]');
     await click('#startLanguageServerBtn');
