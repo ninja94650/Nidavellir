@@ -151,7 +151,9 @@ function renderDocumentTabs() {
   if (!container) return;
   const status = $('statusPill');
   container.replaceChildren();
-  for (const doc of openDocuments.values()) {
+  const activeDoc = getActiveDocument();
+  const orderedDocs = activeDoc ? [activeDoc, ...Array.from(openDocuments.values()).filter(doc => doc.key !== activeDoc.key)] : Array.from(openDocuments.values());
+  for (const doc of orderedDocs) {
     const tab = document.createElement('div');
     tab.className = 'tab' + (doc.key === activeDocumentKey ? ' active' : '');
     tab.setAttribute('role', 'tab');
