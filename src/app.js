@@ -1842,3 +1842,21 @@ $('debugCurrentFileBtn').addEventListener('click', async () => {
   } catch (error) { $('debugStatus').textContent = error.message || String(error); }
 });
 
+
+$('diagnoseCurrentFileBtn').addEventListener('click', async () => {
+  const button = $('diagnoseCurrentFileBtn');
+  button.disabled = true;
+  $('sourceDiagnosticsSummary').textContent = 'Checking ' + currentName + '…';
+  $('sourceDiagnosticsOutput').hidden = false;
+  $('sourceDiagnosticsOutput').textContent = '';
+  try {
+    const result = await window.forge.diagnoseSource({
+      language: currentLanguage, fileName: currentName, filePath: currentPath, content: getValue()
+    });
+    $('sourceDiagnosticsSummary').textContent = result.status.toUpperCase() + ' · ' + result.tool;
+    $('sourceDiagnosticsOutput').textContent = result.diagnostics || 'No diagnostics returned.';
+  } catch (error) {
+    $('sourceDiagnosticsSummary').textContent = 'CHECK FAILED';
+    $('sourceDiagnosticsOutput').textContent = error.message || String(error);
+  } finally { button.disabled = false; }
+});
