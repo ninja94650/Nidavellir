@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('forge', {
   searchWorkspace: payload => ipcRenderer.invoke('workspace:search', payload),
   replaceWorkspace: payload => ipcRenderer.invoke('workspace:replace', payload),
   detectEnvironment: () => ipcRenderer.invoke('studio:environment'),
+  diagnoseSource: payload => ipcRenderer.invoke('studio:diagnose', payload),
   gitStatus: root => ipcRenderer.invoke('git:status', root),
   gitDiff: payload => ipcRenderer.invoke('git:diff', payload),
   gitBranches: root => ipcRenderer.invoke('git:branches', root),
