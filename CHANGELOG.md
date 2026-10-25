@@ -1,3 +1,8 @@
+# 0.4.11
+
+- Adds an unlimited multi-key manager for OpenAI, Gemini, and Claude, with encrypted storage, labels, active-key selection, removal, and migration of previously saved single keys.
+- Adds regression coverage for saving multiple keys under one provider and switching the active key.
+
 # 0.4.10
 
 - Corrects the multi-file Explorer UI regression selector and adds a Save & Close regression test for newly created files.
