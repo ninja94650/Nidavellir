@@ -184,6 +184,37 @@ async function gitStatus(root){
 }
 async function gitDiff(root,staged=false,relativePath=''){const real=await assertGitRoot(root),args=['diff','--no-ext-diff','--no-color','--no-renames'];if(staged)args.push('--cached');if(relativePath)args.push('--',normalizeRelativePath(relativePath));return String((await gitExec(real,args,{timeout:15000,maxBuffer:512*1024})).stdout).slice(0,250000);}
 async function gitBranches(root){const real=await assertGitRoot(root),r=await gitExec(real,['branch','--format=%(refname:short)|%(HEAD)|%(upstream:short)']);return String(r.stdout).split(/\r?\n/).filter(Boolean).map(line=>{const[n,c,u]=line.split('|');return{name:n,current:c==='*',upstream:u||''};});}
+
+function validateBranchName(name) {
+  if (typeof name !== 'string' || name.length < 1 || name.length > 120 ||
+      !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(name) ||
+      name.includes('..') || name.includes('//') || name.includes('@{') ||
+      name.endsWith('/') || name.endsWith('.') || name.toLowerCase().endsWith('.lock')) {
+    throw new Error('Branch name is invalid. Use letters, numbers, dots, underscores, slashes or hyphens, and do not start with punctuation.');
+  }
+  return name;
+}
+async function gitSwitchBranch(root, branchName) {
+  const real = await assertGitRoot(root);
+  const name = validateBranchName(branchName);
+  const branches = await gitBranches(real);
+  if (!branches.some(branch => branch.name === name)) throw new Error('That local branch does not exist. Create it or fetch it first.');
+  const status = await gitStatus(real);
+  if (status.changes.length) throw new Error('Commit or stash local changes before switching branches. Nidavellir will not overwrite a dirty working tree.');
+  const result = await gitExec(real, ['switch', name], { timeout: 30000 });
+  return { output: String(result.stdout || result.stderr || '').slice(0, 10000), status: await gitStatus(real), branches: await gitBranches(real) };
+}
+async function gitCreateBranch(root, branchName) {
+  const real = await assertGitRoot(root);
+  const name = validateBranchName(branchName);
+  const status = await gitStatus(real);
+  if (status.changes.length) throw new Error('Commit or stash local changes before creating a branch.');
+  const branches = await gitBranches(real);
+  if (branches.some(branch => branch.name === name)) throw new Error('A local branch with that name already exists.');
+  const result = await gitExec(real, ['switch', '-c', name], { timeout: 30000 });
+  return { output: String(result.stdout || result.stderr || '').slice(0, 10000), status: await gitStatus(real), branches: await gitBranches(real) };
+}
+
 async function gitStage(root,paths=[],all=false){const real=await assertGitRoot(root);if(all)await gitExec(real,['add','--all']);else{if(!Array.isArray(paths)||!paths.length||paths.length>300)throw new Error('Select files to stage.');await gitExec(real,['add','--',...new Set(paths.map(normalizeRelativePath))]);}return gitStatus(real);}
 async function gitUnstage(root,paths=[],all=false){const real=await assertGitRoot(root);if(all)await gitExec(real,['restore','--staged','--','.']);else{if(!Array.isArray(paths)||!paths.length||paths.length>300)throw new Error('Select files to unstage.');await gitExec(real,['restore','--staged','--',...new Set(paths.map(normalizeRelativePath))]);}return gitStatus(real);}
 async function gitCommit(root,message){const real=await assertGitRoot(root);if(typeof message!=='string'||!message.trim()||message.trim().length>500||/[\0\r]/.test(message))throw new Error('Commit message must contain 1–500 characters.');const s=await gitStatus(real);if(!s.changes.some(c=>c.index!==' '&&c.index!=='?'))throw new Error('Nothing is staged. Stage at least one change before committing.');const r=await gitExec(real,['commit','-m',message.trim()],{timeout:30000});return{output:String(r.stdout||r.stderr).slice(0,10000),status:await gitStatus(real)};}
@@ -250,4 +281,4 @@ async function diagnoseSource(options = {}) {
   } finally { await fs.rm(tempDir,{recursive:true,force:true}).catch(()=>{}); }
 }
 
-module.exports={IGNORED_DIRS,SENSITIVE_NAMES,normalizeRelativePath,assertRealDirectory,collectTextFiles,searchWorkspace,previewWorkspaceReplace,replaceWorkspace,detectEnvironment,diagnoseSource,gitStatus,gitDiff,gitBranches,gitStage,gitUnstage,gitCommit,gitPullFastForward,gitPush,gitLog,readProjectContext,applyProjectChanges};
+module.exports={IGNORED_DIRS,SENSITIVE_NAMES,normalizeRelativePath,assertRealDirectory,collectTextFiles,searchWorkspace,previewWorkspaceReplace,replaceWorkspace,detectEnvironment,diagnoseSource,gitStatus,gitDiff,gitBranches,gitSwitchBranch,gitCreateBranch,gitStage,gitUnstage,gitCommit,gitPullFastForward,gitPush,gitLog,readProjectContext,applyProjectChanges};
