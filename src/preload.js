@@ -5,6 +5,15 @@ contextBridge.exposeInMainWorld('forge', {
   saveFile:    payload  => ipcRenderer.invoke('file:save', payload),
   openFolder:  ()       => ipcRenderer.invoke('file:open-folder'),
   readPath:    filePath => ipcRenderer.invoke('file:read-path', filePath),
+  revealPath: filePath => ipcRenderer.invoke('file:reveal', filePath),
+  openWith: filePath => ipcRenderer.invoke('file:open-with', filePath),
+  renamePath: payload => ipcRenderer.invoke('file:rename', payload),
+  deletePath: filePath => ipcRenderer.invoke('file:delete', filePath),
+  transferPath: payload => ipcRenderer.invoke('file:transfer', payload),
+  refreshFolder: folderPath => ipcRenderer.invoke('file:refresh-folder', folderPath),
+  fileInfo: filePath => ipcRenderer.invoke('file:info', filePath),
+  relativePath: payload => ipcRenderer.invoke('file:relative-path', payload),
+  copyText: value => ipcRenderer.invoke('file:copy-text', value),
 
   // ── runner ──
   run:         payload  => ipcRenderer.invoke('runner:run', payload),
