@@ -99,6 +99,39 @@ async function atomicWriteFile(target, content) {
   try { await fs.writeFile(temporary,content,{encoding:'utf8',flag:'wx',mode:0o600}); await fs.rename(temporary,target); }
   catch(error){ await fs.rm(temporary,{force:true}).catch(()=>{}); throw error; }
 }
+
+async function previewWorkspaceReplace(root, options = {}) {
+  const realRoot = await assertRealDirectory(root);
+  if (!Array.isArray(options.paths) || !options.paths.length || options.paths.length > 500) throw new Error('Select between 1 and 500 files to preview.');
+  if (typeof options.replacement !== 'string' || options.replacement.length > 10000) throw new Error('Replacement text must be no longer than 10,000 characters.');
+  const paths = [...new Set(options.paths.map(normalizeRelativePath))];
+  const previews = [];
+  let replacements = 0;
+  for (const relative of paths) {
+    const target = await assertNoSymlinkPath(realRoot, relative);
+    const stat = await fs.lstat(target);
+    if (!stat.isFile() || stat.size > MAX_FILE_BYTES) throw new Error('Cannot safely preview replacement in ' + relative + '.');
+    const original = await fs.readFile(target, 'utf8');
+    if (original.includes('\0')) throw new Error('Binary content is not supported: ' + relative + '.');
+    const count = (original.match(buildMatcher(options.query, options)) || []).length;
+    if (!count) continue;
+    const updated = original.replace(buildMatcher(options.query, options), options.replacement);
+    if (updated === original) continue;
+    replacements += count;
+    const queryMatcher = buildMatcher(options.query, options);
+    const index = queryMatcher.exec(original);
+    const start = index ? Math.max(0, index.index - 180) : 0;
+    const before = original.slice(start, start + 1600);
+    const afterStart = Math.max(0, start - 20);
+    const after = updated.slice(afterStart, afterStart + 1600);
+    previews.push({ path: relative, replacements: count, before, after });
+  }
+  return {
+    filesChanged: previews.length, replacements, previews,
+    warning: 'Preview only; no files were modified. Confirm again to write the changes. Backups are created before applying.'
+  };
+}
+
 async function replaceWorkspace(root, options = {}, backupRoot) {
   const realRoot=await assertRealDirectory(root);
   if(!Array.isArray(options.paths)||!options.paths.length||options.paths.length>500) throw new Error('Select between 1 and 500 files to replace.');
@@ -217,4 +250,4 @@ async function diagnoseSource(options = {}) {
   } finally { await fs.rm(tempDir,{recursive:true,force:true}).catch(()=>{}); }
 }
 
-module.exports={IGNORED_DIRS,SENSITIVE_NAMES,normalizeRelativePath,assertRealDirectory,collectTextFiles,searchWorkspace,replaceWorkspace,detectEnvironment,diagnoseSource,gitStatus,gitDiff,gitBranches,gitStage,gitUnstage,gitCommit,gitPullFastForward,gitPush,gitLog,readProjectContext,applyProjectChanges};
+module.exports={IGNORED_DIRS,SENSITIVE_NAMES,normalizeRelativePath,assertRealDirectory,collectTextFiles,searchWorkspace,previewWorkspaceReplace,replaceWorkspace,detectEnvironment,diagnoseSource,gitStatus,gitDiff,gitBranches,gitStage,gitUnstage,gitCommit,gitPullFastForward,gitPush,gitLog,readProjectContext,applyProjectChanges};
