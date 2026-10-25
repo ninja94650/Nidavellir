@@ -165,7 +165,7 @@ const TOOLS=[
  ['Bash','bash',['--version'],'shell'],['PowerShell','pwsh',['-Version'],'shell'],['Git','git',['--version'],'version control'],
  ['GDB','gdb',['--version'],'debugger'],['LLDB','lldb',['--version'],'debugger'],['clangd','clangd',['--version'],'language server'],
  ['Python language server','pylsp',['--version'],'language server'],['Go language server','gopls',['version'],'language server'],
- ['TypeScript language server','typescript-language-server',['--version'],'language server']
+ ['TypeScript language server','typescript-language-server',['--version'],'language server'],['Rust language server','rust-analyzer',['--version'],'language server']
 ];
 async function checkTool([name,command,args,category]){
  try{const r=await execFileAsync(command,args,{timeout:2200,windowsHide:true,maxBuffer:16384});const v=String(r.stdout||r.stderr||'').trim().split(/\r?\n/)[0].slice(0,240);return{name,command,category,available:true,version:v||'Installed (version not reported)'};}
