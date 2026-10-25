@@ -18,6 +18,8 @@ let pendingRecoveryDrafts = null, recoveryPromptShown = false, pendingCloseDocum
 let currentWorkspaceRoot = null;
 let projectSearchResults = [], aiProjectChanges = [], gitStatusCache = null;
 let pendingWorkspaceReplacement = null;
+let languageServerActive = false, languageServerLanguage = null, languageServerRoot = null, languageServerTimer = null;
+const lspDiagnosticsByUri = new Map();
 
 const languageMap = {
   js:'javascript',mjs:'javascript',cjs:'javascript',py:'python',cpp:'cpp',c:'c',java:'java',go:'go',rs:'rust',rb:'ruby',php:'php',sh:'bash',ps1:'powershell',
@@ -84,6 +86,7 @@ require(['vs/editor/editor.main'], () => {
   editor.onDidChangeModelContent(() => {
     $('selectionHint').textContent = 'Current file will be included';
     syncActiveDocumentState(true);
+    scheduleLanguageServerSync();
     if ($('findBar') && !$('findBar').hidden) collectFindMatches();
   });
   if (pendingNewDocument) {
@@ -216,6 +219,7 @@ function activateDocument(key) {
   renderDocumentTabs();
   setStatus(next.dirty ? 'Unsaved changes · ' + next.name : (next.filePath ? 'Opened · ' + next.filePath : 'Ready · ' + next.name));
   if (splitViewEnabled && !monacoReady) $('splitPlainEditor').value = next.content;
+  scheduleLanguageServerSync();
 }
 function scheduleRecoverySave() {
   if (recoveryTimer) clearTimeout(recoveryTimer);
@@ -1370,6 +1374,7 @@ function replaceAllMatches() {
 $('plainEditor').addEventListener('input', () => {
   if (splitViewEnabled && !monacoReady && $('splitPlainEditor').value !== $('plainEditor').value) $('splitPlainEditor').value = $('plainEditor').value;
   syncActiveDocumentState(true);
+  scheduleLanguageServerSync();
   if ($('findBar') && !$('findBar').hidden) collectFindMatches();
 });
 $('findInput').addEventListener('input', () => { collectFindMatches(); if (findMatches.length) selectFindMatch(0, false); });
@@ -1992,3 +1997,217 @@ $('diagnoseCurrentFileBtn').addEventListener('click', async () => {
     $('sourceDiagnosticsOutput').textContent = error.message || String(error);
   } finally { button.disabled = false; }
 });
+
+
+/* ─────────────────────────────────────────────
+   Language Server Protocol: navigation, hover, completion, formatting, diagnostics
+   ───────────────────────────────────────────── */
+function setLanguageServerUi(active, language, root, message) {
+  languageServerActive = Boolean(active);
+  languageServerLanguage = active ? language : null;
+  languageServerRoot = active ? root : null;
+  $('languageServerStatus').textContent = message || (active ? 'Running · ' + language : 'No language server running');
+  $('startLanguageServerBtn').disabled = active;
+  $('stopLanguageServerBtn').disabled = !active;
+  const enabled = active && Boolean(currentPath) && currentLanguage === languageServerLanguage;
+  for (const id of ['lspDefinitionBtn','lspReferencesBtn','lspHoverBtn','lspCompletionBtn','lspFormatBtn']) $(id).disabled = !enabled;
+}
+function showLanguageServerOutput(value) {
+  $('languageServerOutput').hidden = false;
+  $('languageServerOutput').textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+}
+function currentEditorPosition() {
+  if (monacoReady && editor) {
+    const position = editor.getPosition();
+    return { line: Math.max(0, position.lineNumber - 1), character: Math.max(0, position.column - 1) };
+  }
+  const field = $('plainEditor'), before = field.value.slice(0, field.selectionStart || 0), lines = before.split('\n');
+  return { line: lines.length - 1, character: lines[lines.length - 1].length };
+}
+function scheduleLanguageServerSync() {
+  if (!languageServerActive || !languageServerRoot || !currentPath || currentLanguage !== languageServerLanguage) return;
+  if (languageServerTimer) clearTimeout(languageServerTimer);
+  languageServerTimer = setTimeout(async () => {
+    try {
+      await window.forge.changeLanguageServerDocument({
+        root: languageServerRoot, filePath: currentPath, language: currentLanguage, text: getValue()
+      });
+    } catch (error) {
+      $('languageServerStatus').textContent = 'Sync warning · ' + (error.message || String(error));
+    }
+  }, 240);
+}
+async function startLanguageServer() {
+  const button = $('startLanguageServerBtn');
+  button.disabled = true;
+  $('languageServerStatus').textContent = 'Starting ' + currentLanguage + ' language server…';
+  try {
+    const root = requireWorkspaceForTools();
+    if (!currentPath) throw new Error('Save the current document inside the opened workspace before starting language intelligence.');
+    const result = await window.forge.startLanguageServer({ root, language: currentLanguage });
+    languageServerActive = true;
+    languageServerLanguage = currentLanguage;
+    languageServerRoot = root;
+    await window.forge.openLanguageServerDocument({ root, filePath: currentPath, language: currentLanguage, text: getValue() });
+    setLanguageServerUi(true, currentLanguage, root, 'Running · ' + result.label + ' · ' + (result.capabilities || []).length + ' capabilities');
+    showLanguageServerOutput('Language server initialized.\nWorkspace: ' + root + '\nLanguage: ' + currentLanguage + '\nCapabilities: ' + (result.capabilities || []).join(', ') + '\n\nIf startup fails, install the required server shown by Environment Doctor and ensure it is on PATH.');
+  } catch (error) {
+    setLanguageServerUi(false, null, null, 'Start failed');
+    showLanguageServerOutput(error.message || String(error));
+    $('languageServerStatus').textContent = 'Start failed · ' + (error.message || String(error));
+  } finally { button.disabled = languageServerActive; }
+}
+async function stopLanguageServer() {
+  $('stopLanguageServerBtn').disabled = true;
+  try {
+    await window.forge.stopLanguageServer();
+    lspDiagnosticsByUri.clear();
+    setLanguageServerUi(false, null, null, 'Language server stopped');
+  } catch (error) {
+    $('languageServerStatus').textContent = 'Stop failed · ' + (error.message || String(error));
+  } finally { $('stopLanguageServerBtn').disabled = !languageServerActive; }
+}
+function toLocalFileUri(filePath) {
+  let normalized = String(filePath).replace(/\\/g, '/');
+  const windows = /^[A-Za-z]:\//.test(normalized);
+  if (windows) {
+    const parts = normalized.split('/');
+    return 'file:///' + parts.map((part, index) => index === 0 ? part : encodeURIComponent(part)).join('/');
+  }
+  const parts = normalized.split('/');
+  return 'file://' + (normalized.startsWith('/') ? '' : '/') + parts.map((part, index) => index === 0 ? part : encodeURIComponent(part)).join('/');
+}
+function filePathFromUri(uri) {
+  try {
+    const parsed = new URL(uri);
+    if (parsed.protocol !== 'file:') return null;
+    let filePath = decodeURIComponent(parsed.pathname);
+    if (/^\/[A-Za-z]:\//.test(filePath)) filePath = filePath.slice(1);
+    if (navigator.platform && /^Win/i.test(navigator.platform)) filePath = filePath.replace(/\//g, '\\');
+    return filePath;
+  } catch { return null; }
+}
+function normalizeLspLocation(location) {
+  if (!location || typeof location !== 'object') return null;
+  const uri = location.targetUri || location.uri;
+  const range = location.targetSelectionRange || location.targetRange || location.range;
+  if (typeof uri !== 'string' || !range || !range.start) return null;
+  return { uri, range };
+}
+async function navigateToLspLocation(location) {
+  const normalized = normalizeLspLocation(location);
+  if (!normalized) throw new Error('Language server did not return a navigable source location.');
+  const filePath = filePathFromUri(normalized.uri);
+  if (!filePath) throw new Error('Language server returned a non-local URI. Remote navigation is blocked.');
+  const root = requireWorkspaceForTools();
+  const prefix = root.replace(/[\\/]+$/, '') + (navigator.platform && /^Win/i.test(navigator.platform) ? '\\' : '/');
+  if (filePath !== root && !filePath.startsWith(prefix)) throw new Error('Language server returned a location outside the open workspace; navigation was blocked.');
+  const opened = await window.forge.readPath(filePath);
+  if (!opened) throw new Error('The target source file could not be opened.');
+  loadFile(opened.filePath, opened.content);
+  const line = normalized.range.start.line + 1, column = normalized.range.start.character + 1;
+  if (monacoReady && editor) {
+    editor.focus(); editor.setPosition({ lineNumber: line, column }); editor.revealLineInCenter(line);
+  } else {
+    const value = $('plainEditor').value, lines = value.split('\n');
+    const offset = lines.slice(0, line - 1).reduce((sum, item) => sum + item.length + 1, 0) + column - 1;
+    $('plainEditor').focus(); $('plainEditor').setSelectionRange(Math.min(offset, value.length), Math.min(offset, value.length));
+  }
+}
+async function runLanguageServerRequest(method) {
+  if (!languageServerActive) { $('languageServerStatus').textContent = 'Start a language server first.'; return; }
+  if (!currentPath) { showLanguageServerOutput('Save the current file inside the opened workspace first.'); return; }
+  if (currentLanguage !== languageServerLanguage) { showLanguageServerOutput('Restart the server to match the current file language.'); return; }
+  const buttons = {
+    'textDocument/definition':'lspDefinitionBtn','textDocument/references':'lspReferencesBtn',
+    'textDocument/hover':'lspHoverBtn','textDocument/completion':'lspCompletionBtn','textDocument/formatting':'lspFormatBtn'
+  };
+  const button = $(buttons[method]);
+  if (button) button.disabled = true;
+  try {
+    const result = await window.forge.languageServerRequest({
+      root: languageServerRoot, filePath: currentPath, language: currentLanguage,
+      text: getValue(), method, position: currentEditorPosition(), context: { includeDeclaration: true }
+    });
+    if (method === 'textDocument/definition') {
+      const locations = (Array.isArray(result) ? result : result ? [result] : []).map(normalizeLspLocation).filter(Boolean);
+      if (!locations.length) showLanguageServerOutput('No definition found.');
+      else await navigateToLspLocation(locations[0]);
+    } else if (method === 'textDocument/references') {
+      const refs = Array.isArray(result) ? result : [];
+      showLanguageServerOutput(refs.length ? refs.map(item => {
+        const loc = normalizeLspLocation(item);
+        if (!loc) return '(unrecognized reference)';
+        return (filePathFromUri(loc.uri) || loc.uri) + ':' + (loc.range.start.line + 1) + ':' + (loc.range.start.character + 1);
+      }).join('\n') : 'No references found.');
+    } else if (method === 'textDocument/hover') {
+      const contents = result && result.contents;
+      showLanguageServerOutput(typeof contents === 'string' ? contents :
+        Array.isArray(contents) ? contents.map(item => typeof item === 'string' ? item : item.value || JSON.stringify(item)).join('\n\n') :
+        contents && typeof contents.value === 'string' ? contents.value : 'No hover information returned.');
+    } else if (method === 'textDocument/completion') {
+      const items = Array.isArray(result) ? result : result && Array.isArray(result.items) ? result.items : [];
+      showLanguageServerOutput(items.length ? items.slice(0, 100).map(item => (item.label || '(unnamed)') + (item.detail ? ' — ' + item.detail : '')).join('\n') : 'No completion items returned.');
+    } else if (method === 'textDocument/formatting') {
+      const edits = Array.isArray(result) ? result : [];
+      if (!edits.length) { showLanguageServerOutput('The language server returned no formatting edits.'); return; }
+      if (monacoReady && editor) {
+        editor.executeEdits('lsp-format', edits.map(edit => ({
+          range: new monaco.Range(edit.range.start.line + 1, edit.range.start.character + 1, edit.range.end.line + 1, edit.range.end.character + 1),
+          text: edit.newText, forceMoveMarkers: true
+        })));
+      } else {
+        const source = getValue();
+        const offsetAt = position => source.split('\n').slice(0, position.line).reduce((sum, line) => sum + line.length + 1, 0) + position.character;
+        const changes = edits.map(edit => ({ start: offsetAt(edit.range.start), end: offsetAt(edit.range.end), text: edit.newText })).sort((a,b) => b.start - a.start);
+        let formatted = source;
+        for (const change of changes) formatted = formatted.slice(0, change.start) + change.text + formatted.slice(change.end);
+        setValue(formatted, currentLanguage);
+      }
+      showLanguageServerOutput('Applied ' + edits.length + ' formatting edit(s).');
+    }
+  } catch (error) {
+    showLanguageServerOutput(error.message || String(error));
+  } finally {
+    if (button) button.disabled = !languageServerActive || !currentPath || currentLanguage !== languageServerLanguage;
+  }
+}
+function showLanguageDiagnostics(params) {
+  const uri = params && params.uri;
+  if (!uri) return;
+  const diagnostics = Array.isArray(params.diagnostics) ? params.diagnostics.slice(0, 500) : [];
+  lspDiagnosticsByUri.set(uri, diagnostics);
+  if (!currentPath || uri !== toLocalFileUri(currentPath)) return;
+  const panel = $('problems');
+  panel.replaceChildren();
+  if (!diagnostics.length) {
+    const line = document.createElement('div'); line.className = 'term-line muted'; line.textContent = 'No language-server diagnostics.'; panel.appendChild(line); return;
+  }
+  for (const diagnostic of diagnostics) {
+    const line = document.createElement('div');
+    line.className = 'term-line ' + (diagnostic.severity === 1 ? 'stderr' : diagnostic.severity === 2 ? 'warning' : 'muted');
+    const start = diagnostic.range && diagnostic.range.start;
+    line.textContent = (start ? (start.line + 1) + ':' + (start.character + 1) + ' · ' : '') + (diagnostic.message || 'Diagnostic');
+    line.title = String(diagnostic.source || diagnostic.code || '');
+    panel.appendChild(line);
+  }
+}
+window.forge.onLanguageServerNotification(notification => {
+  if (!notification || typeof notification.method !== 'string') return;
+  if (notification.method === 'nidavellir/languageServerState') {
+    const params = notification.params || {};
+    setLanguageServerUi(params.active, params.language, params.root, params.message || (params.active ? 'Running · ' + params.label : 'Stopped'));
+  } else if (notification.method === 'textDocument/publishDiagnostics') {
+    showLanguageDiagnostics(notification.params || {});
+  } else if (notification.method === 'window/showMessage' || notification.method === 'window/logMessage') {
+    const params = notification.params || {};
+    showLanguageServerOutput(String(params.message || ''));
+  }
+});
+$('startLanguageServerBtn').addEventListener('click', () => { void startLanguageServer(); });
+$('stopLanguageServerBtn').addEventListener('click', () => { void stopLanguageServer(); });
+$('lspDefinitionBtn').addEventListener('click', () => { void runLanguageServerRequest('textDocument/definition'); });
+$('lspReferencesBtn').addEventListener('click', () => { void runLanguageServerRequest('textDocument/references'); });
+$('lspHoverBtn').addEventListener('click', () => { void runLanguageServerRequest('textDocument/hover'); });
+$('lspCompletionBtn').addEventListener('click', () => { void runLanguageServerRequest('textDocument/completion'); });
+$('lspFormatBtn').addEventListener('click', () => { void runLanguageServerRequest('textDocument/formatting'); });
