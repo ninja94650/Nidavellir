@@ -67,7 +67,7 @@ const assert = require('node:assert/strict');
     };
   });
   const errors = [];
-  page.on('pageerror', e => errors.push(e.message));
+  page.on('pageerror', e => errors.push(e.stack || e.message));
   await page.goto(baseUrl + '/src/index.html');
   await page.waitForSelector('#statusText');
   await page.waitForTimeout(1800);
