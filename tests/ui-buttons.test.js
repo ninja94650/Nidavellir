@@ -75,6 +75,20 @@ const assert = require('node:assert/strict');
   await check('Open file', async () => { await click('#openBtn'); await called('openFile'); assert.match(await page.locator('#statusText').textContent(), /Opened/); });
   await check('Open folder', async () => { await click('#openFolderBtn'); await called('openFolder'); assert.equal(await page.locator('#folderName').textContent(), 'PROJECT'); });
   await check('Explorer file item', async () => { await click('.file-item'); await called('readPath'); });
+  await check('Multi-file tabs keep independent edits', async () => {
+    const tabs = page.locator('#tabs .document-tab');
+    assert.equal(await tabs.count(), 3, 'welcome, example.js, and main.js should remain open');
+    await tabs.filter({ hasText: 'main.js' }).last().click();
+    assert.equal(await page.locator('#tabs .document-tab.active .tab-label').textContent(), 'main.js');
+    const edited = await page.evaluate(() => { const model = monaco.editor.getModels().find(m => m.getValue().includes('mainOnly = true')); if (!model) return false; model.setValue('const mainOnly = true;\\nconst retainedAfterSwitch = 42;\\n'); return true; });
+    assert.equal(edited, true, 'main.js model should be independently editable');
+    assert.equal(await page.locator('#tabs .document-tab.active .tab-dirty').textContent(), '●');
+    await tabs.filter({ hasText: 'example.js' }).first().click();
+    assert.equal(await page.locator('#tabs .document-tab.active .tab-label').textContent(), 'example.js');
+    await tabs.filter({ hasText: 'main.js' }).last().click();
+    const retained = await page.evaluate(() => monaco.editor.getModels().some(m => m.getValue().includes('retainedAfterSwitch = 42')));
+    assert.equal(retained, true, 'editing main.js should survive switching away and back');
+  });
   await check('Tab close X asks before discarding unsaved work', async () => {
     await click('#newFileBtn'); await page.locator('#newFileName').fill('close_me'); await click('#newFileForm button[type="submit"]');
     await page.locator('#tabs .document-tab.active .tab-close').click();
@@ -115,24 +129,10 @@ const assert = require('node:assert/strict');
   });
   await check('Cut/paste, rename and delete call their file APIs', async () => {
     await page.locator('.file-item[data-path="/tmp/project/main.js"] .file-actions-trigger').click(); await click('#fileContextMenu [data-action="cut"]');
-    await page.locator('.file-item[data-path="/tmp/project/destination"] .file-actions-trigger').click(); await click('#fileContextMenu [data-action="paste"]'); await called('transferPath'); await called('refreshFolder');
+    await page.locator('.file-item[data-path="/tmp/project/destination"]').click({ button: 'right' }); await click('#fileContextMenu [data-action="paste"]'); await called('transferPath'); await called('refreshFolder');
     await page.locator('.file-item[data-path="/tmp/project/other.cpp"] .file-actions-trigger').click(); await click('#fileContextMenu [data-action="rename"]');
     await page.locator('#fileRenameDialog input').fill('other-renamed.cpp'); await click('#fileRenameDialog .primary'); await called('renamePath');
     await page.locator('.file-item[data-path="/tmp/project/other.cpp"] .file-actions-trigger').click(); await click('#fileContextMenu [data-action="delete"]'); await called('deletePath');
-  });
-  await check('Multi-file tabs keep independent edits', async () => {
-    const tabs = page.locator('#tabs .document-tab');
-    assert.equal(await tabs.count(), 3, 'welcome, example.js, and main.js should remain open');
-    await tabs.filter({ hasText: 'main.js' }).last().click();
-    assert.equal(await page.locator('#tabs .document-tab.active .tab-label').textContent(), 'main.js');
-    const edited = await page.evaluate(() => { const model = monaco.editor.getModels().find(m => m.getValue().includes('mainOnly = true')); if (!model) return false; model.setValue('const mainOnly = true;\\nconst retainedAfterSwitch = 42;\\n'); return true; });
-    assert.equal(edited, true, 'main.js model should be independently editable');
-    assert.equal(await page.locator('#tabs .document-tab.active .tab-dirty').textContent(), '●');
-    await tabs.filter({ hasText: 'example.js' }).first().click();
-    assert.equal(await page.locator('#tabs .document-tab.active .tab-label').textContent(), 'example.js');
-    await tabs.filter({ hasText: 'main.js' }).last().click();
-    const retained = await page.evaluate(() => monaco.editor.getModels().some(m => m.getValue().includes('retainedAfterSwitch = 42')));
-    assert.equal(retained, true, 'editing main.js should survive switching away and back');
   });
   await check('Save', async () => { await click('#saveBtn'); await called('saveFile'); });
   await check('New File sidebar button', async () => { await click('#newFileBtn'); assert.equal(await page.locator('#newFileModal').isVisible(), true); await click('#cancelNewFile'); });
