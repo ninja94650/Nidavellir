@@ -244,6 +244,26 @@ const assert = require('node:assert/strict');
     assert.match(await page.locator('#sourceDiagnosticsSummary').textContent(), /PASSED/);
     await click('#closeStudioTools');
   });
+  await check('Language Server starts and serves navigation, hover, completion and format requests', async () => {
+    await click('#studioToolsBtn');
+    await click('[data-studio-tab="environment"]');
+    await click('#startLanguageServerBtn');
+    await called('startLanguageServer');
+    await called('openLanguageServerDocument');
+    assert.match(await page.locator('#languageServerStatus').textContent(), /Running/);
+    await click('#lspDefinitionBtn');
+    await called('languageServerRequest');
+    await click('#lspReferencesBtn');
+    await click('#lspHoverBtn');
+    await click('#lspCompletionBtn');
+    await click('#lspFormatBtn');
+    const reqs = await page.evaluate(() => window.__uiCalls.filter(c => c.name === 'languageServerRequest').map(c => c.payload.method));
+    for (const method of ['textDocument/definition','textDocument/references','textDocument/hover','textDocument/completion','textDocument/formatting']) assert.ok(reqs.includes(method), 'missing request '+method);
+    await click('#stopLanguageServerBtn');
+    await called('stopLanguageServer');
+    assert.match(await page.locator('#languageServerStatus').textContent(), /stopped/i);
+    await click('#closeStudioTools');
+  });
   await check('Git status, staging, unstage and commit actions', async () => {
     await click('#studioToolsBtn');
     await click('[data-studio-tab="git"]');
