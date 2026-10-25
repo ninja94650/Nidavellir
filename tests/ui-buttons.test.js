@@ -23,7 +23,7 @@ const assert = require('node:assert/strict');
   const browser = await chromium.launch({ headless: process.env.HEADLESS_UI === '1', args: ['--no-sandbox'] });
   const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
   await page.addInitScript(() => {
-    const state = { runner: null, editorCommand: null, keys: {}, plugins: [{ name: 'sample-plugin', version: '1.0.0', description: 'UI test plugin', enabled: true }] };
+    const state = { runner: null, editorCommand: null, keys: { openai: [], gemini: [], claude: [] }, plugins: [{ name: 'sample-plugin', version: '1.0.0', description: 'UI test plugin', enabled: true }] };
     window.__uiCalls = []; window.__uiState = state;
     const record = (name, payload) => window.__uiCalls.push({ name, payload });
     window.prompt = (_message, value) => value || 'javascript';
@@ -51,8 +51,11 @@ const assert = require('node:assert/strict');
       askAI: async p => { record('askAI', p); return 'Suggested change:\n' + String.fromCharCode(96).repeat(3) + 'javascript\nconst fixed = true;\n' + String.fromCharCode(96).repeat(3); },
       synthesize: async p => { record('synthesize', p); return 'Combined recommendation.'; },
       generateTests: async p => { record('generateTests', p); return 'console.assert(true);'; },
-      setKey: async p => { record('setKey', { provider: p.provider, key: '***' }); state.keys[p.provider] = true; },
-      keyStatus: async () => { record('keyStatus'); return { openai: !!state.keys.openai, gemini: !!state.keys.gemini, claude: !!state.keys.claude }; },
+      setKey: async p => { record('setKey', { provider: p.provider, label: p.label, key: '***' }); const list = state.keys[p.provider]; list.push({ id: 'key-' + (list.length + 1), label: p.label || 'Key ' + (list.length + 1), active: list.length === 0, lastFour: String(p.key).slice(-4) }); },
+      listKeys: async () => { record('listKeys'); return Object.fromEntries(Object.entries(state.keys).map(([provider, keys]) => [provider, keys.map(k => ({ ...k }))])); },
+      setActiveKey: async p => { record('setActiveKey', p); state.keys[p.provider] = state.keys[p.provider].map(k => ({ ...k, active: k.id === p.id })); },
+      deleteKey: async p => { record('deleteKey', p); state.keys[p.provider] = state.keys[p.provider].filter(k => k.id !== p.id); if (!state.keys[p.provider].some(k => k.active) && state.keys[p.provider].length) state.keys[p.provider][0].active = true; },
+      keyStatus: async () => { record('keyStatus'); return { openai: state.keys.openai.length > 0, gemini: state.keys.gemini.length > 0, claude: state.keys.claude.length > 0 }; },
       listPlugins: async () => { record('listPlugins'); return state.plugins; },
       togglePlugin: async p => { record('togglePlugin', p); state.plugins = state.plugins.map(x => x.name === p.name ? { ...x, enabled: p.enabled } : x); },
       pluginQuickActions: async () => { record('pluginQuickActions'); return [{ label: 'Sample plugin action', prompt: 'Check plugin action' }]; },
@@ -167,9 +170,17 @@ const assert = require('node:assert/strict');
     await click('#replaceOne'); await click('#replaceAll'); await click('#findClose');
     assert.equal(await page.locator('#findBar').isVisible(), false);
   });
-  await check('Settings open/check/save/close', async () => {
+  await check('Settings add multiple API keys and select active key', async () => {
     await click('#settingsBtn'); await click('#checkKeysBtn'); await called('keyStatus');
-    await page.locator('#openaiKey').fill('fake-test-key'); await click('#saveKeysBtn'); await called('setKey');
+    for (const [label, key] of [['Personal','fake-test-key-1111'],['Work','fake-test-key-2222'],['Backup','fake-test-key-3333']]) {
+      await page.locator('#openaiLabel').fill(label); await page.locator('#openaiKey').fill(key); await click('[data-add-key="openai"]');
+    }
+    await page.waitForFunction(() => document.querySelectorAll('#openaiKeyList .saved-api-key').length === 3);
+    assert.equal(await page.locator('#openaiState').textContent(), '3 keys');
+    assert.equal(await page.locator('#openaiKeyList .saved-api-key.active').count(), 1);
+    await click('#openaiKeyList .saved-api-key:nth-child(2) button');
+    await page.waitForFunction(() => document.querySelector('#openaiKeyList .saved-api-key:nth-child(2)').classList.contains('active'));
+    assert.equal(await page.evaluate(() => window.__uiCalls.filter(c => c.name === 'setKey').length), 3);
     await click('#closeSettings'); assert.equal(await page.locator('#settingsModal').isVisible(), false);
   });
   await check('Plugin manager toggle/close', async () => {
