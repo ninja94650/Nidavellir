@@ -66,6 +66,14 @@ const assert = require('node:assert/strict');
   await check('Open file', async () => { await click('#openBtn'); await called('openFile'); assert.match(await page.locator('#statusText').textContent(), /Opened/); });
   await check('Open folder', async () => { await click('#openFolderBtn'); await called('openFolder'); assert.equal(await page.locator('#folderName').textContent(), 'PROJECT'); });
   await check('Explorer file item', async () => { await click('.file-item'); await called('readPath'); });
+  await check('New documents get independent tabs', async () => {
+    await click('#newFileBtn');
+    await page.locator('#newFileName').fill('scratch');
+    await page.locator('#newFileType').selectOption('javascript');
+    await page.locator('#newFileForm button[type="submit"]').click();
+    assert.ok(await page.locator('.tab').count() >= 2);
+    assert.ok(await page.locator('.tab').allTextContents().then(t => t.some(v => v.includes('scratch.js'))));
+  });
   await check('Quick Open filters and opens workspace file', async () => {
     await page.keyboard.press('Control+P');
     assert.equal(await page.locator('#commandPalette').isVisible(), true);

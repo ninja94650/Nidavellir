@@ -67,6 +67,7 @@ require(['vs/editor/editor.main'], () => {
   editor.onDidChangeModelContent(() => {
     $('selectionHint').textContent = 'Current file will be included';
     if ($('findBar') && !$('findBar').hidden) collectFindMatches();
+    workspaceOnChange();
   });
   if (pendingNewDocument) {
     $('tabs').querySelector('.tab').textContent = pendingNewDocument.name;
@@ -77,6 +78,7 @@ require(['vs/editor/editor.main'], () => {
   } else {
     setStatus('Ready · Unsaved welcome example');
   }
+  workspaceInitialize();
   initPluginUI();
 }, () => {
   $('editor').hidden = true; $('fallbackEditor').hidden = false;
@@ -90,6 +92,7 @@ require(['vs/editor/editor.main'], () => {
     pendingNewDocument = null;
   }
   setStatus('Monaco unavailable · basic editor mode');
+  workspaceInitialize();
   initPluginUI();
 });
 
@@ -1055,6 +1058,7 @@ function replaceAllMatches() {
 }
 $('plainEditor').addEventListener('input', () => {
   if ($('findBar') && !$('findBar').hidden) collectFindMatches();
+  workspaceOnChange();
 });
 $('findInput').addEventListener('input', () => { collectFindMatches(); if (findMatches.length) selectFindMatch(0, false); });
 $('findMatchCase').addEventListener('change', () => { collectFindMatches(); if (findMatches.length) selectFindMatch(0, false); });
@@ -1164,3 +1168,150 @@ if (window.forge && typeof window.forge.getUpdateStatus === 'function') {
   $('updateStatus').disabled = true;
   $('updatesEnabled').disabled = true;
 }
+
+/* ─────────────────────────────────────────────
+   Multi-document workspace and crash recovery
+   ───────────────────────────────────────────── */
+const workspaceDocuments = new Map();
+let activeDocumentKey = null;
+let workspaceDocumentSequence = 0;
+let workspaceInitialized = false;
+let workspaceRecoveryTimer = null;
+const WORKSPACE_RECOVERY_KEY = 'nidavellir.recovery.v1';
+const WORKSPACE_RECOVERY_LIMIT = 4 * 1024 * 1024;
+function workspaceActiveDocument() { return activeDocumentKey ? workspaceDocuments.get(activeDocumentKey) || null : null; }
+function workspaceReadEditor() { return monacoReady && editor ? editor.getValue() : ($('plainEditor')?.value || ''); }
+function workspacePersistRecovery() {
+  try {
+    const drafts = Array.from(workspaceDocuments.values()).filter(doc => doc.dirty).map(doc => ({ name: doc.name, language: doc.language, content: doc.content, savedContent: doc.savedContent }));
+    const payload = JSON.stringify({ version: 1, savedAt: Date.now(), drafts });
+    if (drafts.length && payload.length <= WORKSPACE_RECOVERY_LIMIT) localStorage.setItem(WORKSPACE_RECOVERY_KEY, payload);
+    else if (!drafts.length) localStorage.removeItem(WORKSPACE_RECOVERY_KEY);
+  } catch (error) { console.warn('[recovery] Could not save local recovery draft:', error); }
+}
+function workspaceScheduleRecovery() {
+  if (workspaceRecoveryTimer) clearTimeout(workspaceRecoveryTimer);
+  workspaceRecoveryTimer = setTimeout(workspacePersistRecovery, 300);
+}
+function workspaceOnChange() {
+  if (!workspaceInitialized) return;
+  const doc = workspaceActiveDocument();
+  if (!doc) return;
+  doc.content = workspaceReadEditor(); doc.dirty = doc.content !== doc.savedContent;
+  renderDocumentTabs(); workspaceScheduleRecovery();
+}
+function workspaceCreateDocument({ filePath = null, name = 'untitled.js', language = 'javascript', content = '', savedContent = content, dirty = false } = {}) {
+  const key = filePath ? 'file:' + filePath : 'untitled:' + (++workspaceDocumentSequence);
+  if (filePath && workspaceDocuments.has(key)) return workspaceDocuments.get(key);
+  const doc = { key, filePath, name, language, content, savedContent, dirty: !!dirty, model: null };
+  if (monacoReady && editor && window.monaco) doc.model = monaco.editor.createModel(content, language);
+  workspaceDocuments.set(key, doc); return doc;
+}
+function renderDocumentTabs() {
+  const container = $('tabs'); if (!container) return;
+  container.replaceChildren();
+  for (const doc of workspaceDocuments.values()) {
+    const tab = document.createElement('button');
+    tab.type = 'button'; tab.className = 'tab' + (doc.key === activeDocumentKey ? ' active' : '');
+    tab.title = doc.filePath || doc.name; tab.setAttribute('aria-label', 'Open ' + doc.name);
+    const label = document.createElement('span'); label.textContent = doc.name; tab.appendChild(label);
+    if (doc.dirty) { const dirty = document.createElement('span'); dirty.className = 'tab-dirty'; dirty.textContent = '●'; dirty.title = 'Unsaved changes'; tab.appendChild(dirty); }
+    const close = document.createElement('span'); close.className = 'tab-close'; close.textContent = '×'; close.title = 'Close ' + doc.name; close.setAttribute('role', 'button'); close.setAttribute('aria-label', 'Close ' + doc.name);
+    close.addEventListener('click', event => { event.stopPropagation(); workspaceCloseDocument(doc.key); });
+    tab.appendChild(close); tab.addEventListener('click', () => workspaceActivateDocument(doc)); container.appendChild(tab);
+  }
+  const spacer = document.createElement('div'); spacer.className = 'tab-spacer';
+  const status = document.createElement('span'); status.className = 'status-pill'; status.id = 'statusPill'; status.textContent = 'WORKSPACE';
+  container.append(spacer, status);
+}
+function workspaceActivateDocument(doc) {
+  if (!doc) return;
+  workspaceOnChange(); activeDocumentKey = doc.key;
+  currentPath = doc.filePath; currentName = doc.name; currentLanguage = doc.language;
+  if (monacoReady && editor && doc.model) editor.setModel(doc.model);
+  else if ($('plainEditor')) $('plainEditor').value = doc.content;
+  showLanguage(doc.language); renderDocumentTabs();
+  setStatus((doc.dirty ? 'Unsaved changes · ' : 'Ready · ') + (doc.filePath || doc.name));
+}
+function workspaceRestoreDrafts() {
+  let snapshot;
+  try { snapshot = JSON.parse(localStorage.getItem(WORKSPACE_RECOVERY_KEY) || 'null'); } catch { snapshot = null; }
+  if (!snapshot || snapshot.version !== 1 || !Array.isArray(snapshot.drafts) || !snapshot.drafts.length) return;
+  const drafts = snapshot.drafts.filter(doc => doc && typeof doc.name === 'string' && typeof doc.content === 'string' && doc.content.length <= 2 * 1024 * 1024).slice(0, 20);
+  if (!drafts.length) { localStorage.removeItem(WORKSPACE_RECOVERY_KEY); return; }
+  if (!window.confirm('Nidavellir found ' + drafts.length + ' unsaved draft(s) from a previous session. Restore them?\n\nRecovered drafts are not written to disk until you save them.')) return;
+  const initial = workspaceActiveDocument();
+  if (initial && !initial.dirty && initial.name === 'welcome.md') { if (initial.model) initial.model.dispose(); workspaceDocuments.delete(initial.key); }
+  for (const draft of drafts) {
+    const doc = workspaceCreateDocument({ filePath: null, name: draft.name, language: draft.language || inferLanguage(draft.name), content: draft.content, savedContent: typeof draft.savedContent === 'string' ? draft.savedContent : '', dirty: true });
+    if (monacoReady && editor && !doc.model) doc.model = monaco.editor.createModel(doc.content, doc.language);
+    activeDocumentKey = doc.key;
+  }
+  const active = workspaceActiveDocument();
+  if (active) { currentPath = null; currentName = active.name; currentLanguage = active.language; if (monacoReady && editor) editor.setModel(active.model); else $('plainEditor').value = active.content; showLanguage(active.language); }
+  localStorage.removeItem(WORKSPACE_RECOVERY_KEY); renderDocumentTabs(); setStatus('Recovered unsaved drafts · save recovered files to disk');
+}
+function workspaceInitialize() {
+  if (workspaceInitialized) return;
+  workspaceInitialized = true;
+  const content = workspaceReadEditor(), name = currentPath ? currentName : (content === welcome ? 'welcome.md' : currentName);
+  currentName = name;
+  const initialDirty = !currentPath && content !== welcome;
+  const initial = workspaceCreateDocument({ filePath: currentPath, name, language: currentLanguage, content, savedContent: initialDirty ? '' : content, dirty: initialDirty });
+  if (monacoReady && editor) initial.model = editor.getModel();
+  activeDocumentKey = initial.key; renderDocumentTabs(); workspaceRestoreDrafts();
+}
+function workspaceCloseDocument(key) {
+  const doc = workspaceDocuments.get(key); if (!doc) return;
+  if (doc.dirty && !window.confirm('Discard unsaved changes in "' + doc.name + '"?\n\nChoose Cancel to keep editing.')) return;
+  const wasActive = key === activeDocumentKey; workspaceDocuments.delete(key);
+  if (wasActive) {
+    const next = Array.from(workspaceDocuments.values()).at(-1);
+    if (next) workspaceActivateDocument(next);
+    else { const blank = workspaceCreateDocument({ name: 'untitled.js', language: 'javascript', content: '', savedContent: '' }); if (monacoReady && editor) blank.model = monaco.editor.createModel('', 'javascript'); workspaceActivateDocument(blank); }
+  }
+  if (doc.model && doc.model !== editor?.getModel()) doc.model.dispose();
+  renderDocumentTabs(); workspaceScheduleRecovery();
+}
+function loadFile(filePath, content) {
+  recentFiles = [filePath, ...recentFiles.filter(item => item !== filePath)].slice(0, 12);
+  const existing = workspaceDocuments.get('file:' + filePath);
+  if (existing) { workspaceActivateDocument(existing); return; }
+  const name = String(filePath).split(/[\\/]/).pop();
+  const doc = workspaceCreateDocument({ filePath, name, language: inferLanguage(name), content, savedContent: content });
+  if (!workspaceInitialized) { currentPath = filePath; currentName = name; currentLanguage = doc.language; setValue(content, doc.language); return; }
+  if (monacoReady && editor && !doc.model) doc.model = monaco.editor.createModel(content, doc.language);
+  workspaceActivateDocument(doc);
+  document.querySelectorAll('.file-item').forEach(item => item.classList.toggle('selected', item.title === filePath));
+}
+async function saveCurrentFile(forceDialog = false) {
+  const doc = workspaceActiveDocument(), content = workspaceReadEditor();
+  try {
+    const saved = await window.forge.saveFile({ filePath: forceDialog ? null : (doc ? doc.filePath : currentPath), name: doc ? doc.name : currentName, content, forceDialog });
+    if (!saved) return false;
+    if (doc) {
+      const oldKey = doc.key; doc.filePath = saved.filePath; doc.name = saved.name; doc.content = content; doc.savedContent = content; doc.dirty = false;
+      if (oldKey !== 'file:' + saved.filePath) { workspaceDocuments.delete(oldKey); doc.key = 'file:' + saved.filePath; workspaceDocuments.set(doc.key, doc); activeDocumentKey = doc.key; }
+    }
+    currentPath = saved.filePath; currentName = saved.name;
+    recentFiles = [currentPath, ...recentFiles.filter(item => item !== currentPath)].slice(0, 12);
+    renderDocumentTabs(); workspaceScheduleRecovery(); setStatus('Saved · ' + currentPath);
+    document.querySelectorAll('.file-item').forEach(item => item.classList.toggle('selected', item.title === currentPath));
+    return true;
+  } catch (error) { addOutput('stderr', error.message); setStatus('Save failed'); return false; }
+}
+function createNewDocument(name, language) {
+  const starterCode = language === 'cpp'
+    ? '#include <iostream>\n\nint main() {\n    std::cout << "Hello, Nidavellir!\\n";\n    return 0;\n}\n'
+    : language === 'c'
+      ? '#include <stdio.h>\n\nint main(void) {\n    printf("Hello, Nidavellir!\\n");\n    return 0;\n}\n' : '';
+  if (!workspaceInitialized) { pendingNewDocument = { name, language, content: starterCode }; currentPath = null; currentName = name; currentLanguage = language; setValue(starterCode, language); return; }
+  const doc = workspaceCreateDocument({ name, language, content: starterCode, savedContent: '', dirty: true });
+  if (monacoReady && editor && !doc.model) doc.model = monaco.editor.createModel(starterCode, language);
+  workspaceActivateDocument(doc);
+  if (monacoReady && editor) editor.setPosition({ lineNumber: 1, column: 1 }); else $('plainEditor').setSelectionRange(0, 0);
+}
+window.addEventListener('beforeunload', event => {
+  if (!Array.from(workspaceDocuments.values()).some(doc => doc.dirty)) return;
+  workspacePersistRecovery(); event.preventDefault(); event.returnValue = '';
+});

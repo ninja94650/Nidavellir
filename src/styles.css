@@ -1340,3 +1340,10 @@ input:focus, textarea:focus, select:focus, .composer textarea:focus {
   #commandPaletteInput { width: calc(100% - 24px); margin: 0 12px 10px; }
   .command-palette-foot { justify-content: center; gap: 10px; }
 }
+
+/* Multi-document workspace */
+.tabs .tab { border: 0; border-bottom: 2px solid transparent; cursor: pointer; gap: 9px; max-width: 220px; }
+.tabs .tab.active { border-bottom-color: var(--accent); background: #10131b; }
+.tab .tab-dirty { color: #ffca76; font-size: 12px; }
+.tab .tab-close { border: 0; padding: 0 2px; background: transparent; color: #8994aa; font-size: 14px; }
+.tab .tab-close:hover { color: #ff9ca4; }
