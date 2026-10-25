@@ -118,6 +118,14 @@ test('Git service supports status, stage, commit, history and diff without shell
   const commit = await studio.gitCommit(root, 'Add sample');
   assert.match(commit.output, /sample/);
   assert.equal((await studio.gitLog(root)).length, 1);
+  const originalBranch = (await studio.gitStatus(root)).branch;
+  const created = await studio.gitCreateBranch(root, 'feature/test-branch');
+  assert.equal(created.status.branch, 'feature/test-branch');
+  assert.ok(created.branches.some(branch => branch.current && branch.name === 'feature/test-branch'));
+  const switched = await studio.gitSwitchBranch(root, originalBranch);
+  assert.equal(switched.status.branch, originalBranch);
+  await assert.rejects(() => studio.gitCreateBranch(root, 'feature/test-branch'), /already exists/);
+  await assert.rejects(() => studio.gitCreateBranch(root, 'invalid..branch'), /Branch name is invalid/);
   await fs.writeFile(path.join(root, 'sample.txt'), 'second\n');
   assert.match(await studio.gitDiff(root), /second/);
   await assert.rejects(() => studio.gitStage(root, ['../outside.txt']), /parent-directory/);
@@ -161,4 +169,18 @@ test('JavaScript diagnostics run a local syntax check without touching the sourc
   const bad = await studio.diagnoseSource({ language:'javascript', fileName:'input.js', filePath, content:'const = ;' });
   assert.equal(bad.status, 'issues');
   assert.equal(await fs.readFile(filePath, 'utf8'), 'const original = true;');
+});
+
+
+test('workspace replacement preview counts edits without changing source files', async t => {
+  const root = await tempDir(t);
+  await fs.writeFile(path.join(root, 'sample.txt'), 'before before\n');
+  const preview = await studio.previewWorkspaceReplace(root, {
+    paths: ['sample.txt'], query: 'before', replacement: 'after', matchCase: true
+  });
+  assert.equal(preview.filesChanged, 1);
+  assert.equal(preview.replacements, 2);
+  assert.match(preview.previews[0].before, /before before/);
+  assert.match(preview.previews[0].after, /after after/);
+  assert.equal(await fs.readFile(path.join(root, 'sample.txt'), 'utf8'), 'before before\n');
 });
