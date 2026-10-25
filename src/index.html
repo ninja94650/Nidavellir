@@ -16,7 +16,7 @@
   <header class="topbar">
     <div class="brand"><span class="logo">N</span><span>Nidavellir <small>AI IDE</small></span></div>
     <div class="top-actions">
-      <button id="openFolderBtn">Open folder</button><button id="openBtn">Open file</button><button id="saveBtn" title="Save (Ctrl+S)">Save</button><button id="saveAsBtn" title="Save As (Ctrl+Shift+S)">Save As</button><button id="commandPaletteBtn" title="Command Palette (Ctrl+Shift+P)">⌘ Commands</button>
+      <button id="openFolderBtn">Open folder</button><button id="openBtn">Open file</button><button id="saveBtn" title="Save (Ctrl+S)">Save</button><button id="saveAsBtn" title="Save As (Ctrl+Shift+S)">Save As</button><button id="commandPaletteBtn" title="Command Palette (Ctrl+Shift+P)">⌘ Commands</button><button id="studioToolsBtn" title="Project search, Git, diagnostics and AI changes">Studio Tools</button>
       <button class="primary" id="runBtn">▶ Run</button>
       <button id="pluginsBtn">🧩 Plugins</button>
       <button id="settingsBtn">⚙ AI Settings</button>
@@ -221,5 +221,89 @@
 </div>
 
 <script src="app.js"></script>
+<!-- Studio tools: project search, environment diagnostics, Git, and reviewed AI changes -->
+<div class="modal-backdrop" id="studioToolsModal" hidden>
+  <section class="modal studio-modal" role="dialog" aria-modal="true" aria-labelledby="studioToolsTitle">
+    <div class="modal-title"><div><h2 id="studioToolsTitle">Nidavellir Studio Tools</h2><p>Workspace tools are restricted to the folder you explicitly opened.</p></div><button id="closeStudioTools" class="close" type="button" aria-label="Close Studio Tools">×</button></div>
+    <div class="studio-tool-tabs" role="tablist">
+      <button type="button" data-studio-tab="search" class="active">Project Search</button>
+      <button type="button" data-studio-tab="environment">Environment</button>
+      <button type="button" data-studio-tab="git">Git</button>
+      <button type="button" data-studio-tab="ai-changes">AI Project Changes</button>
+      <button type="button" data-studio-tab="debug-security">Debug & Security</button>
+    </div>
+    <section class="studio-tool-page" data-studio-page="search">
+      <p class="studio-help">Search across text files in the open workspace. Hidden files, dependencies, build output and common credential files are excluded.</p>
+      <form id="workspaceSearchForm" class="studio-inline-form">
+        <input id="workspaceSearchQuery" type="text" maxlength="250" required placeholder="Find text or regex…" aria-label="Project search query">
+        <label><input id="workspaceSearchCase" type="checkbox"> Match case</label>
+        <label><input id="workspaceSearchRegex" type="checkbox"> Regex</label>
+        <button class="primary" type="submit" id="workspaceSearchBtn">Search project</button>
+      </form>
+      <div class="studio-results-head"><strong id="workspaceSearchSummary">No search performed</strong><span><button id="workspaceSearchSelectAll" type="button">Select all</button><button id="workspaceSearchClear" type="button">Clear</button></span></div>
+      <div id="workspaceSearchResults" class="studio-result-list"><div class="studio-empty">Open a project folder, enter a search query, and run a search.</div></div>
+      <div class="studio-replace-row">
+        <input id="workspaceReplaceText" type="text" maxlength="10000" placeholder="Replace matching text with…">
+        <button id="workspaceReplaceSelectedBtn" type="button">Replace in selected files</button>
+      </div>
+      <div id="workspaceSearchMessage" class="studio-message" role="status" aria-live="polite"></div>
+    </section>
+    <section class="studio-tool-page" data-studio-page="environment" hidden>
+      <p class="studio-help">Detect installed runtimes, compilers, version-control tools, debuggers and language servers. Missing tools are reported; Nidavellir will not install software silently.</p>
+      <div class="studio-toolbar"><button id="scanEnvironmentBtn" class="primary" type="button">Scan toolchains</button><span id="environmentSummary">Not scanned yet</span></div>
+      <div id="environmentResults" class="studio-result-list"><div class="studio-empty">Run a toolchain scan to see what is installed.</div></div>
+      <div class="studio-note"><strong>Code intelligence:</strong> Monaco provides built-in language services for JavaScript/TypeScript, JSON, CSS and HTML. Other languages may require the language servers listed here; detection alone does not install or connect a language server.</div>
+    </section>
+    <section class="studio-tool-page" data-studio-page="git" hidden>
+      <div class="studio-toolbar"><button id="refreshGitBtn" class="primary" type="button">Refresh Git status</button><button id="showWorkingDiffBtn" type="button">View working diff</button><button id="showStagedDiffBtn" type="button">View staged diff</button><button id="showGitLogBtn" type="button">Recent commits</button></div>
+      <div id="gitStatusSummary" class="studio-message">Open a repository root to inspect Git status.</div>
+      <div id="gitChangedFiles" class="studio-result-list"><div class="studio-empty">No status loaded.</div></div>
+      <div class="studio-git-actions"><button id="gitStageSelectedBtn" type="button">Stage selected</button><button id="gitStageAllBtn" type="button">Stage all</button><button id="gitUnstageSelectedBtn" type="button">Unstage selected</button></div>
+      <label class="studio-field-label" for="gitCommitMessage">Commit message</label>
+      <textarea id="gitCommitMessage" rows="2" maxlength="500" placeholder="Describe the staged changes…"></textarea>
+      <div class="studio-git-actions"><button id="gitCommitBtn" class="primary" type="button">Commit staged changes</button><button id="gitPullBtn" type="button">Pull (fast-forward only)</button><button id="gitPushBtn" type="button">Push commits</button></div>
+      <pre id="gitOutput" class="studio-code-preview" hidden></pre>
+      <div id="gitMessage" class="studio-message" role="status"></div>
+    </section>
+    <section class="studio-tool-page" data-studio-page="ai-changes" hidden>
+      <p class="studio-help">Ask the configured AI to propose a multi-file patch. Credentials and excluded files are omitted from the bounded context. Nothing changes until you review selected files and confirm application.</p>
+      <textarea id="aiProjectPrompt" rows="3" maxlength="6000" placeholder="Describe the project-wide change you want…"></textarea>
+      <div class="studio-toolbar"><button id="planProjectChangesBtn" class="primary" type="button">Plan changes with AI</button><span id="aiProjectPlanStatus">No plan yet</span></div>
+      <div id="aiProjectPlanSummary" class="studio-note" hidden></div>
+      <div id="aiProjectChangeList" class="studio-result-list"><div class="studio-empty">A proposed change set will appear here after planning.</div></div>
+      <div class="studio-git-actions"><button id="selectAllAiChangesBtn" type="button">Select all</button><button id="applyAiChangesBtn" class="primary" type="button" disabled>Back up and apply selected changes</button></div>
+      <label class="studio-field-label" for="aiProjectChangePreview">Selected file preview</label>
+      <pre id="aiProjectChangePreview" class="studio-code-preview">Select a proposed file to preview its content.</pre>
+      <div id="aiProjectChangeMessage" class="studio-message" role="status"></div>
+    </section>
+    <section class="studio-tool-page" data-studio-page="debug-security" hidden>
+      <h3>JavaScript debugging</h3>
+      <p class="studio-help">The Node Inspector can pause a JavaScript run and allow attachment from Chrome DevTools or a compatible debugger. This is not yet a full in-app Debug Adapter Protocol frontend.</p>
+      <div class="studio-toolbar"><button id="debugCurrentFileBtn" class="primary" type="button">Debug current JavaScript file</button><span id="debugStatus">Ready</span></div>
+      <div class="studio-note">Debugging requires Node.js to be available to the runner. The inspector binds to localhost and uses an ephemeral port; copy the WebSocket URL from Terminal / Output to attach a debugger. Only debug code you trust.</div>
+      <h3>Plugin security center</h3>
+      <p class="studio-help">Plugins run with the app user's operating-system permissions. Disable anything you do not trust. Permission declarations are informational, not a security sandbox.</p>
+      <button id="refreshPluginSecurityBtn" type="button">Refresh plugin risk report</button>
+      <div id="pluginSecurityReport" class="studio-result-list"><div class="studio-empty">Load the plugin report to review enabled extensions.</div></div>
+      <div class="studio-note"><strong>Important:</strong> process isolation alone does not remove OS permissions. Strong isolation for untrusted plugins requires a dedicated OS sandbox or virtualization layer.</div>
+    </section>
+  </section>
+</div>
+
+<div class="modal-backdrop" id="recoveryModal" hidden>
+  <section class="modal recovery-modal" role="dialog" aria-modal="true" aria-labelledby="recoveryTitle">
+    <div class="modal-title"><div><h2 id="recoveryTitle">Recover your previous session?</h2><p id="recoveryDetails">Unsaved drafts were found from a previous session.</p></div></div>
+    <div class="modal-note">Recovered documents are opened as editable drafts. Saving them back to their original paths still uses Nidavellir's normal file-save safeguards.</div>
+    <div class="modal-actions"><button id="discardRecoveryBtn" type="button">Discard drafts</button><button id="restoreRecoveryBtn" class="primary" type="button">Restore drafts</button></div>
+  </section>
+</div>
+
+<div class="modal-backdrop" id="closeDocumentModal" hidden>
+  <section class="modal" role="dialog" aria-modal="true" aria-labelledby="closeDocumentTitle">
+    <div class="modal-title"><div><h2 id="closeDocumentTitle">Unsaved changes</h2><p id="closeDocumentDetails">This file has unsaved changes.</p></div></div>
+    <div class="modal-actions"><button id="cancelCloseDocumentBtn" type="button">Cancel</button><button id="discardCloseDocumentBtn" type="button">Discard</button><button id="saveCloseDocumentBtn" class="primary" type="button">Save</button></div>
+  </section>
+</div>
+
 </body>
 </html>
