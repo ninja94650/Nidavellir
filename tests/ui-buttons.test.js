@@ -48,7 +48,8 @@ const assert = require('node:assert/strict');
       terminalStart: async p => { record('terminalStart', p); return { cwd: '/tmp/project' }; },
       terminalWrite: async s => { record('terminalWrite', s); return { running: true }; },
       terminalStop: async () => { record('terminalStop'); return { stopped: true }; },
-      askAI: async p => { record('askAI', p); return 'Suggested change:\n' + String.fromCharCode(96).repeat(3) + 'javascript\nconst fixed = true;\n' + String.fromCharCode(96).repeat(3); },\n      askKey: async p => { record('askKey', p); return 'Agent proposal:\n' + String.fromCharCode(96).repeat(3) + 'javascript\nconst fixed = true;\n' + String.fromCharCode(96).repeat(3); },
+      askAI: async p => { record('askAI', p); return 'Suggested change:\n' + String.fromCharCode(96).repeat(3) + 'javascript\nconst fixed = true;\n' + String.fromCharCode(96).repeat(3); },
+      askKey: async p => { record('askKey', p); return 'Agent proposal:\n' + String.fromCharCode(96).repeat(3) + 'javascript\nconst fixed = true;\n' + String.fromCharCode(96).repeat(3); },
       synthesize: async p => { record('synthesize', p); return 'Combined recommendation.'; },
       generateTests: async p => { record('generateTests', p); return 'console.assert(true);'; },
       setKey: async p => { record('setKey', { provider: p.provider, label: p.label, key: '***' }); const list = state.keys[p.provider]; list.push({ id: 'key-' + (list.length + 1), label: p.label || 'Key ' + (list.length + 1), active: list.length === 0, lastFour: String(p.key).slice(-4), agentCount: p.agentCount || 1 }); },
@@ -183,7 +184,8 @@ const assert = require('node:assert/strict');
     await page.waitForFunction(() => document.querySelectorAll('#savedApiKeyList .saved-api-key').length === 1);
     assert.equal(await page.locator('#apiKeyCount').textContent(), '1 saved key');
     assert.equal(await page.locator('#savedApiKeyList .saved-api-key strong').textContent(), 'Personal key');
-    assert.match(await page.locator('#savedApiKeyList .saved-api-key span').textContent(), /OpenAI \/ GPT/);\n    assert.match(await page.locator('#savedApiKeyList .saved-api-key span').textContent(), /2 agents/);
+    assert.match(await page.locator('#savedApiKeyList .saved-api-key span').textContent(), /OpenAI \/ GPT/);
+    assert.match(await page.locator('#savedApiKeyList .saved-api-key span').textContent(), /2 agents/);
     await click('#openApiKeyEditor');
     await page.locator('#apiKeyName').fill('Work key');
     await page.locator('#apiKeyAgentCount').fill('1');
@@ -210,7 +212,6 @@ const assert = require('node:assert/strict');
   await check('AI quick prompts', async () => { for (const label of ['Explain code', 'Find bugs', 'Fix error', 'Write tests']) { await page.locator('.quick-actions button').filter({ hasText: label }).first().click(); } await called('askKey'); });
   await check('Generate tests', async () => { await click('.quick-actions button[data-action="generate-tests"]'); await called('generateTests'); });
   await check('Diff review apply/copy/dismiss', async () => {
-    await page.locator('#useOpenAI').check(); await page.locator('#useGemini').uncheck(); await page.locator('#useClaude').uncheck();
     await page.locator('#promptInput').fill('propose a code fix'); await click('#askBtn');
     const review = page.getByRole('button', { name: /Review & Apply/ }).first(); await review.waitFor({ timeout: 5000 }); await review.click();
     await page.locator('#diffOverlay').waitFor({ state: 'visible', timeout: 5000 });
@@ -219,7 +220,7 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('#diffOverlay').isVisible(), false);
   });
   await check('Language status picker', async () => { await click('#languageStatus'); assert.ok(await page.locator('#languageStatus').textContent()); });
-  await check('Plugin quick action', async () => { const b = page.locator('.plugin-qa'); if (await b.count()) { await b.click(); await called('askAI'); } });
+  await check('Plugin quick action', async () => { const b = page.locator('.plugin-qa'); if (await b.count()) { await b.click(); await called('askKey'); } });
   const inventory = await page.locator('button:visible').evaluateAll(bs => bs.map(b => ({ label: (b.innerText || b.getAttribute('aria-label') || b.title || '').trim(), id: b.id, type: b.type })));
   const summary = { totalChecks: results.length, passed: results.filter(x => x.result === 'PASS').length, failed: results.filter(x => x.result === 'FAIL').length, results, visibleButtonsAtEnd: inventory, pageErrors: errors };
   console.log(JSON.stringify(summary, null, 2));
