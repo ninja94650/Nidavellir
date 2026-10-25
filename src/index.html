@@ -188,11 +188,18 @@
 <div class="modal-backdrop" id="settingsModal" hidden>
   <section class="modal">
     <div class="modal-title"><div><h2>AI provider settings</h2><p>Keys are encrypted with your operating system's secure storage.</p></div><button id="closeSettings" class="close">×</button></div>
-    <p class="api-key-intro">Add as many keys as you need for each provider. Keys are encrypted locally; only labels and the last four characters are shown below.</p>
-    <div id="apiKeyProviders" class="api-key-providers">
-      <section class="api-key-provider" data-provider="openai"><div class="api-key-provider-title"><h3>OpenAI / GPT</h3><span id="openaiState">0 keys</span></div><div class="api-key-add-row"><input id="openaiLabel" aria-label="OpenAI key label" placeholder="Label (e.g. Personal, Work)"><input id="openaiKey" type="password" autocomplete="off" aria-label="OpenAI API key" placeholder="Paste API key"><button type="button" data-add-key="openai">Add key</button></div><small>Get keys from the OpenAI developer platform.</small><div class="saved-api-keys" id="openaiKeyList"></div></section>
-      <section class="api-key-provider" data-provider="gemini"><div class="api-key-provider-title"><h3>Google Gemini</h3><span id="geminiState">0 keys</span></div><div class="api-key-add-row"><input id="geminiLabel" aria-label="Gemini key label" placeholder="Label (e.g. Personal, Work)"><input id="geminiKey" type="password" autocomplete="off" aria-label="Gemini API key" placeholder="Paste API key"><button type="button" data-add-key="gemini">Add key</button></div><small>Get keys from Google AI Studio.</small><div class="saved-api-keys" id="geminiKeyList"></div></section>
-      <section class="api-key-provider" data-provider="claude"><div class="api-key-provider-title"><h3>Anthropic Claude</h3><span id="claudeState">0 keys</span></div><div class="api-key-add-row"><input id="claudeLabel" aria-label="Claude key label" placeholder="Label (e.g. Personal, Work)"><input id="claudeKey" type="password" autocomplete="off" aria-label="Claude API key" placeholder="Paste API key"><button type="button" data-add-key="claude">Add key</button></div><small>Get keys from Anthropic Console.</small><div class="saved-api-keys" id="claudeKeyList"></div></section>
+    <p class="api-key-intro">Manage all your API keys in one list. Give each key a name, choose its provider, and set the key you want to use.</p>
+    <div class="api-key-toolbar"><span id="apiKeyCount">0 saved keys</span><button type="button" id="openApiKeyEditor" class="primary">＋ Add API key</button></div>
+    <div id="savedApiKeyList" class="saved-api-key-list"></div>
+    <div class="modal-backdrop api-key-editor-backdrop" id="apiKeyEditorModal" hidden>
+      <section class="modal api-key-editor" role="dialog" aria-modal="true" aria-labelledby="apiKeyEditorTitle">
+        <div class="modal-title"><div><h2 id="apiKeyEditorTitle">Add API key</h2><p>Enter a display name and your key.</p></div><button id="closeApiKeyEditor" class="close" type="button" aria-label="Close">×</button></div>
+        <label class="api-key-field" for="apiKeyName">Name<input id="apiKeyName" maxlength="80" autocomplete="off" placeholder="e.g. My personal key" /></label>
+        <label class="api-key-field" for="apiKeyProvider">Provider<select id="apiKeyProvider"><option value="openai">OpenAI / GPT</option><option value="gemini">Google Gemini</option><option value="claude">Anthropic Claude</option></select></label>
+        <label class="api-key-field" for="apiKeyValue">API key<input id="apiKeyValue" type="password" autocomplete="off" placeholder="Paste API key" /></label>
+        <div class="modal-actions"><button id="cancelApiKeyEditor" type="button">Cancel</button><button id="addApiKeyConfirm" type="button" class="primary">Save API key</button></div>
+        <div id="apiKeyEditorMessage" class="settings-message" role="status"></div>
+      </section>
     </div>
     <div class="provider-setting update-setting"><label class="updates-toggle" for="updatesEnabled"><input id="updatesEnabled" type="checkbox" checked> Automatically download and install updates</label><small>Installed builds check at launch and every four hours. Available updates download in the background.</small></div>
     <div class="modal-note">Nidavellir is an independent project, not an official product of OpenAI, Google, Anthropic, or Microsoft. Each AI provider requires its own key and may require billing. Automatic updates require internet access and a published GitHub Release.</div>
