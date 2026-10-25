@@ -538,22 +538,46 @@ $('focusAiBtn').onclick = () => $('promptInput').focus();
 $('settingsBtn').onclick = () => { $('settingsModal').hidden = false; refreshKeyStatus(); };
 $('closeSettings').onclick = () => $('settingsModal').hidden = true;
 $('settingsModal').addEventListener('click', e => { if (e.target === $('settingsModal')) $('settingsModal').hidden = true; });
+const apiKeyProviders = ['openai','gemini','claude'];
 async function refreshKeyStatus() {
   try {
-    const s = await window.forge.keyStatus();
-    for (const p of ['openai','gemini','claude']) $(p + 'State').textContent = s[p] ? 'Saved securely' : 'Not configured';
+    const [status, keysByProvider] = await Promise.all([window.forge.keyStatus(), window.forge.listKeys()]);
+    for (const provider of apiKeyProviders) {
+      const keys = keysByProvider[provider] || [];
+      $(provider + 'State').textContent = keys.length + (keys.length === 1 ? ' key' : ' keys');
+      const list = $(provider + 'KeyList'); list.replaceChildren();
+      if (!keys.length) { const empty = document.createElement('p'); empty.className = 'api-key-empty'; empty.textContent = 'No keys added yet.'; list.appendChild(empty); continue; }
+      for (const item of keys) {
+        const row = document.createElement('div'); row.className = 'saved-api-key' + (item.active ? ' active' : '');
+        const details = document.createElement('div'); details.className = 'saved-api-key-details';
+        const label = document.createElement('strong'); label.textContent = item.label || 'API key';
+        const suffix = document.createElement('span'); suffix.textContent = '•••• ' + (item.lastFour || '••••') + (item.active ? ' · Active' : '');
+        details.append(label, suffix);
+        const actions = document.createElement('div'); actions.className = 'saved-api-key-actions';
+        if (!item.active) {
+          const use = document.createElement('button'); use.type = 'button'; use.textContent = 'Use'; use.title = 'Use this key for ' + provider;
+          use.addEventListener('click', async () => { try { await window.forge.setActiveKey({ provider, id: item.id }); $('settingsMessage').textContent = 'Active key changed for ' + provider + '.'; await refreshKeyStatus(); } catch (error) { $('settingsMessage').textContent = error.message; } });
+          actions.appendChild(use);
+        }
+        const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'danger-subtle'; remove.textContent = 'Remove';
+        remove.addEventListener('click', async () => { if (!window.confirm('Remove API key "' + (item.label || 'API key') + '"?')) return; try { await window.forge.deleteKey({ provider, id: item.id }); $('settingsMessage').textContent = 'API key removed.'; await refreshKeyStatus(); } catch (error) { $('settingsMessage').textContent = error.message; } });
+        actions.appendChild(remove); row.append(details, actions); list.appendChild(row);
+      }
+      if (status[provider] !== (keys.length > 0)) $('settingsMessage').textContent = 'Key status was refreshed from the secure key store.';
+    }
   } catch (e) { $('settingsMessage').textContent = e.message; }
 }
 $('checkKeysBtn').onclick = refreshKeyStatus;
-$('saveKeysBtn').onclick = async () => {
-  const keys = { openai: $('openaiKey').value, gemini: $('geminiKey').value, claude: $('claudeKey').value };
-  try {
-    for (const [provider, key] of Object.entries(keys)) if (key.trim()) await window.forge.setKey({ provider, key: key.trim() });
-    $('settingsMessage').textContent = 'Provided keys saved securely. Empty fields were left unchanged.';
-    for (const p of ['openai','gemini','claude']) $(p + 'Key').value = '';
-    await refreshKeyStatus();
-  } catch (e) { $('settingsMessage').textContent = 'Could not save: ' + e.message; }
-};
+document.querySelectorAll('[data-add-key]').forEach(button => button.addEventListener('click', async () => {
+  const provider = button.dataset.addKey, keyInput = $(provider + 'Key'), labelInput = $(provider + 'Label');
+  const key = keyInput.value.trim(), label = labelInput.value.trim();
+  if (!key) { $('settingsMessage').textContent = 'Paste an API key for ' + provider + ' first.'; keyInput.focus(); return; }
+  button.disabled = true;
+  try { await window.forge.setKey({ provider, key, label }); keyInput.value = ''; labelInput.value = ''; $('settingsMessage').textContent = 'API key added and encrypted securely.'; await refreshKeyStatus(); }
+  catch (e) { $('settingsMessage').textContent = 'Could not add key: ' + e.message; }
+  finally { button.disabled = false; }
+}));
+for (const provider of apiKeyProviders) $(provider + 'Key').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); document.querySelector('[data-add-key="' + provider + '"]').click(); } });
 
 /* ─────────────────────────────────────────────
    AI workbench — core
