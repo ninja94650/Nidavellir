@@ -193,7 +193,7 @@ const assert = require('node:assert/strict');
     await click('#addApiKeyConfirm');
     await page.waitForFunction(() => document.querySelectorAll('#savedApiKeyList .saved-api-key').length === 2);
     assert.equal(await page.locator('#apiKeyCount').textContent(), '2 saved keys');
-    await click('#savedApiKeyList .saved-api-key:nth-child(2) button');
+    await click('#savedApiKeyList .saved-api-key:nth-child(2) button[title^="Use this key"]');
     await page.waitForFunction(() => document.querySelectorAll('#savedApiKeyList .saved-api-key.active').length === 1);
     await click('#closeSettings');
     assert.equal(await page.locator('#settingsModal').isVisible(), false);
