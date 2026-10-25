@@ -137,7 +137,11 @@ function getPlugins() {
     name: p.manifest.name,
     version: p.manifest.version || '0.0.0',
     description: p.manifest.description || '',
-    enabled: p.enabled
+    enabled: p.enabled,
+    permissions: Array.isArray(p.manifest.permissions) ? p.manifest.permissions.filter(x => typeof x === 'string' && x.length <= 80).slice(0, 20) : [],
+    permissionsDeclared: Array.isArray(p.manifest.permissions),
+    sandboxed: false,
+    executionModel: 'native JavaScript with the app user operating-system permissions'
   }));
 }
 
