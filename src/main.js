@@ -486,7 +486,7 @@ async function loadProviderKeys(provider) {
   if (providerKeyCache[provider]) return providerKeyCache[provider];
   if (!safeStorage.isEncryptionAvailable()) return [];
   try {
-    const parsed = JSON.parse(safeStorage.decryptString(await fs.readFile(path.join(app.getPath('userData'), `keys-${provider}.bin`)));
+    const parsed = JSON.parse(safeStorage.decryptString(await fs.readFile(path.join(app.getPath('userData'), `keys-${provider}.bin`))));
     if (Array.isArray(parsed)) {
       providerKeyCache[provider] = parsed.filter(item => item && typeof item.id === 'string' && typeof item.key === 'string');
       return providerKeyCache[provider];
