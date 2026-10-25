@@ -119,6 +119,7 @@ function installApplicationMenu() {
 function createWindow() {
   win = new BrowserWindow({
     width: 1450, height: 920, minWidth: 980, minHeight: 650,
+    autoHideMenuBar: true,
     backgroundColor: '#10131b',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
