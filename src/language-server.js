@@ -151,8 +151,11 @@ class LanguageServerManager {
 
   async openDocument({ root, filePath, language, text }) {
     const session = await this._requireSession(root, language);
-    const actual = await this._assertDocument(session.root, filePath);
+    // Enforce the payload limit before touching the filesystem. Oversized
+    // editor buffers should fail consistently, even on Windows paths that
+    // require canonicalization.
     if (typeof text !== 'string' || Buffer.byteLength(text, 'utf8') > MAX_SOURCE_BYTES) throw new Error('Document is too large for language-server integration (2 MB limit).');
+    const actual = await this._assertDocument(session.root, filePath);
     const uri = toUri(actual);
     const previous = session.documents.get(uri);
     if (previous) {
