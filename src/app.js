@@ -203,7 +203,11 @@ function activateDocument(key) {
   syncActiveDocumentState(false);
   activeDocumentKey = key;
   if (monacoReady && editor) {
-    if (!next.model) next.model = monaco.editor.createModel(next.content, next.language);
+    // Closing/reopening tabs or changing editor views can leave a stale model
+    // reference behind. Never attach a disposed Monaco model to an editor.
+    if (!next.model || (typeof next.model.isDisposed === 'function' && next.model.isDisposed())) {
+      next.model = monaco.editor.createModel(next.content, next.language);
+    }
     if (editor.getModel() !== next.model) editor.setModel(next.model);
     if (splitEditor && splitEditor.getModel() !== next.model) splitEditor.setModel(next.model);
     monaco.editor.setModelLanguage(next.model, next.language);
@@ -286,9 +290,9 @@ async function discardRecoveryDrafts() {
 function removeDocument(key) {
   const doc = openDocuments.get(key);
   if (!doc) return;
-  if (doc.model && monacoReady && editor && editor.getModel() !== doc.model) doc.model.dispose();
+  const wasActive = activeDocumentKey === key;
   openDocuments.delete(key);
-  if (activeDocumentKey === key) {
+  if (wasActive) {
     const remaining = Array.from(openDocuments.values()).at(-1);
     if (remaining) activateDocument(remaining.key);
     else {
@@ -296,6 +300,15 @@ function removeDocument(key) {
       activateDocument(fallback.key);
     }
   } else renderDocumentTabs();
+
+  // Switch the visible editors away before disposing a closed document's
+  // model; both the main and split editors may hold a reference to it.
+  if (doc.model && monacoReady && editor) {
+    const attachedToMain = editor.getModel() === doc.model;
+    const attachedToSplit = !!(splitEditor && splitEditor.getModel() === doc.model);
+    const alreadyDisposed = typeof doc.model.isDisposed === 'function' && doc.model.isDisposed();
+    if (!attachedToMain && !attachedToSplit && !alreadyDisposed) doc.model.dispose();
+  }
   scheduleRecoverySave();
 }
 async function requestCloseDocument(key) {
