@@ -23,7 +23,7 @@ const assert = require('node:assert/strict');
   const browser = await chromium.launch({ headless: process.env.HEADLESS_UI === '1', args: ['--no-sandbox'] });
   const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
   await page.addInitScript(() => {
-    const state = { runner: null, editorCommand: null, keys: {}, plugins: [{ name: 'sample-plugin', version: '1.0.0', description: 'UI test plugin', enabled: true }] };
+    const state = { runner: null, editorCommand: null, keys: {}, plugins: [{ name: 'sample-plugin', version: '1.0.0', description: 'UI test plugin', enabled: true, permissions: ['ui:status'], permissionsDeclared: true, executionModel: 'restricted vm context (not a strong OS security boundary)' }] };
     window.__uiCalls = []; window.__uiState = state;
     const record = (name, payload) => window.__uiCalls.push({ name, payload });
     window.prompt = (_message, value) => value || 'javascript';
@@ -182,6 +182,15 @@ const assert = require('node:assert/strict');
   });
   await check('Language status picker', async () => { await click('#languageStatus'); assert.ok(await page.locator('#languageStatus').textContent()); });
   await check('Plugin quick action', async () => { const b = page.locator('.plugin-qa'); if (await b.count()) { await b.click(); await called('askAI'); } });
+  await check('Side-by-side editor toggles and tracks active document', async () => {
+    await click('#splitEditorBtn');
+    assert.equal(await page.locator('#splitPane').isVisible(), true);
+    assert.equal(await page.locator('.editor-wrap').evaluate(el => el.classList.contains('split-enabled')), true);
+    if (await page.locator('#splitEditor').count()) assert.ok(await page.locator('#splitEditor').isVisible());
+    await click('#splitEditorBtn');
+    assert.equal(await page.locator('#splitPane').isVisible(), false);
+    assert.equal(await page.locator('.editor-wrap').evaluate(el => el.classList.contains('split-enabled')), false);
+  });
   await check('Multi-document tabs preserve separately opened files', async () => {
     const tabs = page.locator('#tabs .tab');
     assert.ok(await tabs.count() >= 2, 'opening two files should preserve two tabs');
@@ -252,7 +261,7 @@ const assert = require('node:assert/strict');
     await click('[data-studio-tab="debug-security"]');
     await click('#refreshPluginSecurityBtn');
     assert.ok(await page.locator('#pluginSecurityReport .studio-result-item').count() >= 1);
-    assert.match(await page.locator('#pluginSecurityReport').textContent(), /Not sandboxed/);
+    assert.match(await page.locator('#pluginSecurityReport').textContent(), /restricted vm context/);
     await click('#closeStudioTools');
   });
 
