@@ -67,6 +67,8 @@ function registerStudioIpc({ ipcMain, app, dialog, getWindow, approvedRoots, isW
   ipcMain.handle('git:status', async (_event,root) => studio.gitStatus(await workspaceRoot(root)));
   ipcMain.handle('git:diff', async (_event,p={}) => studio.gitDiff(await workspaceRoot(p.root),p.staged===true,p.path||''));
   ipcMain.handle('git:branches', async (_event,root) => studio.gitBranches(await workspaceRoot(root)));
+  ipcMain.handle('git:switch-branch', async (_event,p={}) => studio.gitSwitchBranch(await workspaceRoot(p.root), p.name));
+  ipcMain.handle('git:create-branch', async (_event,p={}) => studio.gitCreateBranch(await workspaceRoot(p.root), p.name));
   ipcMain.handle('git:log', async (_event,root) => studio.gitLog(await workspaceRoot(root)));
   ipcMain.handle('git:stage', async (_event,p={}) => studio.gitStage(await workspaceRoot(p.root),p.paths||[],p.all===true));
   ipcMain.handle('git:unstage', async (_event,p={}) => studio.gitUnstage(await workspaceRoot(p.root),p.paths||[],p.all===true));
