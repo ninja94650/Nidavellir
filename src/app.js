@@ -1729,21 +1729,56 @@ function renderGitStatus(status) {
     list.appendChild(row);
   });
 }
+function renderGitBranches(branches) {
+  const select = $('gitBranchSelect');
+  const current = (branches || []).find(branch => branch.current);
+  select.replaceChildren();
+  if (!branches || !branches.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No local branches';
+    select.appendChild(option);
+    return;
+  }
+  for (const branch of branches) {
+    const option = document.createElement('option');
+    option.value = branch.name;
+    option.textContent = branch.name + (branch.current ? ' (current)' : '') + (branch.upstream ? ' · ' + branch.upstream : '');
+    select.appendChild(option);
+  }
+  if (current) select.value = current.name;
+}
 async function refreshGitStatus() {
   try {
-    const status = await window.forge.gitStatus(requireWorkspaceForTools());
+    const root = requireWorkspaceForTools();
+    const [status, branches] = await Promise.all([window.forge.gitStatus(root), window.forge.gitBranches(root)]);
     renderGitStatus(status);
+    renderGitBranches(branches);
     $('gitMessage').textContent = '';
   } catch (error) {
     $('gitStatusSummary').textContent = error.message || String(error);
     renderStudioEmpty($('gitChangedFiles'), 'Open the repository root, and verify Git is installed.');
+    renderGitBranches([]);
   }
 }
 async function runGitAction(action) {
   try {
     const root = requireWorkspaceForTools();
     let result;
-    if (action === 'stage') {
+    if (action === 'switchBranch') {
+      const name = $('gitBranchSelect').value;
+      if (!name) throw new Error('Select a local branch first.');
+      result = await window.forge.gitSwitchBranch({ root, name });
+      $('gitOutput').hidden = false;
+      $('gitOutput').textContent = result.output || 'Switched branch.';
+    } else if (action === 'createBranch') {
+      const name = $('gitNewBranchInput').value.trim();
+      if (!name) throw new Error('Enter a new branch name first.');
+      result = await window.forge.gitCreateBranch({ root, name });
+      $('gitNewBranchInput').value = '';
+      $('gitOutput').hidden = false;
+      $('gitOutput').textContent = result.output || 'Created and switched to ' + name + '.';
+    } else if (action === 'stage') {
       const paths = selectedGitPaths();
       result = await window.forge.gitStage({ root, paths, all: false });
     } else if (action === 'stageAll') result = await window.forge.gitStage({ root, all: true });
@@ -1779,10 +1814,13 @@ async function runGitAction(action) {
     }
     if (result && result.status) renderGitStatus(result.status);
     else if (result && result.changes) renderGitStatus(result);
+    if (result && result.branches) renderGitBranches(result.branches);
     $('gitMessage').textContent = 'Git action completed.';
   } catch (error) { $('gitMessage').textContent = error.message || String(error); }
 }
 $('refreshGitBtn').addEventListener('click', () => { void refreshGitStatus(); });
+$('gitSwitchBranchBtn').addEventListener('click', () => { void runGitAction('switchBranch'); });
+$('gitCreateBranchBtn').addEventListener('click', () => { void runGitAction('createBranch'); });
 $('showWorkingDiffBtn').addEventListener('click', () => { void runGitAction('diff'); });
 $('showStagedDiffBtn').addEventListener('click', () => { void runGitAction('stagedDiff'); });
 $('showGitLogBtn').addEventListener('click', () => { void runGitAction('log'); });
