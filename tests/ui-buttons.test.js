@@ -74,7 +74,7 @@ const assert = require('node:assert/strict');
 
   await check('Open file', async () => { await click('#openBtn'); await called('openFile'); assert.match(await page.locator('#statusText').textContent(), /Opened/); });
   await check('Open folder', async () => { await click('#openFolderBtn'); await called('openFolder'); assert.equal(await page.locator('#folderName').textContent(), 'PROJECT'); });
-  await check('Explorer file item', async () => { await click('.file-item'); await called('readPath'); });
+  await check('Explorer file item', async () => { await click('.file-item[data-path="/tmp/project/main.js"]'); await called('readPath'); });
   await check('Multi-file tabs keep independent edits', async () => {
     const tabs = page.locator('#tabs .document-tab');
     assert.equal(await tabs.count(), 3, 'welcome, example.js, and main.js should remain open');
@@ -95,6 +95,14 @@ const assert = require('node:assert/strict');
     await page.locator('#fileCloseConfirm').waitFor({ state: 'visible' });
     await click('#fileCloseConfirm [data-close-action="discard"]');
     assert.equal(await page.locator('#tabs .document-tab').filter({ hasText: 'close_me.cpp' }).count(), 0);
+  });
+  await check('Tab Save & close works for a new unsaved file', async () => {
+    await click('#newFileBtn'); await page.locator('#newFileName').fill('save_close_me'); await click('#newFileForm button[type="submit"]');
+    await page.locator('#tabs .document-tab.active .tab-close').click();
+    await page.locator('#fileCloseConfirm').waitFor({ state: 'visible' });
+    await click('#fileCloseConfirm [data-close-action="save"]');
+    await called('saveFile');
+    assert.equal(await page.locator('#tabs .document-tab').filter({ hasText: 'save_close_me.cpp' }).count(), 0);
   });
   await check('Explorer menu exposes requested file actions', async () => {
     const row = page.locator('.file-item[data-path="/tmp/project/main.js"]');

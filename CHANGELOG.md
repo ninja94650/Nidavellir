@@ -1,3 +1,8 @@
+# 0.4.10
+
+- Corrects the multi-file Explorer UI regression selector and adds a Save & Close regression test for newly created files.
+- Fixes the saved-tab identifier transition when closing a previously unsaved file after saving it.
+
 # 0.4.9
 
 - Fixes file-tab close handling with an accessible Save & Close / Close Without Saving / Cancel prompt.
