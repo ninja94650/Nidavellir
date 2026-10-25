@@ -5,6 +5,8 @@ const $ = id => document.getElementById(id);
 
 let editor = null, currentPath = null, currentName = 'main.js', currentLanguage = 'javascript';
 let monacoReady = false, isRunning = false;
+const openDocuments = new Map();
+let activeDocumentId = null, unsavedDocumentSequence = 0;
 // Preserve New File requests made while Monaco is still loading.
 let pendingNewDocument = null;
 let diffEditorInstance = null, proposedCode = '';
@@ -62,30 +64,29 @@ require(['vs/editor/editor.main'], () => {
     scrollBeyondLastLine: false, tabSize: 2, padding: { top: 14 }, wordWrap: 'on'
   });
   editor.onDidChangeModelContent(() => {
+    const doc = openDocuments.get(activeDocumentId);
+    if (doc) { doc.content = editor.getValue(); doc.dirty = true; renderDocumentTabs(); }
     $('selectionHint').textContent = 'Current file will be included';
     if ($('findBar') && !$('findBar').hidden) collectFindMatches();
   });
-  if (pendingNewDocument) {
-    $('tabs').querySelector('.tab').textContent = pendingNewDocument.name;
-    showLanguage(pendingNewDocument.language);
-    setStatus('New unsaved file');
-    editor.focus();
-    pendingNewDocument = null;
-  } else {
-    setStatus('Ready · Unsaved welcome example');
-  }
+  const initial = pendingNewDocument || { name: 'welcome.md', language: 'javascript', content: welcome, path: null };
+  pendingNewDocument = null;
+  const model = editor.getModel();
+  if (model) monaco.editor.setModelLanguage(model, initial.language || 'javascript');
+  const id = initial.path || 'welcome';
+  openDocuments.set(id, { id, path: initial.path || null, name: initial.name, language: initial.language || 'javascript', content: initial.content, model, dirty: !initial.path && initial.name !== 'welcome.md' });
+  switchDocument(id, false);
+  setStatus(initial.name === 'welcome.md' ? 'Ready · Unsaved welcome example' : 'New unsaved file · ' + initial.name);
+  editor.focus();
   initPluginUI();
 }, () => {
   $('editor').hidden = true; $('fallbackEditor').hidden = false;
-  $('plainEditor').value = pendingNewDocument ? pendingNewDocument.content : welcome;
-  if (pendingNewDocument) {
-    $('tabs').querySelector('.tab').textContent = pendingNewDocument.name;
-    currentName = pendingNewDocument.name;
-    currentLanguage = pendingNewDocument.language;
-    $('languageStatus').textContent = currentLanguage;
-    setStatus('New unsaved file · basic editor mode');
-    pendingNewDocument = null;
-  }
+  const initial = pendingNewDocument || { name: 'welcome.md', language: 'javascript', content: welcome, path: null };
+  pendingNewDocument = null;
+  $('plainEditor').value = initial.content;
+  const id = initial.path || 'welcome';
+  openDocuments.set(id, { id, path: initial.path || null, name: initial.name, language: initial.language || 'javascript', content: initial.content, model: null, dirty: !initial.path && initial.name !== 'welcome.md' });
+  switchDocument(id, false);
   setStatus('Monaco unavailable · basic editor mode');
   initPluginUI();
 });
@@ -95,13 +96,46 @@ require(['vs/editor/editor.main'], () => {
    ───────────────────────────────────────────── */
 
 function getValue() { return monacoReady && editor ? editor.getValue() : $('plainEditor').value; }
-function setValue(value, language) {
-  if (monacoReady && editor) { editor.setValue(value); monaco.editor.setModelLanguage(editor.getModel(), language || 'javascript'); }
-  else $('plainEditor').value = value;
-}
+function setValue(value, language) { if (monacoReady && editor) { editor.setValue(value); monaco.editor.setModelLanguage(editor.getModel(), language || 'javascript'); } else $('plainEditor').value = value; }
 function setStatus(text) { $('statusText').textContent = text; }
 function inferLanguage(name) { const ext = (name.split('.').pop() || 'js').toLowerCase(); return languageMap[ext] || 'plaintext'; }
-function showLanguage(lang) { currentLanguage = lang; $('languageStatus').textContent = lang; if (monacoReady && editor) monaco.editor.setModelLanguage(editor.getModel(), lang); }
+function showLanguage(lang) { currentLanguage = lang; $('languageStatus').textContent = lang; if (monacoReady && editor && editor.getModel()) monaco.editor.setModelLanguage(editor.getModel(), lang); }
+function documentKey() { return 'untitled:' + (++unsavedDocumentSequence); }
+function renderDocumentTabs() {
+  const host = $('tabs'); host.querySelectorAll('.document-tab').forEach(n => n.remove());
+  for (const doc of openDocuments.values()) {
+    const tab = document.createElement('button'); tab.type = 'button'; tab.className = 'tab document-tab' + (doc.id === activeDocumentId ? ' active' : ''); tab.dataset.documentId = doc.id; tab.title = doc.path || doc.name;
+    const label = document.createElement('span'); label.className = 'tab-label'; label.textContent = doc.name;
+    const dirty = document.createElement('span'); dirty.className = 'tab-dirty'; dirty.textContent = doc.dirty ? '●' : ''; dirty.title = doc.dirty ? 'Unsaved changes' : '';
+    const close = document.createElement('span'); close.className = 'tab-close'; close.textContent = '×'; close.title = 'Close ' + doc.name; close.setAttribute('role','button'); close.setAttribute('aria-label','Close ' + doc.name); close.tabIndex = 0;
+    close.addEventListener('click', e => { e.stopPropagation(); closeDocument(doc.id); });
+    close.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); closeDocument(doc.id); } });
+    tab.append(label, dirty, close); tab.addEventListener('click', () => switchDocument(doc.id)); host.insertBefore(tab, host.querySelector('.tab-spacer'));
+  }
+}
+function switchDocument(id, focus = true) {
+  const doc = openDocuments.get(id); if (!doc) return;
+  const previous = openDocuments.get(activeDocumentId); if (previous && (!monacoReady || !editor)) previous.content = $('plainEditor').value;
+  activeDocumentId = id; currentPath = doc.path; currentName = doc.name; currentLanguage = doc.language;
+  if (monacoReady && editor) { if (!doc.model) doc.model = monaco.editor.createModel(doc.content || '', doc.language || 'plaintext'); editor.setModel(doc.model); }
+  else $('plainEditor').value = doc.content || '';
+  $('languageStatus').textContent = currentLanguage;
+  document.querySelectorAll('.file-item').forEach(x => x.classList.toggle('selected', !!doc.path && x.title === doc.path));
+  renderDocumentTabs(); if (focus && monacoReady && editor) editor.focus(); else if (focus && !monacoReady) $('plainEditor').focus();
+}
+function openDocument(filePath, name, content, language) {
+  const id = filePath || documentKey(); let doc = openDocuments.get(id);
+  if (!doc) { doc = { id, path: filePath || null, name, language, content: content || '', model: null, dirty: !filePath }; if (monacoReady) doc.model = monaco.editor.createModel(doc.content, language); openDocuments.set(id, doc); }
+  switchDocument(id); setStatus(doc.path ? 'Opened · ' + doc.path : 'New unsaved file · ' + doc.name);
+}
+function closeDocument(id) {
+  const doc = openDocuments.get(id); if (!doc) return;
+  if (doc.dirty && !window.confirm('Close ' + doc.name + ' with unsaved changes?')) return;
+  const ids = [...openDocuments.keys()], index = ids.indexOf(id); if (doc.model && monacoReady) doc.model.dispose(); openDocuments.delete(id);
+  if (!openDocuments.size) openDocuments.set('welcome', { id:'welcome', path:null, name:'welcome.md', language:'javascript', content:welcome, model:monacoReady ? monaco.editor.createModel(welcome,'javascript') : null, dirty:false });
+  if (activeDocumentId === id) switchDocument([...openDocuments.keys()][Math.max(0, Math.min(index, openDocuments.size - 1))]); else renderDocumentTabs();
+  setStatus('Closed · ' + doc.name);
+}
 function addOutput(type, text) {
   const terminal = $('terminal');
   const line = document.createElement('div');
@@ -130,13 +164,7 @@ function renderTree(items, container, depth = 0) {
   }
 }
 function iconFor(name) { const e = name.split('.').pop(); return ({ js:'JS',py:'Py',cpp:'C+',c:'C',html:'◇',css:'#',json:'{}',md:'M',ts:'TS' })[e] || '·'; }
-function loadFile(filePath, content) {
-  currentPath = filePath; currentName = filePath.split(/[\\/]/).pop();
-  setValue(content, inferLanguage(currentName)); showLanguage(inferLanguage(currentName));
-  $('tabs').querySelector('.tab').textContent = currentName;
-  setStatus('Opened · ' + filePath);
-  document.querySelectorAll('.file-item').forEach(x => x.classList.toggle('selected', x.title === filePath));
-}
+function loadFile(filePath, content) { const name = filePath.split(/[\\/]/).pop(); openDocument(filePath, name, content, inferLanguage(name)); }
 
 /* ─────────────────────────────────────────────
    File buttons
@@ -154,7 +182,13 @@ $('openFolderBtn').onclick = async () => {
 $('saveBtn').onclick = async () => {
   try {
     const f = await window.forge.saveFile({ filePath: currentPath, name: currentName, content: getValue() });
-    if (f) { currentPath = f.filePath; currentName = f.name; $('tabs').querySelector('.tab').textContent = currentName; setStatus('Saved · ' + currentPath); }
+    if (f) {
+      const oldId = activeDocumentId, doc = openDocuments.get(oldId);
+      if (doc) { doc.path = f.filePath; doc.name = f.name; doc.content = getValue(); doc.dirty = false;
+        if (oldId !== f.filePath) { openDocuments.delete(oldId); doc.id = f.filePath; openDocuments.set(doc.id, doc); activeDocumentId = doc.id; }
+      }
+      currentPath = f.filePath; currentName = f.name; renderDocumentTabs(); setStatus('Saved · ' + currentPath);
+    }
   } catch (e) { addOutput('stderr', e.message); }
 };
 const newFileTypes = {
@@ -204,26 +238,10 @@ function createNewDocument(name, language) {
       ? '#include <stdio.h>\n\nint main(void) {\n    printf("Hello, Nidavellir!\\n");\n    return 0;\n}\n'
       : '';
   const documentState = { name, language, content: starterCode };
-  currentPath = null;
-  currentName = documentState.name;
-  currentLanguage = documentState.language;
-  $('tabs').querySelector('.tab').textContent = currentName;
-  $('languageStatus').textContent = currentLanguage;
+  if (!monacoReady && $('fallbackEditor').hidden) { pendingNewDocument = documentState; return; }
+  openDocument(null, documentState.name, documentState.content, documentState.language);
   setStatus('New unsaved file · ' + currentName);
-
-  if (monacoReady && editor) {
-    setValue(documentState.content, documentState.language);
-    showLanguage(documentState.language);
-    editor.focus();
-    editor.setPosition({ lineNumber: 1, column: 1 });
-    return;
-  }
-  if (!$('fallbackEditor').hidden) {
-    $('plainEditor').value = documentState.content;
-    $('plainEditor').focus();
-    return;
-  }
-  pendingNewDocument = documentState;
+  if (monacoReady && editor) editor.setPosition({ lineNumber: 1, column: 1 });
 }
 
 $('newFileName').addEventListener('input', updateNewFilePreview);

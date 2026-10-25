@@ -1,3 +1,7 @@
+# 0.4.7
+
+- Adds browser-style multi-file tabs with independent editor models, unsaved-change indicators, tab switching, and close controls.
+
 # 0.4.6
 
 - Improves the AI workspace presentation with a more minimal, professional IDE layout.
