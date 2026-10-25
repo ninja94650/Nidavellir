@@ -108,11 +108,9 @@
 
     <aside class="ai-panel" id="aiPanel">
       <div class="ai-title"><div><span class="sparkle">✧</span> AI WORKBENCH</div><span class="online-dot"></span></div>
-      <p class="ai-subtitle">Ask multiple coding assistants to work together.</p>
-      <div class="provider-row">
-        <label><input type="checkbox" id="useOpenAI" checked> GPT</label>
-        <label><input type="checkbox" id="useGemini" checked> Gemini</label>
-        <label><input type="checkbox" id="useClaude" checked> Claude</label>
+      <p class="ai-subtitle">Your named agents work independently on the same project. Add more agents in Settings.</p>
+      <div class="provider-row agent-team-toolbar">
+        <span id="teamAgentSummary">Agents are loaded from your saved API keys.</span>
         <label class="coordinator-label"><input type="checkbox" id="useCoordinator" checked> 🔮 Coordinator</label>
       </div>
       <div class="quick-actions" id="quickActions">
@@ -122,7 +120,7 @@
         <button data-prompt="Write useful tests for this code and explain how to run them.">Write tests</button>
         <button data-action="generate-tests">🧪 Generate tests</button>
       </div>
-      <div class="chat" id="chat"><div class="welcome-chat"><div class="welcome-icon">✦</div><strong>Your AI coding team</strong><p>Select one or more assistants. They will independently analyze the same prompt; the coordinator then synthesizes a unified answer.</p></div></div>
+      <div class="chat" id="chat"><div class="welcome-chat"><div class="welcome-icon">✦</div><strong>Your AI coding team</strong><p>Every agent configured on your saved API keys can independently analyze the same prompt; the coordinator then synthesizes a unified answer.</p></div></div>
       <div class="composer">
         <textarea id="promptInput" placeholder="Ask the team to debug, explain, refactor, or build something…" rows="3"></textarea>
         <div class="composer-bottom"><span id="selectionHint">Current file will be included</span><button id="askBtn" class="primary">Ask team ↗</button></div>
