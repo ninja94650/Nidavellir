@@ -263,9 +263,17 @@
     </section>
     <section class="studio-tool-page" data-studio-page="git" hidden>
       <div class="studio-toolbar"><button id="refreshGitBtn" class="primary" type="button">Refresh Git status</button><button id="showWorkingDiffBtn" type="button">View working diff</button><button id="showStagedDiffBtn" type="button">View staged diff</button><button id="showGitLogBtn" type="button">Recent commits</button></div>
+      <div class="studio-branch-controls">
+        <label class="studio-field-label" for="gitBranchSelect">Local branch</label>
+        <select id="gitBranchSelect" aria-label="Local Git branch"><option value="">Open a Git repository first</option></select>
+        <button id="gitSwitchBranchBtn" type="button">Switch branch</button>
+        <input id="gitNewBranchInput" type="text" maxlength="120" placeholder="new-branch-name" aria-label="New branch name">
+        <button id="gitCreateBranchBtn" type="button">Create and switch</button>
+      </div>
       <div id="gitStatusSummary" class="studio-message">Open a repository root to inspect Git status.</div>
       <div id="gitChangedFiles" class="studio-result-list"><div class="studio-empty">No status loaded.</div></div>
       <div class="studio-git-actions"><button id="gitStageSelectedBtn" type="button">Stage selected</button><button id="gitStageAllBtn" type="button">Stage all</button><button id="gitUnstageSelectedBtn" type="button">Unstage selected</button></div>
+      <p class="studio-help">Stage All includes every Git-tracked and untracked change, which may include secrets or generated files. Review the changed-file list first.</p>
       <label class="studio-field-label" for="gitCommitMessage">Commit message</label>
       <textarea id="gitCommitMessage" rows="2" maxlength="500" placeholder="Describe the staged changes…"></textarea>
       <div class="studio-git-actions"><button id="gitCommitBtn" class="primary" type="button">Commit staged changes</button><button id="gitPullBtn" type="button">Pull (fast-forward only)</button><button id="gitPushBtn" type="button">Push commits</button></div>
