@@ -23,9 +23,28 @@ const MAX_FRAME_BYTES = 8 * 1024 * 1024;
 const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
 
 function toUri(filePath) { return pathToFileURL(path.resolve(filePath)).href; }
+function normalizePathForComparison(value) {
+  let resolved = path.resolve(value);
+  if (process.platform === 'win32') {
+    // fs.realpath() may return Windows extended-length paths (\\\\?\\C:\\...),
+    // while editor paths commonly arrive as ordinary drive-letter paths. Strip
+    // the prefix before containment checks so equivalent paths compare safely.
+    if (resolved.startsWith('\\\\?\\UNC\\')) resolved = '\\\\' + resolved.slice(8);
+    else if (resolved.startsWith('\\\\?\\')) resolved = resolved.slice(4);
+    resolved = path.win32.normalize(resolved).toLocaleLowerCase();
+  }
+  return resolved;
+}
+
 function insideRoot(root, target) {
-  const relative = path.relative(root, target);
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+  const normalizedRoot = normalizePathForComparison(root);
+  const normalizedTarget = normalizePathForComparison(target);
+  const relative = path.relative(normalizedRoot, normalizedTarget);
+  return relative === '' || (
+    relative !== '..' &&
+    !relative.startsWith('..' + path.sep) &&
+    !path.isAbsolute(relative)
+  );
 }
 
 class LanguageServerManager {
