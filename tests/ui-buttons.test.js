@@ -43,6 +43,8 @@ const assert = require('node:assert/strict');
       gitStatus: async root => { record('gitStatus', root); return { root:'/tmp/project', branch:'main', changes:[{index:' ',worktree:'M',status:'M',path:'main.js'}], workingDiff:'1 file changed', stagedDiff:'', hasRemote:true }; },
       gitDiff: async p => { record('gitDiff', p); return 'diff --git a/main.js b/main.js\\n+alpha'; },
       gitBranches: async root => { record('gitBranches',root); return [{name:'main',current:true,upstream:'origin/main'}]; },
+      gitSwitchBranch: async p => { record('gitSwitchBranch',p); return { output:'Switched to main', status:{root:'/tmp/project',branch:'main',changes:[{index:' ',worktree:'M',status:'M',path:'main.js'}],workingDiff:'1 file changed',stagedDiff:'',hasRemote:true}, branches:[{name:'main',current:true,upstream:'origin/main'},{name:'feature/new',current:false,upstream:''}] }; },
+      gitCreateBranch: async p => { record('gitCreateBranch',p); return { output:'Switched to a new branch ' + p.name, status:{root:'/tmp/project',branch:p.name,changes:[{index:' ',worktree:'M',status:'M',path:'main.js'}],workingDiff:'1 file changed',stagedDiff:'',hasRemote:true}, branches:[{name:p.name,current:true,upstream:''},{name:'main',current:false,upstream:'origin/main'}] }; },
       gitLog: async root => { record('gitLog',root); return [{hash:'abc123',date:'2026-10-25',subject:'Test commit'}]; },
       gitStage: async p => { record('gitStage',p); return { root:'/tmp/project',branch:'main',changes:[{index:'M',worktree:' ',status:'M',path:'main.js'}],workingDiff:'',stagedDiff:'1 file changed',hasRemote:true }; },
       gitUnstage: async p => { record('gitUnstage',p); return { root:'/tmp/project',branch:'main',changes:[{index:' ',worktree:'M',status:'M',path:'main.js'}],workingDiff:'1 file changed',stagedDiff:'',hasRemote:true }; },
@@ -240,6 +242,12 @@ const assert = require('node:assert/strict');
     await click('#studioToolsBtn');
     await click('[data-studio-tab="git"]');
     await called('gitStatus');
+    await click('#gitSwitchBranchBtn');
+    await called('gitSwitchBranch');
+    await page.locator('#gitNewBranchInput').fill('feature/test-ui');
+    await click('#gitCreateBranchBtn');
+    await called('gitCreateBranch');
+    assert.equal(await page.locator('#gitBranchSelect').inputValue(), 'feature/test-ui');
     const selection = page.locator('#gitChangedFiles input[type="checkbox"]').first();
     await selection.check();
     await click('#gitStageSelectedBtn');
