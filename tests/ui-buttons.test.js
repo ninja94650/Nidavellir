@@ -146,7 +146,7 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('#commandPalette').isVisible(), false);
   });
   await check('New File sidebar button', async () => { await click('#newFileBtn'); assert.equal(await page.locator('#newFileModal').isVisible(), true); await click('#cancelNewFile'); });
-  await check('New File banner + C++ create', async () => { await click('#newFileBannerBtn'); await page.locator('#newFileName').fill('click_test'); await page.locator('#newFileType').selectOption('cpp'); assert.equal(await page.locator('#newFilePreview').textContent(), 'click_test.cpp'); await click('#newFileForm button[type="submit"]'); assert.match(await page.locator('#tabs .tab.active .tab-name').textContent(), /click_test\.cpp/); });
+  await check('New File banner + C++ create', async () => { await click('#newFileBannerBtn'); await page.locator('#newFileName').fill('click_test'); await page.locator('#newFileType').selectOption('cpp'); assert.equal(await page.locator('#newFilePreview').textContent(), 'click_test.cpp'); await click('#newFileForm button[type="submit"]'); assert.match(await page.locator('#tabs .tab.active .tab-name').textContent(), /click_test\.cpp/); await click('#saveBtn'); await called('saveFile'); });
   await check('New File cancel action', async () => { await click('#newFileBtn'); await click('#cancelNewFileAction'); assert.equal(await page.locator('#newFileModal').isVisible(), false); });
   await check('Run', async () => { await click('#runBtn'); await called('runSafe'); });
   await check('Run history', async () => { await click('#runHistoryBtn'); await called('runHistory'); assert.equal(await page.locator('#runHistoryDropdown').isVisible(), true); await click('#runHistoryBtn'); });
