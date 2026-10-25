@@ -42,9 +42,13 @@ function normalizePathForComparison(value) {
 function insideRoot(root, target) {
   const normalizedRoot = normalizePathForComparison(root);
   const normalizedTarget = normalizePathForComparison(target);
-  if (normalizedRoot === normalizedTarget) return true;
-  const rootPrefix = normalizedRoot.endsWith('\\\\') ? normalizedRoot : normalizedRoot + '\\\\';
-  return normalizedTarget.startsWith(rootPrefix);
+  const pathApi = process.platform === 'win32' ? path.win32 : path;
+  const relative = pathApi.relative(normalizedRoot, normalizedTarget);
+  // A target is inside the workspace when it is the root itself or its
+  // relative path does not traverse upward and is not absolute. Using the
+  // platform path API avoids treating POSIX paths as if they used backslashes.
+  return relative === '' || (!relative.startsWith('..' + pathApi.sep) &&
+    relative !== '..' && !pathApi.isAbsolute(relative));
 }
 
 class LanguageServerManager {
