@@ -11,6 +11,11 @@ let diffEditorInstance = null, proposedCode = '';
 let recentFiles = [];
 let paletteMode = 'commands', paletteItems = [], paletteActiveIndex = 0, palettePreviousFocus = null;
 let wordWrapEnabled = true;
+const openDocuments = new Map();
+let activeDocumentKey = null, documentSequence = 0, recoveryTimer = null;
+let pendingRecoveryDrafts = null, recoveryPromptShown = false, pendingCloseDocumentKey = null;
+let currentWorkspaceRoot = null;
+let projectSearchResults = [], aiProjectChanges = [], gitStatusCache = null;
 
 const languageMap = {
   js:'javascript',mjs:'javascript',cjs:'javascript',py:'python',cpp:'cpp',c:'c',java:'java',go:'go',rs:'rust',rb:'ruby',php:'php',sh:'bash',ps1:'powershell',
@@ -64,33 +69,254 @@ require(['vs/editor/editor.main'], () => {
     fontSize: 13, minimap: { enabled: false }, fontFamily: 'Consolas, "Cascadia Code", monospace',
     scrollBeyondLastLine: false, tabSize: 2, padding: { top: 14 }, wordWrap: 'on'
   });
+  const startingDocument = pendingNewDocument || { name: 'welcome.md', language: 'javascript', content: welcome, savedContent: welcome, filePath: null };
+  const initialDoc = createDocumentRecord({
+    filePath: startingDocument.filePath || null, name: startingDocument.name,
+    language: startingDocument.language, content: startingDocument.content,
+    savedContent: startingDocument.savedContent == null ? startingDocument.content : startingDocument.savedContent,
+    model: editor.getModel()
+  });
+  activeDocumentKey = initialDoc.key;
+  syncActiveDocumentState(false);
+  renderDocumentTabs();
   editor.onDidChangeModelContent(() => {
     $('selectionHint').textContent = 'Current file will be included';
+    syncActiveDocumentState(true);
     if ($('findBar') && !$('findBar').hidden) collectFindMatches();
   });
   if (pendingNewDocument) {
-    $('tabs').querySelector('.tab').textContent = pendingNewDocument.name;
     showLanguage(pendingNewDocument.language);
     setStatus('New unsaved file');
     editor.focus();
     pendingNewDocument = null;
   } else {
-    setStatus('Ready · Unsaved welcome example');
+    setStatus('Ready · No file open');
   }
   initPluginUI();
+  void checkRecoveryDrafts();
 }, () => {
   $('editor').hidden = true; $('fallbackEditor').hidden = false;
   $('plainEditor').value = pendingNewDocument ? pendingNewDocument.content : welcome;
-  if (pendingNewDocument) {
-    $('tabs').querySelector('.tab').textContent = pendingNewDocument.name;
-    currentName = pendingNewDocument.name;
-    currentLanguage = pendingNewDocument.language;
-    $('languageStatus').textContent = currentLanguage;
-    setStatus('New unsaved file · basic editor mode');
-    pendingNewDocument = null;
-  }
+  const startingDocument = pendingNewDocument || { name: 'welcome.md', language: 'javascript', content: welcome, savedContent: welcome, filePath: null };
+  const initialDoc = createDocumentRecord({
+    filePath: startingDocument.filePath || null, name: startingDocument.name,
+    language: startingDocument.language, content: startingDocument.content,
+    savedContent: startingDocument.savedContent == null ? startingDocument.content : startingDocument.savedContent,
+    model: null
+  });
+  activeDocumentKey = initialDoc.key;
+  currentName = initialDoc.name; currentLanguage = initialDoc.language; currentPath = initialDoc.filePath;
+  $('languageStatus').textContent = currentLanguage;
+  renderDocumentTabs();
+  if (pendingNewDocument) { setStatus('New unsaved file · basic editor mode'); pendingNewDocument = null; }
   setStatus('Monaco unavailable · basic editor mode');
   initPluginUI();
+  void checkRecoveryDrafts();
+});
+
+
+function normalizedDocumentPath(filePath) {
+  const value = String(filePath).replace(/\\/g, '/');
+  return navigator.platform && /^Win/i.test(navigator.platform) ? value.toLowerCase() : value;
+}
+function documentKeyForPath(filePath) { return 'file:' + normalizedDocumentPath(filePath); }
+function getActiveDocument() { return activeDocumentKey ? openDocuments.get(activeDocumentKey) || null : null; }
+function createDocumentRecord(state) {
+  const filePath = state.filePath || null;
+  const key = filePath ? documentKeyForPath(filePath) : 'untitled:' + (++documentSequence);
+  const doc = {
+    key, filePath, name: state.name || (filePath ? baseNameForPath(filePath) : 'untitled.js'),
+    language: state.language || 'plaintext', content: String(state.content || ''),
+    savedContent: state.savedContent == null ? String(state.content || '') : String(state.savedContent),
+    dirty: false, model: state.model || null, recoveredFromPath: state.recoveredFromPath || null
+  };
+  doc.dirty = doc.content !== doc.savedContent;
+  openDocuments.set(key, doc);
+  return doc;
+}
+function syncActiveDocumentState(schedule = true) {
+  const doc = getActiveDocument();
+  if (!doc) return;
+  doc.content = getValue();
+  doc.dirty = doc.content !== doc.savedContent;
+  currentPath = doc.filePath;
+  currentName = doc.name;
+  currentLanguage = doc.language;
+  $('languageStatus').textContent = currentLanguage;
+  renderDocumentTabs();
+  if (schedule) scheduleRecoverySave();
+}
+function renderDocumentTabs() {
+  const container = $('tabs');
+  if (!container) return;
+  const status = $('statusPill');
+  container.replaceChildren();
+  for (const doc of openDocuments.values()) {
+    const tab = document.createElement('div');
+    tab.className = 'tab' + (doc.key === activeDocumentKey ? ' active' : '');
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('tabindex', doc.key === activeDocumentKey ? '0' : '-1');
+    tab.setAttribute('aria-selected', doc.key === activeDocumentKey ? 'true' : 'false');
+    tab.dataset.docKey = doc.key;
+    tab.title = doc.filePath || doc.name;
+    const name = document.createElement('span');
+    name.className = 'tab-name';
+    name.textContent = doc.name;
+    tab.appendChild(name);
+    const dirty = document.createElement('span');
+    dirty.className = 'tab-dirty';
+    dirty.textContent = doc.dirty || !doc.filePath && doc.name !== 'welcome.md' ? '●' : '';
+    dirty.title = doc.dirty ? 'Unsaved changes' : '';
+    tab.appendChild(dirty);
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'tab-close';
+    close.title = 'Close ' + doc.name;
+    close.setAttribute('aria-label', 'Close ' + doc.name);
+    close.textContent = '×';
+    close.addEventListener('click', event => { event.stopPropagation(); void requestCloseDocument(doc.key); });
+    tab.appendChild(close);
+    tab.addEventListener('click', event => {
+      if (event.target && event.target.closest && event.target.closest('.tab-close')) return;
+      activateDocument(doc.key);
+    });
+    tab.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activateDocument(doc.key); }
+    });
+    container.appendChild(tab);
+  }
+  const spacer = document.createElement('div');
+  spacer.className = 'tab-spacer';
+  container.appendChild(spacer);
+  if (status) container.appendChild(status);
+}
+function activateDocument(key) {
+  const next = openDocuments.get(key);
+  if (!next) return;
+  syncActiveDocumentState(false);
+  activeDocumentKey = key;
+  if (monacoReady && editor) {
+    if (!next.model) next.model = monaco.editor.createModel(next.content, next.language);
+    if (editor.getModel() !== next.model) editor.setModel(next.model);
+    monaco.editor.setModelLanguage(next.model, next.language);
+  } else if (!$('fallbackEditor').hidden) {
+    $('plainEditor').value = next.content;
+  } else {
+    pendingNewDocument = { filePath: next.filePath, name: next.name, language: next.language, content: next.content, savedContent: next.savedContent };
+  }
+  currentPath = next.filePath; currentName = next.name; currentLanguage = next.language;
+  $('languageStatus').textContent = currentLanguage;
+  document.querySelectorAll('.file-item').forEach(row => row.classList.toggle('selected', row.title === currentPath));
+  renderDocumentTabs();
+  setStatus(next.dirty ? 'Unsaved changes · ' + next.name : (next.filePath ? 'Opened · ' + next.filePath : 'Ready · ' + next.name));
+}
+function scheduleRecoverySave() {
+  if (recoveryTimer) clearTimeout(recoveryTimer);
+  recoveryTimer = setTimeout(() => { void persistRecoveryDrafts(); }, 700);
+}
+async function persistRecoveryDrafts() {
+  const drafts = Array.from(openDocuments.values())
+    .filter(doc => doc.filePath || doc.dirty || (doc.name !== 'welcome.md' && doc.key.startsWith('untitled:')))
+    .slice(-20)
+    .map(doc => ({ name: doc.name, language: doc.language, filePath: doc.filePath, content: doc.content, savedContent: doc.savedContent }));
+  try {
+    if (!drafts.length) { await window.forge.clearRecoveryDrafts(); return; }
+    await window.forge.saveRecoveryDrafts({ drafts });
+  } catch (error) {
+    setStatus('Recovery snapshot warning');
+  }
+}
+async function checkRecoveryDrafts() {
+  if (recoveryPromptShown) return;
+  recoveryPromptShown = true;
+  try {
+    const result = await window.forge.getRecoveryDrafts();
+    if (!result || !result.available || !Array.isArray(result.drafts) || !result.drafts.length) return;
+    pendingRecoveryDrafts = result.drafts;
+    $('recoveryDetails').textContent = result.drafts.length + ' recoverable document(s) were saved ' + (result.savedAt ? 'at ' + new Date(result.savedAt).toLocaleString() : 'during a previous session') + '.';
+    $('recoveryModal').hidden = false;
+  } catch {}
+}
+async function restoreRecoveryDrafts() {
+  const drafts = pendingRecoveryDrafts || [];
+  $('recoveryModal').hidden = true;
+  for (const draft of drafts) {
+    const existing = draft.filePath ? openDocuments.get(documentKeyForPath(draft.filePath)) : null;
+    if (existing) {
+      existing.content = draft.content;
+      existing.savedContent = draft.savedContent;
+      existing.dirty = existing.content !== existing.savedContent;
+      if (existing.model) existing.model.setValue(existing.content);
+      if (existing.key === activeDocumentKey && !monacoReady) $('plainEditor').value = existing.content;
+      continue;
+    }
+    const recovered = createDocumentRecord({
+      // Do not trust/auto-approve old filesystem paths after restart. Recover content
+      // into an untitled draft and require Save As to choose its destination.
+      filePath: null, name: draft.name, language: draft.language,
+      content: draft.content, savedContent: '', recoveredFromPath: draft.filePath || null
+    });
+    recovered.dirty = true;
+    if (monacoReady && editor) recovered.model = monaco.editor.createModel(recovered.content, recovered.language);
+    else if (!$('fallbackEditor').hidden && !activeDocumentKey) $('plainEditor').value = recovered.content;
+  }
+  pendingRecoveryDrafts = null;
+  const latest = Array.from(openDocuments.values()).filter(d => d.key.startsWith('untitled:')).at(-1);
+  if (latest) activateDocument(latest.key);
+  renderDocumentTabs();
+  setStatus('Recovered drafts · Save As to choose a safe destination');
+  scheduleRecoverySave();
+}
+async function discardRecoveryDrafts() {
+  $('recoveryModal').hidden = true;
+  pendingRecoveryDrafts = null;
+  try { await window.forge.clearRecoveryDrafts(); } catch {}
+}
+function removeDocument(key) {
+  const doc = openDocuments.get(key);
+  if (!doc) return;
+  if (doc.model && monacoReady && editor && editor.getModel() !== doc.model) doc.model.dispose();
+  openDocuments.delete(key);
+  if (activeDocumentKey === key) {
+    const remaining = Array.from(openDocuments.values()).at(-1);
+    if (remaining) activateDocument(remaining.key);
+    else {
+      const fallback = createDocumentRecord({ name:'welcome.md', language:'javascript', content:welcome, savedContent:welcome, model:monacoReady && editor ? monaco.editor.createModel(welcome, 'javascript') : null });
+      activateDocument(fallback.key);
+    }
+  } else renderDocumentTabs();
+  scheduleRecoverySave();
+}
+async function requestCloseDocument(key) {
+  const doc = openDocuments.get(key);
+  if (!doc) return;
+  if (!doc.dirty && (doc.filePath || doc.name === 'welcome.md')) { removeDocument(key); return; }
+  pendingCloseDocumentKey = key;
+  $('closeDocumentTitle').textContent = 'Unsaved changes';
+  $('closeDocumentDetails').textContent = doc.name + ' has unsaved changes. Save before closing, discard the draft, or cancel.';
+  $('closeDocumentModal').hidden = false;
+}
+async function saveAndClosePendingDocument() {
+  if (!pendingCloseDocumentKey) return;
+  const key = pendingCloseDocumentKey;
+  $('closeDocumentModal').hidden = true;
+  if (key !== activeDocumentKey) activateDocument(key);
+  await saveCurrentFile(false);
+  const doc = openDocuments.get(pendingCloseDocumentKey);
+  if (doc && !doc.dirty && doc.filePath) removeDocument(key);
+  pendingCloseDocumentKey = null;
+}
+$('restoreRecoveryBtn').addEventListener('click', () => { void restoreRecoveryDrafts(); });
+$('discardRecoveryBtn').addEventListener('click', () => { void discardRecoveryDrafts(); });
+$('cancelCloseDocumentBtn').addEventListener('click', () => { pendingCloseDocumentKey = null; $('closeDocumentModal').hidden = true; });
+$('discardCloseDocumentBtn').addEventListener('click', () => {
+  const key = pendingCloseDocumentKey; pendingCloseDocumentKey = null; $('closeDocumentModal').hidden = true;
+  if (key) removeDocument(key);
+});
+$('saveCloseDocumentBtn').addEventListener('click', () => { void saveAndClosePendingDocument(); });
+window.addEventListener('beforeunload', event => {
+  const hasUnsaved = Array.from(openDocuments.values()).some(doc => doc.dirty || (!doc.filePath && doc.name !== 'welcome.md'));
+  if (hasUnsaved) { void persistRecoveryDrafts(); event.preventDefault(); event.returnValue = ''; }
 });
 
 /* ─────────────────────────────────────────────
