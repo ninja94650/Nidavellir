@@ -326,7 +326,7 @@ window.addEventListener('beforeunload', event => {
 function getValue() { return monacoReady && editor ? editor.getValue() : $('plainEditor').value; }
 function setValue(value, language) {
   if (monacoReady && editor) { editor.setValue(value); monaco.editor.setModelLanguage(editor.getModel(), language || 'javascript'); }
-  else $('plainEditor').value = value;
+  else { $('plainEditor').value = value; $('plainEditor').dispatchEvent(new Event('input', { bubbles: true })); }
 }
 function setStatus(text) { $('statusText').textContent = text; }
 function inferLanguage(name) { const ext = (name.split('.').pop() || 'js').toLowerCase(); return languageMap[ext] || 'plaintext'; }
@@ -360,10 +360,21 @@ function renderTree(items, container, depth = 0) {
 }
 function iconFor(name) { const e = name.split('.').pop(); return ({ js:'JS',py:'Py',cpp:'C+',c:'C',html:'◇',css:'#',json:'{}',md:'M',ts:'TS' })[e] || '·'; }
 function loadFile(filePath, content) {
-  currentPath = filePath;
-  recentFiles = [filePath, ...recentFiles.filter(item => item !== filePath)].slice(0, 12); currentName = filePath.split(/[\\/]/).pop();
-  setValue(content, inferLanguage(currentName)); showLanguage(inferLanguage(currentName));
-  $('tabs').querySelector('.tab').textContent = currentName;
+  recentFiles = [filePath, ...recentFiles.filter(item => item !== filePath)].slice(0, 12);
+  const key = documentKeyForPath(filePath);
+  if (openDocuments.has(key)) {
+    activateDocument(key);
+    setStatus('Opened tab · ' + filePath);
+    return;
+  }
+  const name = filePath.split(/[\\/]/).pop(), language = inferLanguage(name);
+  if (!monacoReady && $('fallbackEditor').hidden) {
+    pendingNewDocument = { filePath, name, language, content, savedContent: content };
+    return;
+  }
+  const model = monacoReady && editor ? monaco.editor.createModel(content, language) : null;
+  const doc = createDocumentRecord({ filePath, name, language, content, savedContent: content, model });
+  activateDocument(doc.key);
   setStatus('Opened · ' + filePath);
   document.querySelectorAll('.file-item').forEach(x => x.classList.toggle('selected', x.title === filePath));
 }
@@ -372,34 +383,59 @@ function loadFile(filePath, content) {
    File buttons
    ───────────────────────────────────────────── */
 
-$('openBtn').onclick = async () => { try { const f = await window.forge.openFile(); if (f) loadFile(f.filePath, f.content); } catch (e) { addOutput('stderr', e.message); } };
+$('openBtn').onclick = async () => { try { const f = await window.forge.openFile(); if (f) { currentWorkspaceRoot = String(f.filePath).replace(/[\\/][^\\/]*$/, ''); loadFile(f.filePath, f.content); } } catch (e) { addOutput('stderr', e.message); } };
 $('openFolderBtn').onclick = async () => {
   try {
     const f = await window.forge.openFolder(); if (!f) return;
+    currentWorkspaceRoot = f.folder;
     $('folderName').textContent = f.folder.split(/[\\/]/).pop().toUpperCase();
     $('fileTree').innerHTML = ''; renderTree(f.tree, $('fileTree'));
     setStatus('Folder opened · ' + f.folder);
   } catch (e) { addOutput('stderr', e.message); }
 };
 async function saveCurrentFile(forceDialog = false) {
+  const doc = getActiveDocument();
+  if (!doc) { setStatus('Nothing to save'); return null; }
   try {
+    syncActiveDocumentState(false);
     const f = await window.forge.saveFile({
-      filePath: forceDialog ? null : currentPath,
-      name: currentName,
+      filePath: forceDialog ? null : doc.filePath,
+      name: doc.name,
       content: getValue(),
       forceDialog
     });
     if (f) {
-      currentPath = f.filePath;
+      const newKey = documentKeyForPath(f.filePath);
+      if (newKey !== doc.key && openDocuments.has(newKey)) {
+        addOutput('stderr', 'That path is already open in another tab. Switch to that tab instead.');
+        activateDocument(newKey);
+        return null;
+      }
+      const oldKey = doc.key;
+      doc.filePath = f.filePath;
+      doc.name = f.name;
+      doc.content = getValue();
+      doc.savedContent = doc.content;
+      doc.dirty = false;
+      if (newKey !== oldKey) {
+        openDocuments.delete(oldKey);
+        doc.key = newKey;
+        openDocuments.set(newKey, doc);
+        activeDocumentKey = newKey;
+      }
+      currentPath = doc.filePath; currentName = doc.name;
       recentFiles = [currentPath, ...recentFiles.filter(item => item !== currentPath)].slice(0, 12);
-      currentName = f.name;
-      $('tabs').querySelector('.tab').textContent = currentName;
+      renderDocumentTabs();
+      scheduleRecoverySave();
       setStatus('Saved · ' + currentPath);
       document.querySelectorAll('.file-item').forEach(x => x.classList.toggle('selected', x.title === currentPath));
+      return f;
     }
+    return null;
   } catch (e) {
     addOutput('stderr', e.message);
     setStatus('Save failed');
+    return null;
   }
 }
 $('saveBtn').onclick = () => saveCurrentFile(false);
@@ -450,27 +486,23 @@ function createNewDocument(name, language) {
     : language === 'c'
       ? '#include <stdio.h>\n\nint main(void) {\n    printf("Hello, Nidavellir!\\n");\n    return 0;\n}\n'
       : '';
-  const documentState = { name, language, content: starterCode };
-  currentPath = null;
-  currentName = documentState.name;
-  currentLanguage = documentState.language;
-  $('tabs').querySelector('.tab').textContent = currentName;
-  $('languageStatus').textContent = currentLanguage;
-  setStatus('New unsaved file · ' + currentName);
-
+  const docState = { name, language, content: starterCode, savedContent: starterCode, filePath: null };
   if (monacoReady && editor) {
-    setValue(documentState.content, documentState.language);
-    showLanguage(documentState.language);
+    const doc = createDocumentRecord({ name, language, content: starterCode, savedContent: starterCode, model: monaco.editor.createModel(starterCode, language) });
+    activateDocument(doc.key);
     editor.focus();
     editor.setPosition({ lineNumber: 1, column: 1 });
+    setStatus('New unsaved file · ' + name);
     return;
   }
   if (!$('fallbackEditor').hidden) {
-    $('plainEditor').value = documentState.content;
+    const doc = createDocumentRecord({ name, language, content: starterCode, savedContent: starterCode });
+    activateDocument(doc.key);
     $('plainEditor').focus();
     return;
   }
-  pendingNewDocument = documentState;
+  pendingNewDocument = docState;
+  setStatus('New unsaved file · ' + name);
 }
 
 $('newFileName').addEventListener('input', updateNewFilePreview);
