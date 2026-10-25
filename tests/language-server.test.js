@@ -11,15 +11,15 @@ const MOCK_SERVER = String.raw\`
 let buffer = Buffer.alloc(0);
 function send(message) {
   const body = Buffer.from(JSON.stringify(message), 'utf8');
-  process.stdout.write(Buffer.concat([Buffer.from('Content-Length: ' + body.length + '\\r\\n\\r\\n'), body]));
+  process.stdout.write(Buffer.concat([Buffer.from('Content-Length: ' + body.length + '\r\n\r\n'), body]));
 }
 process.stdin.on('data', chunk => {
   buffer = Buffer.concat([buffer, chunk]);
   while (true) {
-    const marker = buffer.indexOf('\\r\\n\\r\\n');
+    const marker = buffer.indexOf('\r\n\r\n');
     if (marker < 0) return;
     const header = buffer.subarray(0, marker).toString('ascii');
-    const match = header.match(/Content-Length:\\s*(\\d+)/i);
+    const match = header.match(/Content-Length:\s*(\d+)/i);
     if (!match) { buffer = buffer.subarray(marker + 4); continue; }
     const length = Number(match[1]), start = marker + 4;
     if (buffer.length < start + length) return;
@@ -49,7 +49,7 @@ async function makeProject(t) {
   const serverFile = path.join(root, 'mock-language-server.js');
   await fs.writeFile(serverFile, MOCK_SERVER, 'utf8');
   const sourceFile = path.join(root, 'main.js');
-  await fs.writeFile(sourceFile, 'const value = 42;\\n', 'utf8');
+  await fs.writeFile(sourceFile, 'const value = 42;\n', 'utf8');
   return { root, sourceFile, serverFile };
 }
 
@@ -64,25 +64,25 @@ test('language server client starts a real stdio process and serves allowlisted 
   const started = await manager.start({ root, language:'javascript' });
   assert.equal(started.active, true);
   assert.equal(started.label, 'Mock LSP');
-  await manager.openDocument({ root, filePath:sourceFile, language:'javascript', text:'const value = 42;\\n' });
+  await manager.openDocument({ root, filePath:sourceFile, language:'javascript', text:'const value = 42;\n' });
   const definition = await manager.request({
-    root, filePath:sourceFile, language:'javascript', text:'const value = 42;\\n',
+    root, filePath:sourceFile, language:'javascript', text:'const value = 42;\n',
     method:'textDocument/definition', position:{line:0,character:6}
   });
   assert.equal(definition.uri.startsWith('file:'), true);
   assert.deepEqual(definition.range.start, {line:0,character:0});
   const refs = await manager.request({
-    root, filePath:sourceFile, language:'javascript', text:'const value = 42;\\n',
+    root, filePath:sourceFile, language:'javascript', text:'const value = 42;\n',
     method:'textDocument/references', position:{line:0,character:6}
   });
   assert.equal(refs.length, 1);
   const hover = await manager.request({
-    root, filePath:sourceFile, language:'javascript', text:'const value = 42;\\n',
+    root, filePath:sourceFile, language:'javascript', text:'const value = 42;\n',
     method:'textDocument/hover', position:{line:0,character:6}
   });
   assert.equal(hover.contents.value, 'hover works');
   await assert.rejects(() => manager.request({
-    root, filePath:sourceFile, language:'javascript', text:'const value = 42;\\n',
+    root, filePath:sourceFile, language:'javascript', text:'const value = 42;\n',
     method:'workspace/executeCommand', position:{line:0,character:0}
   }), /not allowed/);
   await manager.stop();
