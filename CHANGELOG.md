@@ -1,3 +1,9 @@
+# 0.4.13
+
+- Simplifies API key setup into one floating form for a user-defined name and key; provider is detected from supported key formats.
+- Lets each saved key spawn 1–8 coworking agents that independently analyze the same project prompt, with optional coordinator synthesis.
+- Adds key-specific AI request handling and regression coverage for the unified agent workflow.
+
 # 0.4.12
 
 - Replaces provider-separated API key sections with one unified saved-key list and a floating add-key panel for name, provider, and API key.
