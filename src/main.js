@@ -10,6 +10,7 @@ const pluginSystem = require('./plugins');
 const { autoUpdater } = require('electron-updater');
 const { createUpdater } = require('./updater');
 const { prepareUserPluginsDir } = require('./user-plugins');
+const { registerStudioIpc } = require('./studio-ipc');
 
 /* ─── globals ─── */
 let win;
@@ -19,6 +20,7 @@ const allowedProviders = new Set(['openai', 'gemini', 'claude']);
 const approvedRoots = new Set();
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_SAVE_BYTES = 5 * 1024 * 1024;
+let activeWorkspaceRoot = null;
 
 async function isWithinApprovedRoot(filePath) {
   if (typeof filePath !== 'string' || filePath.length > 4096) return false;
@@ -196,7 +198,8 @@ ipcMain.handle('file:open', async () => {
   });
   if (result.canceled || !result.filePaths[0]) return null;
   const filePath = path.resolve(result.filePaths[0]);
-  approvedRoots.add(path.dirname(filePath));
+  activeWorkspaceRoot = path.dirname(filePath);
+  approvedRoots.add(activeWorkspaceRoot);
   const stat = await fs.stat(filePath);
   if (!stat.isFile() || stat.size > MAX_FILE_BYTES) throw new Error('File must be a regular file no larger than 2 MB.');
   const content = await fs.readFile(filePath, 'utf8');
@@ -264,6 +267,7 @@ ipcMain.handle('file:open-folder', async () => {
   const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
   if (result.canceled || !result.filePaths[0]) return null;
   const folder = path.resolve(result.filePaths[0]);
+  activeWorkspaceRoot = folder;
   approvedRoots.add(folder);
   async function tree(dir, depth = 0) {
     if (depth > 3) return [];
@@ -492,6 +496,11 @@ ipcMain.handle('ai:generate-tests', async (_event, { code, language, fileName })
     }
   }
   throw new Error('Add at least one AI provider API key in Settings to generate tests.');
+});
+
+registerStudioIpc({
+  ipcMain, app, dialog, getWindow: () => win, approvedRoots, isWithinApprovedRoot,
+  getActiveWorkspaceRoot: () => activeWorkspaceRoot, getKey, callProvider
 });
 
 /* ═══════════════════════════════════════════════════════════
