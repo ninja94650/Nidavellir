@@ -1741,7 +1741,7 @@ function renderAiProjectChanges() {
   $('aiProjectChangePreview').textContent = 'Select Preview to inspect the proposed file content.';
 }
 async function planAiProjectChanges() {
-  if (Array.from(openDocuments.values()).some(doc => doc.dirty || (!doc.filePath && doc.name !== 'welcome.md'))) {
+  if (Array.from(openDocuments.values()).some(doc => doc.dirty)) {
     $('aiProjectChangeMessage').textContent = 'Save or close unsaved documents before planning multi-file changes. The AI plan reads the saved files on disk.';
     return;
   }
