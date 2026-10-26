@@ -67,7 +67,14 @@ const assert = require('node:assert/strict');
     };
   });
   const errors = [];
-  page.on('pageerror', e => errors.push(e.stack || e.message));
+  page.on('pageerror', e => {
+    const message = e.stack || e.message || String(e);
+    // Monaco can emit its own `Canceled` exception while disposing an editor/model
+    // during a UI interaction. This is an expected cancellation, not an uncaught
+    // application error; keep failing on every other page error.
+    if (/Canceled: Canceled[\\s\\S]*editor\.main\.js[\\s\\S]*\.dispose/.test(message)) return;
+    errors.push(message);
+  });
   await page.goto(baseUrl + '/src/index.html');
   await page.waitForSelector('#statusText');
   await page.waitForTimeout(1800);
