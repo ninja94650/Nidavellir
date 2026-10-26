@@ -538,9 +538,10 @@ $('focusAiBtn').onclick = () => $('promptInput').focus();
 $('settingsBtn').onclick = () => { $('settingsModal').hidden = false; refreshKeyStatus(); };
 $('closeSettings').onclick = () => $('settingsModal').hidden = true;
 $('settingsModal').addEventListener('click', e => { if (e.target === $('settingsModal')) $('settingsModal').hidden = true; });
-const apiKeyProviders = ['openai','gemini','claude'];
-const apiKeyProviderNames = { openai: 'OpenAI / GPT', gemini: 'Google Gemini', claude: 'Anthropic Claude' };
+const apiKeyProviders = ['openai','gemini','claude','openrouter'];
+const apiKeyProviderNames = { openai: 'OpenAI / GPT', gemini: 'Google Gemini', claude: 'Anthropic Claude', openrouter: 'OpenRouter' };
 function detectApiKeyProvider(key) {
+  if (/^sk-or-v1-/.test(key)) return 'openrouter';
   if (/^sk-ant-/.test(key)) return 'claude';
   if (/^AIza/.test(key)) return 'gemini';
   if (/^sk-/.test(key)) return 'openai';
