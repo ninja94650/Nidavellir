@@ -17,7 +17,7 @@ const { prepareUserPluginsDir } = require('./user-plugins');
 let win;
 let updateService = null;
 const providerKeyCache = {};
-const allowedProviders = new Set(['openai', 'gemini', 'claude']);
+const allowedProviders = new Set(['openai', 'gemini', 'claude', 'openrouter']);
 const approvedRoots = new Set();
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_SAVE_BYTES = 5 * 1024 * 1024;
@@ -49,7 +49,8 @@ function validateTextPayload(value, maxBytes, label) {
 const modelDefaults = {
   openai: 'gpt-4.1-mini',
   gemini: 'gemini-2.5-flash',
-  claude: 'claude-sonnet-4-20250514'
+  claude: 'claude-sonnet-4-20250514',
+  openrouter: 'openai/gpt-4o-mini'
 };
 
 /* ─── output helpers ─── */
@@ -562,10 +563,11 @@ async function callProvider(provider, key, userPrompt, systemPrompt, model) {
   const sys = String(systemPrompt || 'You are a helpful coding assistant. Explain changes clearly for a beginner.').slice(0, 10000);
   let url, headers, body;
 
-  if (provider === 'openai') {
-    url = 'https://api.openai.com/v1/chat/completions';
+  if (provider === 'openai' || provider === 'openrouter') {
+    url = provider === 'openrouter' ? 'https://openrouter.ai/api/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions';
     headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
-    body = { model: model || modelDefaults.openai, messages: [{ role: 'system', content: sys }, { role: 'user', content: prompt }] };
+    if (provider === 'openrouter') { headers['HTTP-Referer'] = 'https://github.com/ninja94650/Nidavellir'; headers['X-Title'] = 'Nidavellir IDE'; }
+    body = { model: model || modelDefaults[provider], messages: [{ role: 'system', content: sys }, { role: 'user', content: prompt }] };
   } else if (provider === 'gemini') {
     const m = model || modelDefaults.gemini;
     // Keep credentials out of URLs, which can be retained in logs and diagnostics.
@@ -584,7 +586,7 @@ async function callProvider(provider, key, userPrompt, systemPrompt, model) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error?.message || data?.message || `${provider} API request failed (${response.status}). Check the key, model, network, and provider billing.`);
-  if (provider === 'openai') return data.choices?.[0]?.message?.content || 'No text returned.';
+  if (provider === 'openai' || provider === 'openrouter') return data.choices?.[0]?.message?.content || 'No text returned.';
   if (provider === 'gemini') return data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('\n') || 'No text returned.';
   return data.content?.map(p => p.text || '').join('\n') || 'No text returned.';
 }
