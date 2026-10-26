@@ -203,10 +203,20 @@ function createSafeRunner(sendOutputFn) {
     try { return currentChild.stdin.write(text); } catch { return false; }
   }
 
+  let killEscalation = null;
   function kill() {
-    if (!currentChild) return false;
-    try { currentChild.kill('SIGTERM'); } catch {}
-    out('stderr', '\nStop requested. Child-process descendants may require OS-level containment.');
+    const child = currentChild;
+    if (!child) return false;
+    // Terminate the whole process group on POSIX and escalate to taskkill /T /F
+    // on Windows so compilers and programs they launch are not left running.
+    terminateProcessTree(child, 'SIGTERM');
+    if (killEscalation) clearTimeout(killEscalation);
+    killEscalation = setTimeout(() => {
+      if (currentChild === child) terminateProcessTree(child, 'SIGKILL');
+      killEscalation = null;
+    }, 1500);
+    killEscalation.unref?.();
+    out('stderr', '\nStop requested. Terminating the process tree…');
     return true;
   }
 
