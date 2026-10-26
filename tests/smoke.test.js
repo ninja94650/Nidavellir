@@ -45,7 +45,7 @@ test('Electron renderer is isolated from Node APIs', () => {
 
 test('AI provider adapters exist', () => {
   const main = fs.readFileSync(path.join(root, 'src/main.js'), 'utf8');
-  for (const provider of ['openai', 'gemini', 'claude']) assert.ok(main.includes(provider));
+  for (const provider of ['openai', 'gemini', 'claude', 'openrouter']) assert.ok(main.includes(provider));
 });
 
 test('preload exposes safe runner and plugin channels', () => {
@@ -159,4 +159,15 @@ test('updater starts before plugins and plugin startup failures are non-fatal', 
   assert.ok(updaterStart < pluginInit, 'updater must initialize before user plugins');
   assert.match(source, /\[plugins\] Failed to initialize:/, 'plugin initialization failures must be logged');
   assert.match(source, /pluginSystem\.setWindow\(win\)/, 'plugin system must receive the current window');
+});
+
+
+test('OpenRouter keys are detected and routed to the OpenRouter-compatible endpoint', () => {
+  const main = fs.readFileSync(path.join(root, 'src/main.js'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'src/app.js'), 'utf8');
+  assert.match(app, /sk-or-v1-/);
+  assert.match(app, /return 'openrouter'/);
+  assert.match(main, /https:\/\/openrouter\.ai\/api\/v1\/chat\/completions/);
+  assert.match(main, /provider === 'openai' \|\| provider === 'openrouter'/);
+  assert.match(main, /openrouter: 'openai\/gpt-4o-mini'/);
 });
