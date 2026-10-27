@@ -148,3 +148,54 @@ test('plugins are discovered disabled and do not execute automatically', async (
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+
+test('runner Stop terminates descendants even if the root process exits first', async () => {
+  const output = [];
+  const runner = createSafeRunner((type, text) => output.push({ type, text }));
+  const pending = runner.run({
+    language: 'javascript',
+    content: [
+      'const { spawn } = require("node:child_process");',
+      'const grandchild = spawn(process.execPath, ["-e", \'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);\'], { stdio: "ignore" });',
+      'console.log("GRANDCHILD_PID:" + grandchild.pid);',
+      'setInterval(() => {}, 1000);'
+    ].join('\\n')
+  });
+
+  let grandchildPid = null;
+  let timeoutHandle;
+  try {
+    for (let i = 0; i < 300 && grandchildPid === null; i++) {
+      const match = output.map(item => item.text).join('').match(/GRANDCHILD_PID:(\\d+)/);
+      if (match) grandchildPid = Number(match[1]);
+      else await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.ok(Number.isInteger(grandchildPid), 'runner should report the spawned descendant PID');
+    assert.equal(runner.kill(), true, 'Stop should request process-tree termination');
+
+    const timeout = new Promise((_, reject) => {
+      timeoutHandle = setTimeout(() => reject(new Error('runner did not finish terminating its process tree')), 10_000);
+    });
+    await Promise.race([pending, timeout]);
+
+    let descendantAlive = true;
+    for (let i = 0; i < 60; i++) {
+      try {
+        process.kill(grandchildPid, 0);
+        descendantAlive = true;
+      } catch (error) {
+        if (error.code === 'ESRCH') descendantAlive = false;
+        else if (error.code === 'EPERM') descendantAlive = true;
+        else throw error;
+      }
+      if (!descendantAlive) break;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    assert.equal(descendantAlive, false, 'Stop must not leave a child process running');
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+    if (runner.isRunning()) runner.kill();
+    await Promise.race([pending.catch(() => {}), new Promise(resolve => setTimeout(resolve, 3000))]);
+  }
+});
