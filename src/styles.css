@@ -1638,3 +1638,6 @@ button:focus-visible,.ai-panel input:focus-visible,.ai-panel textarea:focus-visi
 @media (max-width: 820px) {
   .ai-panel { width:300px; min-width:240px; }
 }
+
+/* The dot indicates local-provider availability, not a live health check. */
+.ollama-status-dot { background:var(--accent); box-shadow:0 0 8px color-mix(in srgb, var(--accent) 40%, transparent); }
