@@ -110,7 +110,7 @@
       <div class="ai-title">
         <div class="ai-title-label"><span class="sparkle">✧</span> AI WORKBENCH <span class="workbench-model-pill">QWEN 2.5 CODER</span></div>
         <div class="workbench-controls">
-          <button id="workbenchSettingsBtn" type="button" title="Manage hosted AI API keys" aria-label="AI provider settings">⚙</button>
+          <button id="workbenchSettingsBtn" type="button" title="AI Workbench setup and optional hosted agents" aria-label="AI Workbench setup">⚙</button>
           <button id="workbenchMinimizeBtn" type="button" title="Minimize workbench content" aria-label="Minimize AI Workbench">−</button>
           <button id="workbenchCollapseBtn" type="button" title="Collapse workbench" aria-label="Collapse AI Workbench">›</button>
         </div>
@@ -194,8 +194,19 @@
 <!-- ── Settings modal ── -->
 <div class="modal-backdrop" id="settingsModal" hidden>
   <section class="modal">
-    <div class="modal-title"><div><h2>AI provider settings</h2><p>Keys are encrypted with your operating system's secure storage.</p></div><button id="closeSettings" class="close">×</button></div>
-    <p class="api-key-intro">Manage all your API keys in one list. Give each key a name, choose its provider, and set the key you want to use.</p>
+    <div class="modal-title"><div><h2>AI Workbench</h2><p>Use your local Qwen coding model without an API key.</p></div><button id="closeSettings" class="close" type="button" aria-label="Close AI Workbench settings">×</button></div>
+    <section class="local-setup-card" aria-labelledby="localSetupTitle">
+      <div class="local-setup-heading"><span class="local-setup-icon">✧</span><div><h3 id="localSetupTitle">Local Ollama · qwen2.5-coder:7b</h3><p>Private, on-device coding help — no hosted AI key required.</p></div></div>
+      <ol class="local-setup-steps">
+        <li>Install and start Ollama on this PC.</li>
+        <li>In PowerShell, run <code>ollama pull qwen2.5-coder:7b</code>. Your model is already downloaded if the terminal showed <strong>success</strong>.</li>
+        <li>Open the AI Workbench, enable <strong>Local Ollama (no API key)</strong>, and ask it to code, debug, explain, or review your project.</li>
+      </ol>
+      <p class="local-setup-note">If a request fails, make sure the Ollama app/service is running and the local API is available at <code>http://127.0.0.1:11434</code>.</p>
+      <button type="button" id="closeSettingsGoWorkbench" class="primary">Back to AI Workbench</button>
+    </section>
+    <div class="optional-hosted-heading"><h3>Optional hosted AI agents</h3><span>Not required for Local Ollama</span></div>
+    <p class="api-key-intro">Add encrypted API keys only if you want extra hosted agents to collaborate with your local model.</p>
     <div class="api-key-toolbar"><span id="apiKeyCount">0 saved keys</span><button type="button" id="openApiKeyEditor" class="primary">＋ Add API key</button></div>
     <div id="savedApiKeyList" class="saved-api-key-list"></div>
     <div class="modal-backdrop api-key-editor-backdrop" id="apiKeyEditorModal" hidden>
