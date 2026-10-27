@@ -19,7 +19,7 @@ let win;
 let updateService = null;
 const providerKeyCache = {};
 const ollamaProvider = createOllamaProvider({
-  baseUrl: process.env.NIDAVELLIR_OLLAMA_URL || 'http://127.0.0.1:11434',
+  baseUrl: 'http://127.0.0.1:11434',
   model: process.env.NIDAVELLIR_OLLAMA_MODEL || 'qwen2.5-coder:7b'
 });
 const allowedProviders = new Set(['openai', 'gemini', 'claude', 'openrouter']);
