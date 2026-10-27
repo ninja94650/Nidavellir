@@ -1674,6 +1674,19 @@ button:focus-visible,.ai-panel input:focus-visible,.ai-panel textarea:focus-visi
 .ai-panel { min-width:280px; }
 .ai-panel.minimized { width:390px; max-width:62vw; }
 .ai-panel.collapsed { width:46px; }
+.local-agent-count {
+  display:flex; align-items:center; gap:6px; color:var(--ai-muted);
+  font-size:10px; white-space:nowrap;
+}
+.local-agent-count select {
+  min-width:44px; padding:4px 6px; border:1px solid var(--ai-line);
+  border-radius:5px; background:#07171d; color:var(--text); font:inherit;
+}
+.local-agent-count select:disabled { opacity:.45; cursor:not-allowed; }
+.agent-team-toolbar { align-items:center; }
+#teamAgentSummary { flex:1 1 100%; }
+.ai-panel.minimized #workbenchMinimizeBtn { display:grid; }
+.ai-panel.collapsed #workbenchCollapseBtn { display:grid; }
 @media(max-width:820px) {
   .local-setup-card { padding:12px; }
   .local-setup-steps { padding-left:17px; }
