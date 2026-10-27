@@ -12,11 +12,16 @@ const pluginSystem = require('./plugins');
 const { autoUpdater } = require('electron-updater');
 const { createUpdater } = require('./updater');
 const { prepareUserPluginsDir } = require('./user-plugins');
+const { createOllamaProvider } = require('./ollama-provider');
 
 /* ─── globals ─── */
 let win;
 let updateService = null;
 const providerKeyCache = {};
+const ollamaProvider = createOllamaProvider({
+  baseUrl: 'http://127.0.0.1:11434',
+  model: process.env.NIDAVELLIR_OLLAMA_MODEL || 'qwen2.5-coder:7b'
+});
 const allowedProviders = new Set(['openai', 'gemini', 'claude', 'openrouter']);
 const approvedRoots = new Set();
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
@@ -548,6 +553,10 @@ ipcMain.handle('ai:ask-key', async (_event, { provider, keyId, prompt, system, m
   if (!item) throw new Error('The API key for this agent no longer exists.');
   return callProvider(provider, item.key, prompt, system, model);
 });
+ipcMain.handle('ai:ask-local', async (_event, { prompt, system, model } = {}) => {
+  return ollamaProvider.ask({ prompt, system, model });
+});
+
 ipcMain.handle('ai:key-status', async () => {
   const result = {};
   for (const provider of allowedProviders) result[provider] = (await loadProviderKeys(provider)).length > 0;
@@ -613,7 +622,7 @@ ipcMain.handle('ai:synthesize', async (_event, { responses }) => {
       const key = await getKey(provider);
       if (key) return callProvider(provider, key, prompt, system);
     }
-    throw new Error('No AI provider configured for synthesis.');
+    return ollamaProvider.ask({ prompt, system });
   };
   return synthesizeResponses({ responses, askAIFn });
 });
@@ -640,7 +649,13 @@ ipcMain.handle('ai:generate-tests', async (_event, { code, language, fileName })
       return callProvider(provider, key, prompt, system);
     }
   }
-  throw new Error('Add at least one AI provider API key in Settings to generate tests.');
+  const prompt = [
+    `Generate comprehensive unit tests for the following ${language} code.`,
+    `File: ${fileName}`,
+    '```' + language + '\n' + String(code || '').slice(0, 30000) + '\n```',
+    `Provide the complete test file content ready to save and run. Use the standard testing framework for ${language}, including edge cases and error cases.`
+  ].join('\n\n');
+  return ollamaProvider.ask({ prompt, system: 'You are an expert test engineer. Output only complete runnable test file content.' });
 });
 
 /* ═══════════════════════════════════════════════════════════
