@@ -1,3 +1,10 @@
+# 0.4.15
+
+- Adds a local Ollama coding agent using `qwen2.5-coder:7b` without a hosted API key.
+- Replaces the top-bar AI Settings button with an AI Workbench show/hide control; hosted API-key settings remain inside the Workbench.
+- Adds Workbench resizing, minimize, and collapse controls, plus coding quick actions for explaining code, finding bugs, fixing errors, and generating tests.
+- Restricts the local provider to loopback endpoints and includes provider regression tests.
+
 # 0.4.14
 
 - Fixes AI Workbench chat scrolling so long agent responses remain reachable while the prompt composer stays visible.
