@@ -65,3 +65,14 @@ The first merge of version 0.4.3 into `main` automatically creates the matching 
 ## Roadmap
 
 Integrated terminal experience (xterm.js/node-pty), debugger (DAP), language servers, extension compatibility, split editors, and multi-root workspaces.
+
+
+## Free local AI with Ollama
+
+Nidavellir can use a local Ollama model without an API key. Install Ollama from https://ollama.com, then download a coding model in a terminal:
+
+```sh
+ollama pull qwen2.5-coder:7b
+```
+
+Start Ollama, open Nidavellir, enable **Local Ollama (no API key)** in the AI workbench, and ask the team. The default local endpoint is `http://127.0.0.1:11434` and the default model is `qwen2.5-coder:7b`. You can override these for development with `NIDAVELLIR_OLLAMA_URL` and `NIDAVELLIR_OLLAMA_MODEL`; for security, the provider only accepts loopback HTTP endpoints. Local model quality and speed depend on available RAM/CPU/GPU. Run `npm test` to exercise provider behavior without installing Ollama.
