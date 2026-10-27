@@ -207,7 +207,7 @@ function renderTree(items, container, depth = 0) {
   }
 }
 function iconFor(name) { const e=name.split('.').pop().toLowerCase(); return ({js:'JS',py:'Py',cpp:'C+',c:'C',html:'◇',css:'#',json:'{}',md:'M',ts:'TS'})[e]||'·'; }
-function loadFile(filePath,content){const name=filePath.split(/[\\/]/).pop();recordFileSnapshot(filePath,content,'Opened');openDocument(filePath,name,content,inferLanguage(name));}
+function loadFile(filePath,content){const name=filePath.split(/[\\/]/).pop();recordFileSnapshot(filePath,content,'Opened');openDocument(filePath,name,content,inferLanguage(name));setStatus('Opened · '+filePath);}
 
 
 function ensureFileContextMenu(){let m=$('fileContextMenu');if(!m){m=document.createElement('div');m.id='fileContextMenu';m.className='file-context-menu';m.setAttribute('role','menu');m.hidden=true;document.body.appendChild(m);}return m;}
