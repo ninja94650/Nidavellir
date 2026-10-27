@@ -67,6 +67,7 @@ require(['vs/editor/editor.main'], () => {
   editor.onDidChangeModelContent(() => {
     $('selectionHint').textContent = 'Current file will be included';
     if ($('findBar') && !$('findBar').hidden) collectFindMatches();
+    workspaceOnChange();
   });
   if (pendingNewDocument) {
     $('tabs').querySelector('.tab').textContent = pendingNewDocument.name;
@@ -77,6 +78,7 @@ require(['vs/editor/editor.main'], () => {
   } else {
     setStatus('Ready · Unsaved welcome example');
   }
+  workspaceInitialize();
   initPluginUI();
 }, () => {
   $('editor').hidden = true; $('fallbackEditor').hidden = false;
@@ -90,6 +92,7 @@ require(['vs/editor/editor.main'], () => {
     pendingNewDocument = null;
   }
   setStatus('Monaco unavailable · basic editor mode');
+  workspaceInitialize();
   initPluginUI();
 });
 
@@ -788,7 +791,10 @@ function getPaletteCommands() {
     { label: 'Show Run History', detail: 'Review recent code executions', run: () => $('runHistoryBtn').click() },
     { label: 'Manage Plugins', detail: 'View and enable installed plugins', run: () => $('pluginsBtn').click() },
     { label: 'AI Settings', detail: 'Configure assistant API keys', run: () => $('settingsBtn').click() },
-    { label: 'Toggle Word Wrap', detail: 'Currently ' + (wordWrapEnabled ? 'on' : 'off') + ' · wrap long editor lines', run: toggleWordWrap }
+    { label: 'Toggle Word Wrap', detail: 'Currently ' + (wordWrapEnabled ? 'on' : 'off') + ' · wrap long editor lines', run: toggleWordWrap },
+    { label: 'Search in Project', detail: 'Find and replace literal text across workspace files', run: () => $('projectSearchBtn').click() },
+    { label: 'Environment Doctor', detail: 'Detect installed compilers, runtimes, and Git', run: () => $('environmentDoctorBtn').click() },
+    { label: 'Git Workspace', detail: 'Review changes, stage files, and commit locally', run: () => $('gitBtn').click() }
   ];
 }
 function toggleWordWrap() {
@@ -1055,6 +1061,7 @@ function replaceAllMatches() {
 }
 $('plainEditor').addEventListener('input', () => {
   if ($('findBar') && !$('findBar').hidden) collectFindMatches();
+  workspaceOnChange();
 });
 $('findInput').addEventListener('input', () => { collectFindMatches(); if (findMatches.length) selectFindMatch(0, false); });
 $('findMatchCase').addEventListener('change', () => { collectFindMatches(); if (findMatches.length) selectFindMatch(0, false); });
@@ -1164,3 +1171,181 @@ if (window.forge && typeof window.forge.getUpdateStatus === 'function') {
   $('updateStatus').disabled = true;
   $('updatesEnabled').disabled = true;
 }
+
+/* ─────────────────────────────────────────────
+   Multi-document workspace and crash recovery
+   ───────────────────────────────────────────── */
+const workspaceDocuments = new Map();
+let activeDocumentKey = null;
+let workspaceDocumentSequence = 0;
+let workspaceInitialized = false;
+let workspaceRecoveryTimer = null;
+const WORKSPACE_RECOVERY_KEY = 'nidavellir.recovery.v1';
+const WORKSPACE_RECOVERY_LIMIT = 4 * 1024 * 1024;
+function workspaceActiveDocument() { return activeDocumentKey ? workspaceDocuments.get(activeDocumentKey) || null : null; }
+function workspaceReadEditor() { return monacoReady && editor ? editor.getValue() : ($('plainEditor')?.value || ''); }
+function workspacePersistRecovery() {
+  try {
+    const drafts = Array.from(workspaceDocuments.values()).filter(doc => doc.dirty).map(doc => ({ name: doc.name, language: doc.language, content: doc.content, savedContent: doc.savedContent }));
+    const payload = JSON.stringify({ version: 1, savedAt: Date.now(), drafts });
+    if (drafts.length && payload.length <= WORKSPACE_RECOVERY_LIMIT) localStorage.setItem(WORKSPACE_RECOVERY_KEY, payload);
+    else if (!drafts.length) localStorage.removeItem(WORKSPACE_RECOVERY_KEY);
+  } catch (error) { console.warn('[recovery] Could not save local recovery draft:', error); }
+}
+function workspaceScheduleRecovery() {
+  if (workspaceRecoveryTimer) clearTimeout(workspaceRecoveryTimer);
+  workspaceRecoveryTimer = setTimeout(workspacePersistRecovery, 300);
+}
+function workspaceOnChange() {
+  if (!workspaceInitialized) return;
+  const doc = workspaceActiveDocument();
+  if (!doc) return;
+  doc.content = workspaceReadEditor(); doc.dirty = doc.content !== doc.savedContent;
+  renderDocumentTabs(); workspaceScheduleRecovery();
+}
+function workspaceCreateDocument({ filePath = null, name = 'untitled.js', language = 'javascript', content = '', savedContent = content, dirty = false } = {}) {
+  const key = filePath ? 'file:' + filePath : 'untitled:' + (++workspaceDocumentSequence);
+  if (filePath && workspaceDocuments.has(key)) return workspaceDocuments.get(key);
+  const doc = { key, filePath, name, language, content, savedContent, dirty: !!dirty, model: null };
+  if (monacoReady && editor && window.monaco) doc.model = monaco.editor.createModel(content, language);
+  workspaceDocuments.set(key, doc); return doc;
+}
+function renderDocumentTabs() {
+  const container = $('tabs'); if (!container) return;
+  container.replaceChildren();
+  for (const doc of workspaceDocuments.values()) {
+    const tab = document.createElement('button');
+    tab.type = 'button'; tab.className = 'tab' + (doc.key === activeDocumentKey ? ' active' : '');
+    tab.title = doc.filePath || doc.name; tab.setAttribute('aria-label', 'Open ' + doc.name);
+    const label = document.createElement('span'); label.textContent = doc.name; tab.appendChild(label);
+    if (doc.dirty) { const dirty = document.createElement('span'); dirty.className = 'tab-dirty'; dirty.textContent = '●'; dirty.title = 'Unsaved changes'; tab.appendChild(dirty); }
+    const close = document.createElement('span'); close.className = 'tab-close'; close.textContent = '×'; close.title = 'Close ' + doc.name; close.setAttribute('role', 'button'); close.setAttribute('aria-label', 'Close ' + doc.name);
+    close.addEventListener('click', event => { event.stopPropagation(); workspaceCloseDocument(doc.key); });
+    tab.appendChild(close); tab.addEventListener('click', () => workspaceActivateDocument(doc)); container.appendChild(tab);
+  }
+  const spacer = document.createElement('div'); spacer.className = 'tab-spacer';
+  const status = document.createElement('span'); status.className = 'status-pill'; status.id = 'statusPill'; status.textContent = 'WORKSPACE';
+  container.append(spacer, status);
+}
+function workspaceActivateDocument(doc) {
+  if (!doc) return;
+  workspaceOnChange(); activeDocumentKey = doc.key;
+  currentPath = doc.filePath; currentName = doc.name; currentLanguage = doc.language;
+  if (monacoReady && editor && doc.model) editor.setModel(doc.model);
+  else if ($('plainEditor')) $('plainEditor').value = doc.content;
+  showLanguage(doc.language); renderDocumentTabs();
+  setStatus((doc.dirty ? 'Unsaved changes · ' : 'Ready · ') + (doc.filePath || doc.name));
+}
+function workspaceRestoreDrafts() {
+  let snapshot;
+  try { snapshot = JSON.parse(localStorage.getItem(WORKSPACE_RECOVERY_KEY) || 'null'); } catch { snapshot = null; }
+  if (!snapshot || snapshot.version !== 1 || !Array.isArray(snapshot.drafts) || !snapshot.drafts.length) return;
+  const drafts = snapshot.drafts.filter(doc => doc && typeof doc.name === 'string' && typeof doc.content === 'string' && doc.content.length <= 2 * 1024 * 1024).slice(0, 20);
+  if (!drafts.length) { localStorage.removeItem(WORKSPACE_RECOVERY_KEY); return; }
+  if (!window.confirm('Nidavellir found ' + drafts.length + ' unsaved draft(s) from a previous session. Restore them?\n\nRecovered drafts are not written to disk until you save them.')) return;
+  const initial = workspaceActiveDocument();
+  if (initial && !initial.dirty && initial.name === 'welcome.md') { if (initial.model) { if (editor && editor.getModel() === initial.model) editor.setModel(null); initial.model.dispose(); } workspaceDocuments.delete(initial.key); }
+  for (const draft of drafts) {
+    const doc = workspaceCreateDocument({ filePath: null, name: draft.name, language: draft.language || inferLanguage(draft.name), content: draft.content, savedContent: typeof draft.savedContent === 'string' ? draft.savedContent : '', dirty: true });
+    if (monacoReady && editor && !doc.model) doc.model = monaco.editor.createModel(doc.content, doc.language);
+    activeDocumentKey = doc.key;
+  }
+  const active = workspaceActiveDocument();
+  if (active) { currentPath = null; currentName = active.name; currentLanguage = active.language; if (monacoReady && editor) editor.setModel(active.model); else $('plainEditor').value = active.content; showLanguage(active.language); }
+  localStorage.removeItem(WORKSPACE_RECOVERY_KEY); renderDocumentTabs(); setStatus('Recovered unsaved drafts · save recovered files to disk');
+}
+function workspaceInitialize() {
+  if (workspaceInitialized) return;
+  workspaceInitialized = true;
+  const content = workspaceReadEditor(), name = currentPath ? currentName : (content === welcome ? 'welcome.md' : currentName);
+  currentName = name;
+  const initialDirty = !currentPath && content !== welcome;
+  const initial = workspaceCreateDocument({ filePath: currentPath, name, language: currentLanguage, content, savedContent: initialDirty ? '' : content, dirty: initialDirty });
+  if (monacoReady && editor) initial.model = editor.getModel();
+  activeDocumentKey = initial.key; renderDocumentTabs(); workspaceRestoreDrafts();
+}
+function workspaceCloseDocument(key) {
+  const doc = workspaceDocuments.get(key); if (!doc) return;
+  if (doc.dirty && !window.confirm('Discard unsaved changes in "' + doc.name + '"?\n\nChoose Cancel to keep editing.')) return;
+  const wasActive = key === activeDocumentKey; workspaceDocuments.delete(key);
+  if (wasActive) {
+    const next = Array.from(workspaceDocuments.values()).at(-1);
+    if (next) workspaceActivateDocument(next);
+    else { const blank = workspaceCreateDocument({ name: 'untitled.js', language: 'javascript', content: '', savedContent: '' }); if (monacoReady && editor) blank.model = monaco.editor.createModel('', 'javascript'); workspaceActivateDocument(blank); }
+  }
+  if (doc.model && doc.model !== editor?.getModel()) doc.model.dispose();
+  renderDocumentTabs(); workspaceScheduleRecovery();
+}
+function loadFile(filePath, content) {
+  recentFiles = [filePath, ...recentFiles.filter(item => item !== filePath)].slice(0, 12);
+  const existing = workspaceDocuments.get('file:' + filePath);
+  if (existing) { workspaceActivateDocument(existing); return; }
+  const name = String(filePath).split(/[\\/]/).pop();
+  const doc = workspaceCreateDocument({ filePath, name, language: inferLanguage(name), content, savedContent: content });
+  if (!workspaceInitialized) { currentPath = filePath; currentName = name; currentLanguage = doc.language; pendingNewDocument = { name, language: doc.language, content }; setValue(content, doc.language); return; }
+  if (monacoReady && editor && !doc.model) doc.model = monaco.editor.createModel(content, doc.language);
+  workspaceActivateDocument(doc);
+  document.querySelectorAll('.file-item').forEach(item => item.classList.toggle('selected', item.title === filePath));
+}
+async function saveCurrentFile(forceDialog = false) {
+  const doc = workspaceActiveDocument(), content = workspaceReadEditor();
+  try {
+    const saved = await window.forge.saveFile({ filePath: forceDialog ? null : (doc ? doc.filePath : currentPath), name: doc ? doc.name : currentName, content, forceDialog });
+    if (!saved) return false;
+    if (doc) {
+      const oldKey = doc.key; doc.filePath = saved.filePath; doc.name = saved.name; doc.content = content; doc.savedContent = content; doc.dirty = false;
+      if (oldKey !== 'file:' + saved.filePath) { workspaceDocuments.delete(oldKey); doc.key = 'file:' + saved.filePath; workspaceDocuments.set(doc.key, doc); activeDocumentKey = doc.key; }
+    }
+    currentPath = saved.filePath; currentName = saved.name;
+    recentFiles = [currentPath, ...recentFiles.filter(item => item !== currentPath)].slice(0, 12);
+    renderDocumentTabs(); workspaceScheduleRecovery(); setStatus('Saved · ' + currentPath);
+    document.querySelectorAll('.file-item').forEach(item => item.classList.toggle('selected', item.title === currentPath));
+    return true;
+  } catch (error) { addOutput('stderr', error.message); setStatus('Save failed'); return false; }
+}
+function createNewDocument(name, language) {
+  const starterCode = language === 'cpp'
+    ? '#include <iostream>\n\nint main() {\n    std::cout << "Hello, Nidavellir!\\n";\n    return 0;\n}\n'
+    : language === 'c'
+      ? '#include <stdio.h>\n\nint main(void) {\n    printf("Hello, Nidavellir!\\n");\n    return 0;\n}\n' : '';
+  if (!workspaceInitialized) { pendingNewDocument = { name, language, content: starterCode }; currentPath = null; currentName = name; currentLanguage = language; setValue(starterCode, language); return; }
+  const doc = workspaceCreateDocument({ name, language, content: starterCode, savedContent: '', dirty: true });
+  if (monacoReady && editor && !doc.model) doc.model = monaco.editor.createModel(starterCode, language);
+  workspaceActivateDocument(doc);
+  if (monacoReady && editor) editor.setPosition({ lineNumber: 1, column: 1 }); else $('plainEditor').setSelectionRange(0, 0);
+}
+window.addEventListener('beforeunload', event => {
+  if (!Array.from(workspaceDocuments.values()).some(doc => doc.dirty)) return;
+  workspacePersistRecovery(); event.preventDefault(); event.returnValue = '';
+});
+
+/* Project-wide search and safe literal replacement */
+let lastProjectSearch=null,projectReplacePreviewReady=false;
+function renderProjectSearchResults(result){const box=$('projectSearchResults');box.replaceChildren();const matches=result?.results||[];$('projectSearchSummary').textContent=matches.length?matches.length+' match(es) in '+result.filesScanned+' scanned file(s)'+(result.truncated?' · result limit reached; narrow the search':''):'No matches found in '+(result?.filesScanned||0)+' scanned file(s).';for(const m of matches.slice(0,500)){const row=document.createElement('div');row.className='tooling-result';const title=document.createElement('strong');title.textContent=m.relativePath+':'+m.lineNumber;const pre=document.createElement('pre');pre.textContent=m.line.trim().slice(0,500);row.append(title,pre);box.appendChild(row);}$('projectReplaceAll').disabled=!matches.length||!!result.truncated;projectReplacePreviewReady=false;$('projectReplaceAll').textContent='Preview replacements';}
+$('projectSearchBtn').addEventListener('click',()=>{$('projectSearchModal').hidden=false;$('projectSearchQuery').focus();});
+$('closeProjectSearch').addEventListener('click',()=>{$('projectSearchModal').hidden=true;});
+$('projectSearchModal').addEventListener('click',e=>{if(e.target===$('projectSearchModal'))$('projectSearchModal').hidden=true;});
+$('projectSearchQuery').addEventListener('input',()=>{lastProjectSearch=null;projectReplacePreviewReady=false;$('projectReplaceAll').textContent='Preview replacements';});
+$('projectReplaceText').addEventListener('input',()=>{projectReplacePreviewReady=false;$('projectReplaceAll').textContent='Preview replacements';});
+$('projectSearchCase').addEventListener('change',()=>{lastProjectSearch=null;projectReplacePreviewReady=false;});
+$('projectSearchRun').addEventListener('click',async()=>{const query=$('projectSearchQuery').value;if(!query){$('projectSearchSummary').textContent='Enter text to search for.';return;}$('projectSearchRun').disabled=true;$('projectSearchSummary').textContent='Searching workspace…';try{lastProjectSearch={query,matchCase:$('projectSearchCase').checked};lastProjectSearch.result=await window.forge.searchProject(lastProjectSearch);renderProjectSearchResults(lastProjectSearch.result);}catch(e){$('projectSearchSummary').textContent=e.message;}finally{$('projectSearchRun').disabled=false;}});
+$('projectReplaceAll').addEventListener('click',async()=>{if(!lastProjectSearch?.result)return;const query=lastProjectSearch.query,replacement=$('projectReplaceText').value;if(!projectReplacePreviewReady){const matches=lastProjectSearch.result.results||[],box=$('projectSearchResults');box.replaceChildren();const note=document.createElement('div');note.className='tooling-result';note.textContent='Preview: '+matches.length+' matching line(s). Review examples, then click Apply replacements.';box.appendChild(note);for(const m of matches.slice(0,150)){const row=document.createElement('div');row.className='tooling-result';const title=document.createElement('strong');title.textContent=m.relativePath+':'+m.lineNumber;const before=document.createElement('pre');before.textContent='- '+m.line.trim().slice(0,450);const after=document.createElement('pre');after.textContent='+ '+(lastProjectSearch.matchCase?m.line.split(query).join(replacement):m.line.replace(new RegExp(query.replace(/[.*+?^$()|[\]\\]/g,'\\$&'),'gi'),()=>replacement)).slice(0,450);row.append(title,before,after);box.appendChild(row);}projectReplacePreviewReady=true;$('projectReplaceAll').textContent='Apply replacements';$('projectSearchSummary').textContent='Preview ready. '+matches.length+' matching line(s).';return;}if(!window.confirm('Apply the previewed literal replacement across the project? Files are rechecked before writing. Use Git to review or revert changes.'))return;$('projectReplaceAll').disabled=true;try{const r=await window.forge.replaceProject({query,replacement,matchCase:lastProjectSearch.matchCase});$('projectSearchSummary').textContent='Replaced '+r.replacements+' occurrence(s) across '+r.replacedFiles+' file(s).';lastProjectSearch.result=await window.forge.searchProject(lastProjectSearch);renderProjectSearchResults(lastProjectSearch.result);}catch(e){$('projectSearchSummary').textContent=e.message;}finally{$('projectReplaceAll').disabled=false;}});
+/* Environment Doctor */
+function renderEnvironment(result){$('environmentResults').replaceChildren();const tools=result?.tools||[];$('environmentSummary').textContent=tools.filter(t=>t.available).length+' of '+tools.length+' tools detected · '+(result.platform||'unknown platform');for(const t of tools){const row=document.createElement('div');row.className='tooling-result';const title=document.createElement('strong');title.textContent=t.label;const badge=document.createElement('span');badge.className='tool-status '+(t.available?'ok':'missing');badge.textContent=t.available?'DETECTED':'NOT FOUND';const detail=document.createElement('small');detail.textContent=t.available?(t.version||t.command)+' · '+t.purpose:t.purpose+' · '+t.install;row.append(title,badge,detail);$('environmentResults').appendChild(row);}}
+async function runEnvironmentCheck(){$('environmentSummary').textContent='Checking installed tools…';$('refreshEnvironment').disabled=true;try{renderEnvironment(await window.forge.checkEnvironment());}catch(e){$('environmentSummary').textContent=e.message;}finally{$('refreshEnvironment').disabled=false;}}
+$('environmentDoctorBtn').addEventListener('click',()=>{$('environmentModal').hidden=false;void runEnvironmentCheck();});
+$('closeEnvironment').addEventListener('click',()=>{$('environmentModal').hidden=true;});
+$('environmentModal').addEventListener('click',e=>{if(e.target===$('environmentModal'))$('environmentModal').hidden=true;});
+$('refreshEnvironment').addEventListener('click',()=>void runEnvironmentCheck());
+/* Local Git operations */
+function gitMessage(text,error=false){$('gitOutput').hidden=false;$('gitOutput').textContent=text;$('gitOutput').style.color=error?'#ff9ca4':'#c5d4eb';}
+async function refreshGitWorkspace(){$('gitSummary').textContent='Reading Git status…';$('gitEntries').replaceChildren();try{const s=await window.forge.gitStatus();$('gitBranchLabel').textContent='Branch: '+s.branch;$('gitSummary').textContent=s.entries.length?s.entries.length+' changed file(s) · '+s.root:'Working tree clean · '+s.root;for(const item of s.entries){const row=document.createElement('div');row.className='tooling-result';const title=document.createElement('strong');title.textContent=item.original;const button=document.createElement('button');button.type='button';const staged=item.indexStatus!==' '&&item.indexStatus!=='?';button.textContent=staged?'Unstage':'Stage';button.addEventListener('click',async()=>{try{if(staged)await window.forge.gitUnstage(item.path);else await window.forge.gitStage(item.path);await refreshGitWorkspace();}catch(e){gitMessage(e.message,true);}});row.append(title,button);$('gitEntries').appendChild(row);}const branches=await window.forge.gitBranches().catch(()=>[]),select=$('gitBranchSelect'),current=select.value;select.replaceChildren();for(const b of branches){const o=document.createElement('option');o.value=b;o.textContent=b;select.appendChild(o);}if(branches.includes(current))select.value=current;}catch(e){$('gitSummary').textContent=e.message;}}
+$('gitBtn').addEventListener('click',()=>{$('gitModal').hidden=false;void refreshGitWorkspace();});
+$('closeGit').addEventListener('click',()=>{$('gitModal').hidden=true;});
+$('gitModal').addEventListener('click',e=>{if(e.target===$('gitModal'))$('gitModal').hidden=true;});
+$('gitRefresh').addEventListener('click',()=>void refreshGitWorkspace());
+$('gitStageAll').addEventListener('click',async()=>{try{await window.forge.gitStage('*');await refreshGitWorkspace();gitMessage('All changes staged. Review the list before committing.');}catch(e){gitMessage(e.message,true);}});
+$('gitCommit').addEventListener('click',async()=>{const message=$('gitCommitMessage').value.trim();if(!message){gitMessage('Enter a commit message first.',true);return;}if(!window.confirm('Create a local Git commit with this message? This will not push anything to a remote.\\n\\n'+message))return;try{const r=await window.forge.gitCommit(message);$('gitCommitMessage').value='';gitMessage(r.stdout||'Commit created.');await refreshGitWorkspace();}catch(e){gitMessage(e.message,true);}});
+$('gitDiffBtn').addEventListener('click',async()=>{try{gitMessage((await window.forge.gitDiff())||'No unstaged diff.');}catch(e){gitMessage(e.message,true);}});
+$('gitLogBtn').addEventListener('click',async()=>{try{const items=await window.forge.gitLog();gitMessage(items.map(i=>i.hash+'  '+i.subject+' ('+i.date+')').join('\\n')||'No commits found.');}catch(e){gitMessage(e.message,true);}});
+$('gitCheckoutBtn').addEventListener('click',async()=>{const b=$('gitBranchSelect').value;if(!b){gitMessage('Choose a local branch first.',true);return;}try{const r=await window.forge.gitCheckout(b);if(r.cancelled)return;gitMessage(r.stdout||'Branch switched.');await refreshGitWorkspace();}catch(e){gitMessage(e.message,true);}});

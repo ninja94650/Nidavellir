@@ -17,6 +17,9 @@
     <div class="brand"><span class="logo">N</span><span>Nidavellir <small>AI IDE</small></span></div>
     <div class="top-actions">
       <button id="openFolderBtn">Open folder</button><button id="openBtn">Open file</button><button id="saveBtn" title="Save (Ctrl+S)">Save</button><button id="saveAsBtn" title="Save As (Ctrl+Shift+S)">Save As</button><button id="commandPaletteBtn" title="Command Palette (Ctrl+Shift+P)">⌘ Commands</button>
+      <button id="projectSearchBtn" title="Search and replace across the project">Project Search</button>
+      <button id="environmentDoctorBtn" title="Check installed compilers and runtimes">Environment</button>
+      <button id="gitBtn" title="Git status, stage, commit, branches">Git</button>
       <button class="primary" id="runBtn">▶ Run</button>
       <button id="pluginsBtn">🧩 Plugins</button>
       <button id="settingsBtn">⚙ AI Settings</button>
@@ -220,6 +223,23 @@
   </section>
 </div>
 
+<div class="modal-backdrop" id="projectSearchModal" hidden><section class="modal tooling-modal">
+  <div class="modal-title"><div><h2>Search in Project</h2><p>Literal text search across workspace files. Hidden, dependency, and build folders are excluded.</p></div><button id="closeProjectSearch" class="close" type="button">×</button></div>
+  <div class="tooling-fields"><label>Find<input id="projectSearchQuery" type="text" maxlength="500" placeholder="Text to find"></label><label>Replace with<input id="projectReplaceText" type="text" maxlength="5000" placeholder="Replacement text"></label><label class="inline-check"><input id="projectSearchCase" type="checkbox"> Match case</label><button id="projectSearchRun" class="primary" type="button">Search project</button></div>
+  <div id="projectSearchSummary" class="tooling-summary">Open a project folder to search.</div><div id="projectSearchResults" class="tooling-results"></div><div class="modal-actions"><button id="projectReplaceAll" class="primary" type="button" disabled>Preview replacements</button></div>
+  <div class="modal-note">Replacement is literal, limited to 100 files, and rechecks files before writing. Search limits: 3,000 files and 1,500 matches.</div>
+</section></div>
+<div class="modal-backdrop" id="environmentModal" hidden><section class="modal tooling-modal">
+  <div class="modal-title"><div><h2>Development Environment Doctor</h2><p>Detected toolchains and setup guidance.</p></div><button id="closeEnvironment" class="close" type="button">×</button></div><div id="environmentSummary" class="tooling-summary">Checking installed tools…</div><div id="environmentResults" class="tooling-results"></div><div class="modal-actions"><button id="refreshEnvironment" class="primary" type="button">Check again</button></div><div class="modal-note">Detection checks version commands only; it does not install software or change system settings.</div>
+</section></div>
+<div class="modal-backdrop" id="gitModal" hidden><section class="modal tooling-modal">
+  <div class="modal-title"><div><h2>Git Workspace</h2><p>Review changes before staging or committing them.</p></div><button id="closeGit" class="close" type="button">×</button></div>
+  <div class="git-toolbar"><span id="gitBranchLabel">Branch: —</span><button id="gitRefresh" type="button">Refresh</button><button id="gitDiffBtn" type="button">Show diff</button><button id="gitLogBtn" type="button">Recent commits</button></div>
+  <div id="gitSummary" class="tooling-summary">Open a Git repository folder.</div><div id="gitEntries" class="tooling-results"></div>
+  <label class="git-commit-label">Commit message<input id="gitCommitMessage" type="text" maxlength="500" placeholder="Describe your changes"></label>
+  <div class="tooling-fields"><label>Switch to local branch<select id="gitBranchSelect"></select></label><button id="gitCheckoutBtn" type="button">Switch branch…</button></div>
+  <div class="modal-actions"><button id="gitStageAll" type="button">Stage all</button><button id="gitCommit" class="primary" type="button">Commit staged changes</button></div><div id="gitOutput" class="git-output" hidden></div><div class="modal-note">Git uses the installed executable. Branch switching requires confirmation. Nothing is pushed automatically.</div>
+</section></div>
 <script src="app.js"></script>
 </body>
 </html>
