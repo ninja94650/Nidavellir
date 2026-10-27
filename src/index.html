@@ -117,8 +117,13 @@
       </div>
       <p class="ai-subtitle">Ask Nidavellir Copilot to code, debug, explain, or review the open project. Local inference uses your installed Ollama model.</p>
       <div class="provider-row agent-team-toolbar">
-        <span id="teamAgentSummary">Choose Local Ollama or add a hosted API key.</span>
+        <span id="teamAgentSummary">Local agent ready · 1 agent</span>
         <label class="coordinator-label"><input type="checkbox" id="useOllama" checked> Local Ollama (no API key)</label>
+        <label class="local-agent-count" for="localAgentCount">Local agents
+          <select id="localAgentCount" aria-label="Number of local Ollama agents">
+            <option value="1" selected>1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option>
+          </select>
+        </label>
         <label class="coordinator-label"><input type="checkbox" id="useCoordinator" checked> 🔮 Coordinator</label>
       </div>
       <div class="ollama-status-note"><span class="ollama-status-dot"></span><span>Installed model: <strong>qwen2.5-coder:7b</strong> · No API key required. Start Ollama on this PC before sending a prompt.</span></div>
@@ -194,7 +199,7 @@
 <!-- ── Settings modal ── -->
 <div class="modal-backdrop" id="settingsModal" hidden>
   <section class="modal">
-    <div class="modal-title"><div><h2>AI Workbench</h2><p>Use your local Qwen coding model without an API key.</p></div><button id="closeSettings" class="close" type="button" aria-label="Close AI Workbench settings">×</button></div>
+    <div class="modal-title"><div><h2>AI Workbench · Agent setup</h2><p>Configure your local coding agents and optional hosted teammates.</p></div><button id="closeSettings" class="close" type="button" aria-label="Close AI Workbench settings">×</button></div>
     <section class="local-setup-card" aria-labelledby="localSetupTitle">
       <div class="local-setup-heading"><span class="local-setup-icon">✧</span><div><h3 id="localSetupTitle">Local Ollama · qwen2.5-coder:7b</h3><p>Private, on-device coding help — no hosted AI key required.</p></div></div>
       <ol class="local-setup-steps">
@@ -211,7 +216,7 @@
     <div id="savedApiKeyList" class="saved-api-key-list"></div>
     <div class="modal-backdrop api-key-editor-backdrop" id="apiKeyEditorModal" hidden>
       <section class="modal api-key-editor" role="dialog" aria-modal="true" aria-labelledby="apiKeyEditorTitle">
-        <div class="modal-title"><div><h2 id="apiKeyEditorTitle">Add API key</h2><p>Name this key and choose how many agents should use it. Nidavellir detects the provider from the key format.</p></div><button id="closeApiKeyEditor" class="close" type="button" aria-label="Close">×</button></div>
+        <div class="modal-title"><div><h2 id="apiKeyEditorTitle">Add API key</h2><p>Name this key and choose how many parallel agents should use it. Nidavellir detects the provider from the key format.</p></div><button id="closeApiKeyEditor" class="close" type="button" aria-label="Close">×</button></div>
         <label class="api-key-field" for="apiKeyName">Name<input id="apiKeyName" maxlength="80" autocomplete="off" placeholder="e.g. My personal key" /></label>
         <label class="api-key-field" for="apiKeyAgentCount">Coworking agents<input id="apiKeyAgentCount" type="number" min="1" max="8" step="1" value="1" /><small>Each agent uses this key to work on the same project. Choose 1–8 agents.</small></label>
         <label class="api-key-field" for="apiKeyValue">API key<input id="apiKeyValue" type="password" autocomplete="off" placeholder="Paste API key" /></label>
