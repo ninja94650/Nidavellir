@@ -160,14 +160,14 @@ test('runner Stop terminates descendants even if the root process exits first', 
       'const grandchild = spawn(process.execPath, ["-e", \'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);\'], { stdio: "ignore" });',
       'console.log("GRANDCHILD_PID:" + grandchild.pid);',
       'setInterval(() => {}, 1000);'
-    ].join('\\n')
+    ].join('\n')
   });
 
   let grandchildPid = null;
   let timeoutHandle;
   try {
     for (let i = 0; i < 300 && grandchildPid === null; i++) {
-      const match = output.map(item => item.text).join('').match(/GRANDCHILD_PID:(\\d+)/);
+      const match = output.map(item => item.text).join('').match(/GRANDCHILD_PID:(\d+)/);
       if (match) grandchildPid = Number(match[1]);
       else await new Promise(resolve => setTimeout(resolve, 10));
     }
