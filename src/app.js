@@ -626,7 +626,7 @@ function getSelectedProviders() {
     .filter(([, id]) => $(id).checked).map(([p]) => p);
 }
 function providerName(p) {
-  return ({ openai: 'GPT / OpenAI', gemini: 'Gemini', claude: 'Claude', 'test-gen': '🧪 Test Generator' })[p] || p;
+  return ({ openai: 'GPT / OpenAI', gemini: 'Gemini', claude: 'Claude', ollama: 'Nidavellir Copilot · Ollama', 'test-gen': '🧪 Test Generator' })[p] || p;
 }
 
 function addAnswer(provider, body, loading = false) {
@@ -734,8 +734,9 @@ async function askTeam() {
     provider: key.provider, keyId: key.id, keyLabel: key.label || 'API key', agentNumber: index + 1,
     name: (key.label || apiKeyProviderNames[key.provider]) + ((key.agentCount || 1) > 1 ? ' · Agent ' + (index + 1) : '')
   })));
+  if ($('useOllama')?.checked) agents.push({ provider: 'ollama', keyId: null, keyLabel: 'Local model', agentNumber: 1, name: 'Nidavellir Copilot · Ollama' });
   $('teamAgentSummary').textContent = agents.length + (agents.length === 1 ? ' coworking agent' : ' coworking agents') + ' across ' + keyGroups.length + (keyGroups.length === 1 ? ' saved key' : ' saved keys');
-  if (!agents.length) { addAnswer('team', 'Add an API key in Settings to create your coworking agents.'); return; }
+  if (!agents.length) { addAnswer('team', 'Select “Local Ollama (no API key)” or add an API key in Settings to create your coworking agents.'); return; }
 
   if ($('chat').querySelector('.welcome-chat')) $('chat').innerHTML = '';
   $('promptInput').value = '';
@@ -750,11 +751,14 @@ async function askTeam() {
   await Promise.all(cards.map(async ([agent, card]) => {
     const body = card.querySelector('.answer-body'), state = card.querySelector('.answer-state');
     try {
-      const answer = await window.forge.askKey({
-        provider: agent.provider, keyId: agent.keyId, prompt: fullPrompt,
+      const request = {
+        prompt: fullPrompt,
         system: 'You are an expert software engineer collaborating with other independent agents on the same project. Be accurate, practical, and explicit about assumptions. Separate diagnosis from proposed fixes. Never claim to run code unless an execution result is supplied.',
         model: ''
-      });
+      };
+      const answer = agent.provider === 'ollama'
+        ? await window.forge.askLocal(request)
+        : await window.forge.askKey({ ...request, provider: agent.provider, keyId: agent.keyId });
       body.textContent = answer; state.textContent = 'DONE';
       responses.push({ provider: agent.name, text: answer }); addReviewButton(card, answer);
     } catch (error) { body.textContent = 'Request failed: ' + error.message; state.textContent = 'ERROR'; }
