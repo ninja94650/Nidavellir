@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src https://api.openai.com https://generativelanguage.googleapis.com https://api.anthropic.com;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src https://api.openai.com https://generativelanguage.googleapis.com https://api.anthropic.com http://127.0.0.1:11434 http://localhost:11434;">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nidavellir — Forge AI Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -111,6 +111,7 @@
       <p class="ai-subtitle">Your named agents work independently on the same project. Add more agents in Settings.</p>
       <div class="provider-row agent-team-toolbar">
         <span id="teamAgentSummary">Agents are loaded from your saved API keys.</span>
+        <label class="coordinator-label"><input type="checkbox" id="useOllama"> Local Ollama (no API key)</label>
         <label class="coordinator-label"><input type="checkbox" id="useCoordinator" checked> 🔮 Coordinator</label>
       </div>
       <div class="quick-actions" id="quickActions">
