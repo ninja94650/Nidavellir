@@ -535,7 +535,28 @@ $('focusAiBtn').onclick = () => $('promptInput').focus();
    Settings modal
    ───────────────────────────────────────────── */
 
-$('settingsBtn').onclick = () => { $('settingsModal').hidden = false; refreshKeyStatus(); };
+$('settingsBtn').onclick = () => {
+  const panel = $('aiPanel');
+  const shouldShow = panel.hidden;
+  panel.hidden = !shouldShow;
+  $('settingsBtn').setAttribute('aria-expanded', String(shouldShow));
+  if (shouldShow) $('promptInput').focus();
+};
+$('workbenchSettingsBtn').onclick = () => { $('settingsModal').hidden = false; refreshKeyStatus(); };
+$('workbenchMinimizeBtn').onclick = () => {
+  const panel = $('aiPanel');
+  const minimized = panel.classList.toggle('minimized');
+  $('workbenchMinimizeBtn').textContent = minimized ? '□' : '−';
+  $('workbenchMinimizeBtn').title = minimized ? 'Restore workbench content' : 'Minimize workbench content';
+  $('workbenchMinimizeBtn').setAttribute('aria-label', minimized ? 'Restore AI Workbench' : 'Minimize AI Workbench');
+};
+$('workbenchCollapseBtn').onclick = () => {
+  const panel = $('aiPanel');
+  const collapsed = panel.classList.toggle('collapsed');
+  $('workbenchCollapseBtn').textContent = collapsed ? '‹' : '›';
+  $('workbenchCollapseBtn').title = collapsed ? 'Expand workbench' : 'Collapse workbench';
+  $('workbenchCollapseBtn').setAttribute('aria-label', collapsed ? 'Expand AI Workbench' : 'Collapse AI Workbench');
+};
 $('closeSettings').onclick = () => $('settingsModal').hidden = true;
 $('settingsModal').addEventListener('click', e => { if (e.target === $('settingsModal')) $('settingsModal').hidden = true; });
 const apiKeyProviders = ['openai','gemini','claude','openrouter'];
