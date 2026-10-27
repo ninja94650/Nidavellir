@@ -19,7 +19,7 @@
       <button id="openFolderBtn">Open folder</button><button id="openBtn">Open file</button><button id="saveBtn">Save</button>
       <button class="primary" id="runBtn">▶ Run</button>
       <button id="pluginsBtn">🧩 Plugins</button>
-      <button id="settingsBtn">⚙ AI Settings</button>
+      <button id="settingsBtn" title="Show or hide AI Workbench" aria-expanded="true">✧ AI Workbench</button>
     </div>
   </header>
 
@@ -106,14 +106,22 @@
       </div>
     </main>
 
-    <aside class="ai-panel" id="aiPanel">
-      <div class="ai-title"><div><span class="sparkle">✧</span> AI WORKBENCH</div><span class="online-dot"></span></div>
-      <p class="ai-subtitle">Your named agents work independently on the same project. Add more agents in Settings.</p>
+    <aside class="ai-panel" id="aiPanel" aria-label="AI Workbench">
+      <div class="ai-title">
+        <div class="ai-title-label"><span class="sparkle">✧</span> AI WORKBENCH <span class="workbench-model-pill">QWEN 2.5 CODER</span></div>
+        <div class="workbench-controls">
+          <button id="workbenchSettingsBtn" type="button" title="Manage hosted AI API keys" aria-label="AI provider settings">⚙</button>
+          <button id="workbenchMinimizeBtn" type="button" title="Minimize workbench content" aria-label="Minimize AI Workbench">−</button>
+          <button id="workbenchCollapseBtn" type="button" title="Collapse workbench" aria-label="Collapse AI Workbench">›</button>
+        </div>
+      </div>
+      <p class="ai-subtitle">Ask Nidavellir Copilot to code, debug, explain, or review the open project. Local inference uses your installed Ollama model.</p>
       <div class="provider-row agent-team-toolbar">
-        <span id="teamAgentSummary">Agents are loaded from your saved API keys.</span>
-        <label class="coordinator-label"><input type="checkbox" id="useOllama"> Local Ollama (no API key)</label>
+        <span id="teamAgentSummary">Choose Local Ollama or add a hosted API key.</span>
+        <label class="coordinator-label"><input type="checkbox" id="useOllama" checked> Local Ollama (no API key)</label>
         <label class="coordinator-label"><input type="checkbox" id="useCoordinator" checked> 🔮 Coordinator</label>
       </div>
+      <div class="ollama-status-note"><span class="ollama-status-dot"></span><span>Model: <strong>qwen2.5-coder:7b</strong> · No API key required. Keep Ollama running on this PC.</span></div>
       <div class="quick-actions" id="quickActions">
         <button data-prompt="Explain this code to a beginner, line by line.">Explain code</button>
         <button data-prompt="Find likely bugs and security problems in this code. Give fixes with file/line references where possible.">Find bugs</button>
@@ -126,7 +134,7 @@
         <textarea id="promptInput" placeholder="Ask the team to debug, explain, refactor, or build something…" rows="3"></textarea>
         <div class="composer-bottom"><span id="selectionHint">Current file will be included</span><button id="askBtn" class="primary">Ask team ↗</button></div>
       </div>
-      <div class="ai-foot">API usage may cost money. Review AI-generated code before running.</div>
+      <div class="ai-foot">Local Ollama runs on this PC. Review AI-generated code before running.</div>
     </aside>
   </div>
 
