@@ -652,9 +652,9 @@ ipcMain.handle('ai:generate-tests', async (_event, { code, language, fileName })
   const prompt = [
     `Generate comprehensive unit tests for the following ${language} code.`,
     `File: ${fileName}`,
-    '```' + language + '\\n' + String(code || '').slice(0, 30000) + '\\n```',
+    '```' + language + '\n' + String(code || '').slice(0, 30000) + '\n```',
     `Provide the complete test file content ready to save and run. Use the standard testing framework for ${language}, including edge cases and error cases.`
-  ].join('\\n\\n');
+  ].join('\n\n');
   return ollamaProvider.ask({ prompt, system: 'You are an expert test engineer. Output only complete runnable test file content.' });
 });
 
