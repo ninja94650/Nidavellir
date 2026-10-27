@@ -543,6 +543,18 @@ $('settingsBtn').onclick = () => {
   if (shouldShow) $('promptInput').focus();
 };
 $('workbenchSettingsBtn').onclick = () => { $('settingsModal').hidden = false; refreshKeyStatus(); };
+$('useOllama').addEventListener('change', () => {
+  const count = $('localAgentCount');
+  count.disabled = !$('useOllama').checked;
+  $('teamAgentSummary').textContent = $('useOllama').checked
+    ? count.value + (count.value === '1' ? ' local agent selected' : ' local agents selected')
+    : 'Local agent disabled · add a hosted key to continue';
+});
+$('localAgentCount').addEventListener('change', () => {
+  $('teamAgentSummary').textContent = $('useOllama').checked
+    ? $('localAgentCount').value + ($('localAgentCount').value === '1' ? ' local agent selected' : ' local agents selected')
+    : 'Local agent disabled · add a hosted key to continue';
+});
 $('workbenchMinimizeBtn').onclick = () => {
   const panel = $('aiPanel');
   const minimized = panel.classList.toggle('minimized');
@@ -755,9 +767,18 @@ async function askTeam() {
     provider: key.provider, keyId: key.id, keyLabel: key.label || 'API key', agentNumber: index + 1,
     name: (key.label || apiKeyProviderNames[key.provider]) + ((key.agentCount || 1) > 1 ? ' · Agent ' + (index + 1) : '')
   })));
-  if ($('useOllama')?.checked) agents.push({ provider: 'ollama', keyId: null, keyLabel: 'Local model', agentNumber: 1, name: 'Nidavellir Copilot · Ollama' });
-  $('teamAgentSummary').textContent = agents.length + (agents.length === 1 ? ' coworking agent' : ' coworking agents') + ' across ' + keyGroups.length + (keyGroups.length === 1 ? ' saved key' : ' saved keys');
-  if (!agents.length) { addAnswer('team', 'Select “Local Ollama (no API key)” or add an API key in Settings to create your coworking agents.'); return; }
+  const localEnabled = Boolean($('useOllama')?.checked);
+  const localCount = localEnabled ? Math.max(1, Math.min(4, Number($('localAgentCount')?.value) || 1)) : 0;
+  for (let index = 0; index < localCount; index++) {
+    agents.push({
+      provider: 'ollama', keyId: null, keyLabel: 'Local model', agentNumber: index + 1,
+      name: localCount > 1 ? 'Nidavellir Copilot · Ollama ' + (index + 1) : 'Nidavellir Copilot · Ollama'
+    });
+  }
+  const hostedCount = agents.length - localCount;
+  $('teamAgentSummary').textContent = agents.length + (agents.length === 1 ? ' agent ready' : ' agents ready') +
+    ' · ' + localCount + ' local / ' + hostedCount + ' hosted';
+  if (!agents.length) { addAnswer('team', 'Enable Local Ollama or add an API key in Workbench settings to start your coworking agents.'); return; }
 
   if ($('chat').querySelector('.welcome-chat')) $('chat').innerHTML = '';
   $('promptInput').value = '';
