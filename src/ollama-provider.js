@@ -11,7 +11,7 @@ function normalizeBaseUrl(value = DEFAULT_BASE_URL) {
   if (parsed.protocol !== 'http:' || !loopback.includes(parsed.hostname) || parsed.username || parsed.password || parsed.search || parsed.hash) {
     throw new Error('For safety, Ollama must use a local loopback HTTP URL (127.0.0.1, localhost, or ::1).');
   }
-  return parsed.toString().replace(/\\/$/, '');
+  return parsed.toString().replace(/\/$/, '');
 }
 
 function createOllamaProvider(options = {}) {
