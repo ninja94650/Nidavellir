@@ -9,7 +9,7 @@ const app = fs.readFileSync(path.join(root, 'src/app.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'src/styles.css'), 'utf8');
 
 test('AI Workbench uses configured API-key agents', () => {
-  assert.doesNotMatch(html, /qwen2\\.5|localAgentCount/i);
+  assert.doesNotMatch(html, /qwen2\.5|localAgentCount/i);
   assert.doesNotMatch(app, /localAgentCount|askLocal/i);
   assert.match(html, /id="openApiKeyEditor"/);
   assert.match(app, /window\.forge\.askKey\(\{ \.\.\.request, provider: agent\.provider, keyId: agent\.keyId \}\)/);
