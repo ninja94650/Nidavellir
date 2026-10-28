@@ -108,31 +108,24 @@
 
     <aside class="ai-panel" id="aiPanel" aria-label="AI Workbench">
       <div class="ai-title">
-        <div class="ai-title-label"><span class="sparkle">✧</span> AI WORKBENCH <span class="workbench-model-pill">QWEN 2.5 CODER</span></div>
+        <div class="ai-title-label"><span class="sparkle">✧</span> AI WORKBENCH </div>
         <div class="workbench-controls">
           <button id="workbenchSettingsBtn" type="button" title="AI Workbench setup and optional hosted agents" aria-label="AI Workbench setup">⚙</button>
           <button id="workbenchMinimizeBtn" type="button" title="Minimize workbench content" aria-label="Minimize AI Workbench">−</button>
           <button id="workbenchCollapseBtn" type="button" title="Collapse workbench" aria-label="Collapse AI Workbench">›</button>
         </div>
       </div>
-      <p class="ai-subtitle">Ask Nidavellir Copilot to code, debug, explain, or review the open project. Local inference uses your installed Ollama model.</p>
+      <p class="ai-subtitle">Ask your configured AI agents to code, debug, explain, or review the open project.</p>
       <div class="provider-row agent-team-toolbar">
-        <span id="teamAgentSummary">Local agent ready · 1 agent</span>
+        <span id="teamAgentSummary">Add an API key to start</span>
         <label class="coordinator-label" for="aiChatMode">Chat mode
           <select id="aiChatMode" aria-label="AI chat mode">
             <option value="team" selected>Multi-agent team</option>
             <option value="openai">OpenAI GPT chat</option>
           </select>
         </label>
-        <label class="coordinator-label"><input type="checkbox" id="useOllama" checked> Local Ollama (no API key)</label>
-        <label class="local-agent-count" for="localAgentCount">Local agents
-          <select id="localAgentCount" aria-label="Number of local Ollama agents">
-            <option value="1" selected>1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option>
-          </select>
-        </label>
         <label class="coordinator-label"><input type="checkbox" id="useCoordinator" checked> 🔮 Coordinator</label>
       </div>
-      <div class="ollama-status-note"><span class="ollama-status-dot"></span><span>Installed model: <strong>qwen2.5-coder:7b</strong> · No API key required. Start Ollama on this PC before sending a prompt.</span></div>
       <div class="quick-actions" id="quickActions">
         <button data-prompt="Explain this code to a beginner, line by line.">Explain code</button>
         <button data-prompt="Find likely bugs and security problems in this code. Give fixes with file/line references where possible.">Find bugs</button>
@@ -145,7 +138,7 @@
         <textarea id="promptInput" placeholder="Ask the team to debug, explain, refactor, or build something…" rows="3"></textarea>
         <div class="composer-bottom"><span id="selectionHint">Current file will be included</span><button id="askBtn" class="primary">Ask team ↗</button></div>
       </div>
-      <div class="ai-foot">Local Ollama runs on this PC. Review AI-generated code before running.</div>
+      <div class="ai-foot">Review AI-generated code before running.</div>
     </aside>
   </div>
 
@@ -206,18 +199,7 @@
 <div class="modal-backdrop" id="settingsModal" hidden>
   <section class="modal">
     <div class="modal-title"><div><h2>AI Workbench · Agent setup</h2><p>Configure your local coding agents and optional hosted teammates.</p></div><button id="closeSettings" class="close" type="button" aria-label="Close AI Workbench settings">×</button></div>
-    <section class="local-setup-card" aria-labelledby="localSetupTitle">
-      <div class="local-setup-heading"><span class="local-setup-icon">✧</span><div><h3 id="localSetupTitle">Local Ollama · qwen2.5-coder:7b</h3><p>Private, on-device coding help — no hosted AI key required.</p></div></div>
-      <ol class="local-setup-steps">
-        <li>Install and start Ollama on this PC.</li>
-        <li>In PowerShell, run <code>ollama pull qwen2.5-coder:7b</code>. Your model is already downloaded if the terminal showed <strong>success</strong>.</li>
-        <li>Open the AI Workbench, enable <strong>Local Ollama (no API key)</strong>, and ask it to code, debug, explain, or review your project.</li>
-      </ol>
-      <p class="local-setup-note">If a request fails, make sure the Ollama app/service is running and the local API is available at <code>http://127.0.0.1:11434</code>.</p>
-      <button type="button" id="closeSettingsGoWorkbench" class="primary">Back to AI Workbench</button>
-    </section>
-    <div class="optional-hosted-heading"><h3>Optional hosted AI agents</h3><span>Not required for Local Ollama</span></div>
-    <p class="api-key-intro">Add encrypted API keys only if you want extra hosted agents to collaborate with your local model.</p>
+    <p class="api-key-intro">Add encrypted API keys to configure AI agents that can collaborate on the same project.</p>
     <div class="api-key-toolbar"><span id="apiKeyCount">0 saved keys</span><button type="button" id="openApiKeyEditor" class="primary">＋ Add API key</button></div>
     <div id="savedApiKeyList" class="saved-api-key-list"></div>
     <div class="modal-backdrop api-key-editor-backdrop" id="apiKeyEditorModal" hidden>
