@@ -1630,3 +1630,51 @@ button:focus-visible,.ai-panel input:focus-visible,.ai-panel textarea:focus-visi
 
 
 
+
+
+/* Individually collapsible workbench sections keep the conversation readable. */
+.ai-panel > .workbench-fold {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
+  border-bottom: 1px solid var(--ai-line, #203943);
+  background: #0a1a20;
+}
+.ai-panel > .workbench-fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 29px;
+  padding: 5px 12px;
+  color: #9bbbc4;
+  background: #0b1c23;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .35px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.ai-panel > .workbench-fold > summary::-webkit-details-marker { display: none; }
+.ai-panel > .workbench-fold > summary::before {
+  content: "›";
+  display: inline-block;
+  color: var(--ai-cyan, #6bd8e8);
+  font-size: 14px;
+  transform: rotate(0deg);
+  transition: transform .15s ease;
+}
+.ai-panel > .workbench-fold[open] > summary::before { transform: rotate(90deg); }
+.ai-panel > .workbench-fold > summary:hover { color: #e2f1f4; background: #102630; }
+.ai-panel > .workbench-fold .ai-subtitle { margin: 0; padding: 5px 12px 9px; font-size: 11px; line-height: 1.45; }
+.ai-panel > .workbench-fold .provider-row { padding: 7px 10px; }
+.ai-panel > .workbench-fold .quick-actions { padding: 8px 10px; }
+.ai-panel > .workbench-fold .quick-actions button { min-width: 0; }
+.ai-panel > .chat { flex: 1 1 0; min-height: 72px; }
+@media (max-height: 720px) {
+  .ai-panel > .workbench-fold > summary { min-height: 25px; padding-top: 3px; padding-bottom: 3px; }
+  .ai-panel > .workbench-fold .ai-subtitle { padding-top: 3px; padding-bottom: 5px; }
+  .ai-panel > .workbench-fold .provider-row { padding-top: 5px; padding-bottom: 5px; }
+  .ai-panel > .workbench-fold .quick-actions { padding-top: 5px; padding-bottom: 5px; gap: 5px; }
+  .ai-panel > .workbench-fold .quick-actions button { min-height: 29px; padding: 5px 7px; }
+}
