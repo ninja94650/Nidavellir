@@ -308,9 +308,9 @@ ipcMain.handle('file:read-path', async (_event, filePath) => {
         type: 'warning',
         buttons: [
           'Yes, allow this time',
-          'Yes, allow this file in this conversation',
-          'Yes, allow this file when outside the workspace (this session)',
-          'Yes, always allow this exact file (this session)',
+          'Yes, allow this exact file for this app session',
+          'Yes, allow this exact file while outside the workspace (this session)',
+          'Yes, always allow this exact file until Nidavellir closes',
           'No — deny access'
         ],
         defaultId: 4,
