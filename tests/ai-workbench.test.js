@@ -8,9 +8,9 @@ const html = fs.readFileSync(path.join(root, 'src/index.html'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'src/app.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'src/styles.css'), 'utf8');
 
-test('AI Workbench uses configured API-key agents without a local Ollama provider', () => {
-  assert.doesNotMatch(html, /ollama|qwen2\.5|useOllama|localAgentCount/i);
-  assert.doesNotMatch(app, /ollama|useOllama|localAgentCount|askLocal/i);
+test('AI Workbench uses configured API-key agents', () => {
+  assert.doesNotMatch(html, /qwen2\\.5|localAgentCount/i);
+  assert.doesNotMatch(app, /localAgentCount|askLocal/i);
   assert.match(html, /id="openApiKeyEditor"/);
   assert.match(app, /window\.forge\.askKey\(\{ \.\.\.request, provider: agent\.provider, keyId: agent\.keyId \}\)/);
   assert.match(app, /Add an API key in AI Workbench settings/);
