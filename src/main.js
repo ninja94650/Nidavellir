@@ -24,7 +24,7 @@ const ollamaProvider = createOllamaProvider({
 });
 const allowedProviders = new Set(['openai', 'gemini', 'claude', 'openrouter']);
 // OpenAI-compatible endpoint for the IDE's GPT-style agent. Override only if needed.
-const openAiCompatibleBaseUrl = (process.env.NIDAVELLIR_OPENAI_BASE_URL || 'https://omni.inamoriyama.com/v1').replace(/\\/+$/, '');
+const openAiCompatibleBaseUrl = (process.env.NIDAVELLIR_OPENAI_BASE_URL || 'https://omni.inamoriyama.com/v1').replace(/\/+$/, '');
 const approvedRoots = new Set();
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_SAVE_BYTES = 5 * 1024 * 1024;
