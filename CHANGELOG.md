@@ -1,3 +1,9 @@
+# 0.4.16
+
+- Removes the local Ollama provider while preserving configured API-key agents and multi-agent collaboration.
+- Improves AI Workbench collapsible sections, chat sizing, scrolling, and regression coverage.
+- Fixes brittle AI Workbench CSS assertions and keeps security/file-permission tests passing.
+
 # 0.4.15
 
 - Replaces the top-bar AI Settings button with an AI Workbench show/hide control; hosted API-key settings remain inside the Workbench.
