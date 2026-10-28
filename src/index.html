@@ -115,8 +115,13 @@
           <button id="workbenchCollapseBtn" type="button" title="Collapse workbench" aria-label="Collapse AI Workbench">›</button>
         </div>
       </div>
-      <p class="ai-subtitle">Ask your configured AI agents to code, debug, explain, or review the open project.</p>
-      <div class="provider-row agent-team-toolbar">
+      <details class="workbench-fold" open>
+        <summary>About this workbench</summary>
+        <p class="ai-subtitle">Ask your configured AI agents to code, debug, explain, or review the open project.</p>
+      </details>
+      <details class="workbench-fold" open>
+        <summary>Agents and coordination</summary>
+        <div class="provider-row agent-team-toolbar">
         <span id="teamAgentSummary">Add an API key to start</span>
         <label class="coordinator-label" for="aiChatMode">Chat mode
           <select id="aiChatMode" aria-label="AI chat mode">
@@ -124,15 +129,19 @@
             <option value="openai">OpenAI GPT chat</option>
           </select>
         </label>
-        <label class="coordinator-label"><input type="checkbox" id="useCoordinator" checked> 🔮 Coordinator</label>
-      </div>
-      <div class="quick-actions" id="quickActions">
+          <label class="coordinator-label"><input type="checkbox" id="useCoordinator" checked> 🔮 Coordinator</label>
+        </div>
+      </details>
+      <details class="workbench-fold quick-actions-fold">
+        <summary>Quick actions</summary>
+        <div class="quick-actions" id="quickActions">
         <button data-prompt="Explain this code to a beginner, line by line.">Explain code</button>
         <button data-prompt="Find likely bugs and security problems in this code. Give fixes with file/line references where possible.">Find bugs</button>
         <button data-prompt="Suggest and implement a fix for the current error. Explain the change.">Fix error</button>
         <button data-prompt="Write useful tests for this code and explain how to run them.">Write tests</button>
-        <button data-action="generate-tests">🧪 Generate tests</button>
-      </div>
+          <button data-action="generate-tests">🧪 Generate tests</button>
+        </div>
+      </details>
       <div class="chat" id="chat"><div class="welcome-chat"><div class="welcome-icon">✦</div><strong>Your AI coding team</strong><p>Every agent configured on your saved API keys can independently analyze the same prompt; the coordinator then synthesizes a unified answer.</p></div></div>
       <div class="composer">
         <textarea id="promptInput" placeholder="Ask the team to debug, explain, refactor, or build something…" rows="3"></textarea>
