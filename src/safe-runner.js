@@ -25,26 +25,57 @@ function safeEnvironment() {
   return env;
 }
 
-function terminateProcessTree(child, signal = 'SIGTERM') {
-  if (!child || !child.pid) return;
+function terminateProcessTree(child) {
+  if (!child || !child.pid) return Promise.resolve();
+
   if (process.platform === 'win32') {
-    try { child.kill(signal); } catch {}
-    if (signal === 'SIGKILL') {
+    // child.kill() only guarantees termination of the direct child on Windows.
+    // Start taskkill while the root PID is still alive, and wait for it to finish
+    // so descendants cannot keep using the temporary workspace after cleanup.
+    return new Promise(resolve => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      const fallback = () => {
+        if (settled) return;
+        try { child.kill('SIGKILL'); } catch {}
+        finish();
+      };
       try {
         const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
           shell: false, windowsHide: true, stdio: 'ignore', env: safeEnvironment()
         });
-        killer.unref?.();
-      } catch {}
-    }
-    return;
+        killer.once('error', fallback);
+        killer.once('close', code => {
+          if (code !== 0) fallback();
+          else finish();
+        });
+      } catch {
+        fallback();
+      }
+    });
   }
-  try { process.kill(-child.pid, signal); }
-  catch { try { child.kill(signal); } catch {} }
+
+  // Spawned runners are detached on POSIX, so their PID is also the process
+  // group ID. Signal the group, then force-kill the group after a grace period
+  // even if the original parent exits first; grandchildren may still be alive.
+  try { process.kill(-child.pid, 'SIGTERM'); }
+  catch { try { child.kill('SIGTERM'); } catch {} }
+  return new Promise(resolve => {
+    setTimeout(() => {
+      try { process.kill(-child.pid, 'SIGKILL'); }
+      catch { try { child.kill('SIGKILL'); } catch {} }
+      resolve();
+    }, 1500);
+  });
 }
 
 function createSafeRunner(sendOutputFn) {
   let currentChild = null;
+  let currentTermination = null;
   let running = false;
   let acceptsInput = false;
   let pendingInput = '';
@@ -126,12 +157,14 @@ function createSafeRunner(sendOutputFn) {
       acceptsInput = false;
       pendingInput = '';
       currentChild = null;
+      currentTermination = null;
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }
   }
 
   function setChild(child) {
     currentChild = child;
+    currentTermination = null;
     // Input typed while compilation is finishing is delivered as soon as the
     // interactive program's stdin pipe exists. Compiler stdin is ignored.
     if (pendingInput && acceptsInput && child?.stdin && !child.stdin.destroyed && child.stdin.writable) {
@@ -149,15 +182,20 @@ function createSafeRunner(sendOutputFn) {
 
   function execProcess(command, args, cwd, timeoutMs, output, setChildRef, extraEnv = {}, interactive = false) {
     return new Promise(resolve => {
-      let settled = false, outputBytes = 0, stdout = '', stderr = '', hardKill = null;
+      let settled = false, finishing = false, outputBytes = 0, stdout = '', stderr = '';
       let child;
       const finish = result => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        if (hardKill) clearTimeout(hardKill);
-        if (currentChild === child) currentChild = null;
-        resolve(result);
+        if (settled || finishing) return;
+        finishing = true;
+        // Do not resolve the run or remove its snapshot until process-tree
+        // termination has completed, including Windows taskkill /T /F.
+        Promise.resolve(currentTermination).catch(() => {}).then(() => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if (currentChild === child) currentChild = null;
+          resolve(result);
+        });
       };
       try {
         child = spawn(command, args, {
@@ -170,9 +208,7 @@ function createSafeRunner(sendOutputFn) {
       }
       const timer = setTimeout(() => {
         output('stderr', `\nProcess killed — exceeded ${timeoutMs / 1000}s timeout.`);
-        terminateProcessTree(child, 'SIGTERM');
-        hardKill = setTimeout(() => terminateProcessTree(child, 'SIGKILL'), 1500);
-        hardKill.unref?.();
+        currentTermination = terminateProcessTree(child);
       }, timeoutMs);
       timer.unref?.();
 
@@ -203,19 +239,12 @@ function createSafeRunner(sendOutputFn) {
     try { return currentChild.stdin.write(text); } catch { return false; }
   }
 
-  let killEscalation = null;
   function kill() {
     const child = currentChild;
     if (!child) return false;
-    // Terminate the whole process group on POSIX and escalate to taskkill /T /F
-    // on Windows so compilers and programs they launch are not left running.
-    terminateProcessTree(child, 'SIGTERM');
-    if (killEscalation) clearTimeout(killEscalation);
-    killEscalation = setTimeout(() => {
-      if (currentChild === child) terminateProcessTree(child, 'SIGKILL');
-      killEscalation = null;
-    }, 1500);
-    killEscalation.unref?.();
+    // Termination is tracked by execProcess so its completion waits for the
+    // full tree to exit, even if the root process closes before its descendants.
+    currentTermination = terminateProcessTree(child);
     out('stderr', '\nStop requested. Terminating the process tree…');
     return true;
   }
