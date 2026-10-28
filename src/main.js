@@ -26,6 +26,14 @@ const allowedProviders = new Set(['openai', 'gemini', 'claude', 'openrouter']);
 // OpenAI-compatible endpoint for the IDE's GPT-style agent. Override only if needed.
 const openAiCompatibleBaseUrl = (process.env.NIDAVELLIR_OPENAI_BASE_URL || 'https://omni.inamoriyama.com/v1').replace(/\/+$/, '');
 const approvedRoots = new Set();
+// Explicit grants are limited to this app process. No grant is written to disk.
+// Keys are exact normalized file paths; a grant never expands workspace roots.
+const readGrants = {
+  once: new Set(),
+  conversation: new Set(),
+  outsideWorkspace: new Set(),
+  session: new Set()
+};
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_SAVE_BYTES = 5 * 1024 * 1024;
 
@@ -291,19 +299,43 @@ ipcMain.handle('file:read-path', async (_event, filePath) => {
   if (typeof filePath !== 'string' || filePath.length > 4096) throw new Error('Invalid file path.');
   const resolved = path.resolve(filePath);
   if (!await isWithinApprovedRoot(resolved)) {
-    // Never silently expand the workspace. Ask for this exact read, and grant no
-    // persistent permission from this one-time confirmation.
-    const answer = await dialog.showMessageBox(win, {
-      type: 'warning',
-      buttons: ['No — deny access', 'Yes, allow this time'],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true,
-      title: 'Permission required: outside workspace',
-      message: 'The AI or an app action is requesting a file outside the approved workspace.',
-      detail: 'Requested action: Read file contents\nRequested file: ' + resolved + '\n\nOnly this read will be authorized. No other files, folders, or applications will be granted access.'
-    });
-    if (answer.response !== 1) throw new Error('Access denied: you did not approve reading this file.');
+    // Check exact-path grants before prompting. Grants never authorize sibling files,
+    // directories, commands, or other applications.
+    const hasGrant = readGrants.conversation.has(resolved) ||
+      readGrants.outsideWorkspace.has(resolved) || readGrants.session.has(resolved);
+    if (!hasGrant) {
+      const answer = await dialog.showMessageBox(win, {
+        type: 'warning',
+        buttons: [
+          'Yes, allow this time',
+          'Yes, allow this file in this conversation',
+          'Yes, allow this file when outside the workspace (this session)',
+          'Yes, always allow this exact file (this session)',
+          'No — deny access'
+        ],
+        defaultId: 4,
+        cancelId: 4,
+        noLink: true,
+        title: 'Permission required: outside workspace',
+        message: 'The AI is requesting access outside the approved workspace.',
+        detail: 'Requested action: Read file contents\nRequested file: ' + resolved +
+          '\n\nChoose the narrowest permission. Permissions apply only to this exact file path and never grant access to folders, other files, commands, or applications. Session grants are cleared when Nidavellir closes.'
+      });
+      if (answer.response === 0) {
+        readGrants.once.add(resolved);
+      } else if (answer.response === 1) {
+        readGrants.conversation.add(resolved);
+      } else if (answer.response === 2) {
+        readGrants.outsideWorkspace.add(resolved);
+      } else if (answer.response === 3) {
+        readGrants.session.add(resolved);
+      } else {
+        throw new Error('Access denied: you did not approve reading this file.');
+      }
+    }
+    // A one-time grant is consumed before reading so errors/retries cannot silently
+    // broaden or reuse it.
+    if (readGrants.once.has(resolved)) readGrants.once.delete(resolved);
   }
   const stat = await fs.lstat(resolved);
   if (stat.isSymbolicLink() || !stat.isFile() || stat.size > MAX_FILE_BYTES) throw new Error('File must be a regular, non-symbolic-link file no larger than 2 MB.');
