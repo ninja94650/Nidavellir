@@ -288,9 +288,23 @@ ipcMain.handle('file:open-folder', async () => {
 ipcMain.handle('file:read-path', async (_event, filePath) => {
   if (typeof filePath !== 'string' || filePath.length > 4096) throw new Error('Invalid file path.');
   const resolved = path.resolve(filePath);
-  if (!await isWithinApprovedRoot(resolved)) throw new Error('Access denied: open a file or folder through the Nidavellir file picker first.');
-  const stat = await fs.stat(resolved);
-  if (!stat.isFile() || stat.size > MAX_FILE_BYTES) throw new Error('File must be a regular file no larger than 2 MB.');
+  if (!await isWithinApprovedRoot(resolved)) {
+    // Never silently expand the workspace. Ask for this exact read, and grant no
+    // persistent permission from this one-time confirmation.
+    const answer = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: ['No — deny access', 'Yes, allow this time'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      title: 'Permission required: outside workspace',
+      message: 'The AI or an app action is requesting a file outside the approved workspace.',
+      detail: 'Requested action: Read file contents\nRequested file: ' + resolved + '\n\nOnly this read will be authorized. No other files, folders, or applications will be granted access.'
+    });
+    if (answer.response !== 1) throw new Error('Access denied: you did not approve reading this file.');
+  }
+  const stat = await fs.lstat(resolved);
+  if (stat.isSymbolicLink() || !stat.isFile() || stat.size > MAX_FILE_BYTES) throw new Error('File must be a regular, non-symbolic-link file no larger than 2 MB.');
   const content = await fs.readFile(resolved, 'utf8');
   pluginSystem.notifyPlugins('fileOpen', { filePath: resolved, fileName: path.basename(resolved), content });
   return { filePath: resolved, content };
