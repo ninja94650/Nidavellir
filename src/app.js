@@ -777,7 +777,7 @@ async function askTeam() {
   }
   const chatMode = $('aiChatMode')?.value || 'team';
   if (chatMode === 'openai') {
-    agents.splice(0, agents.length, ...agents.filter(agent => agent.provider === 'openai'));
+    agents.splice(0, agents.length, ...agents.filter(agent => agent.provider === 'openai').slice(0, 1));
   }
   const hostedCount = agents.length - agents.filter(agent => agent.provider === 'ollama').length;
   $('teamAgentSummary').textContent = agents.length + (agents.length === 1 ? ' agent ready' : ' agents ready') +
