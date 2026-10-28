@@ -179,7 +179,9 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('#findBar').isVisible(), false);
   });
   await check('Unified API key list and floating add-key panel', async () => {
-    await click('#settingsBtn');
+    // The Workbench is visible by default. Only toggle it open when it is actually hidden;
+    // blindly clicking the toggle here hides every control exercised by the AI checks below.
+    if (!(await page.locator('#aiPanel').isVisible())) await click('#settingsBtn');
     await click('#checkKeysBtn');
     await called('listKeys');
     await click('#openApiKeyEditor');
