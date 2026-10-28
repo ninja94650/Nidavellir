@@ -4,8 +4,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const source = fs.readFileSync(path.join(__dirname, '../src/main.js'), 'utf8');
-const readHandlerStart = source.indexOf('Permission required: outside workspace');
-const readHandlerEnd = source.indexOf("const content = await fs.readFile(resolved, 'utf8')", readHandlerStart);
+const readHandlerStart = source.indexOf("ipcMain.handle('file:read-path'");
+const permissionDialogStart = source.indexOf('const answer = await dialog.showMessageBox(win', readHandlerStart);
+const readHandlerEnd = source.indexOf("const content = await fs.readFile(resolved, 'utf8')", permissionDialogStart);
 const permissionFlow = source.slice(readHandlerStart, readHandlerEnd);
 
 test('outside-workspace reads show explicit native permission choices', () => {
