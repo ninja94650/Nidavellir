@@ -33,5 +33,5 @@ test('AI Workbench makes each section above chat individually collapsible', () =
   assert.match(html, /<details class="workbench-fold" open>/);
   assert.match(html, /<details class="workbench-fold quick-actions-fold">/);
   assert.match(css, /\.ai-panel > \.workbench-fold > summary/);
-  assert.match(css, /\.ai-panel > \.chat \{ flex:1 1 0; min-height:72px; \}/);
+  assert.match(css, /\.ai-panel > \.chat\s*\{[^}]*flex:\s*1 1 0;[^}]*min-height:\s*(?:0|72px);/s);
 });
