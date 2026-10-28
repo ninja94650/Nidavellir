@@ -26,3 +26,12 @@ test('AI Workbench retains scrollable chat and collapse/minimize states', () => 
   assert.match(css, /\.ai-panel\.minimized/);
   assert.match(css, /\.ai-panel\.collapsed/);
 });
+
+
+test('AI Workbench makes each section above chat individually collapsible', () => {
+  assert.equal((html.match(/class="workbench-fold"/g) || []).length, 3);
+  assert.match(html, /<details class="workbench-fold" open>/);
+  assert.match(html, /<details class="workbench-fold quick-actions-fold">/);
+  assert.match(css, /\.ai-panel > \.workbench-fold > summary/);
+  assert.match(css, /\.ai-panel > \.chat \{ flex:1 1 0; min-height:72px; \}/);
+});
