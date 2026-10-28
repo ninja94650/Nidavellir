@@ -118,6 +118,12 @@
       <p class="ai-subtitle">Ask Nidavellir Copilot to code, debug, explain, or review the open project. Local inference uses your installed Ollama model.</p>
       <div class="provider-row agent-team-toolbar">
         <span id="teamAgentSummary">Local agent ready · 1 agent</span>
+        <label class="coordinator-label" for="aiChatMode">Chat mode
+          <select id="aiChatMode" aria-label="AI chat mode">
+            <option value="team" selected>Multi-agent team</option>
+            <option value="openai">OpenAI GPT chat</option>
+          </select>
+        </label>
         <label class="coordinator-label"><input type="checkbox" id="useOllama" checked> Local Ollama (no API key)</label>
         <label class="local-agent-count" for="localAgentCount">Local agents
           <select id="localAgentCount" aria-label="Number of local Ollama agents">
