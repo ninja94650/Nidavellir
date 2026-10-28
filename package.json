@@ -1,6 +1,6 @@
 {
   "name": "nidavellir-ide",
-  "version": "0.4.15",
+  "version": "0.4.16",
   "description": "Nidavellir — an AI-assisted desktop coding environment",
   "author": "ninja94650",
   "license": "UNLICENSED",
@@ -14,7 +14,7 @@
     "postinstall": "npm run copy:monaco",
     "prestart": "npm run copy:monaco",
     "start": "electron .",
-    "test": "node --test tests/security.test.js tests/smoke.test.js tests/updater.test.js tests/user-plugins.test.js tests/ollama-provider.test.js",
+    "test": "node --test tests/security.test.js tests/smoke.test.js tests/updater.test.js tests/user-plugins.test.js tests/ai-workbench.test.js tests/file-permissions.test.js",
     "test:ui": "node tests/ui-buttons.test.js",
     "dist:dir": "npm run copy:monaco && electron-builder --dir",
     "dist:win": "npm run copy:monaco && electron-builder --win nsis --publish never",

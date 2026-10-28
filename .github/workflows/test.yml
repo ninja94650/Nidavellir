@@ -1,0 +1,33 @@
+name: Test Nidavellir
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - main
+      - ollama-local-provider
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'package.json'
+      - '.github/workflows/test.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Run unit and security tests
+        run: npm test

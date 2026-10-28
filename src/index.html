@@ -108,33 +108,46 @@
 
     <aside class="ai-panel" id="aiPanel" aria-label="AI Workbench">
       <div class="ai-title">
-        <div class="ai-title-label"><span class="sparkle">✧</span> AI WORKBENCH <span class="workbench-model-pill">QWEN 2.5 CODER</span></div>
+        <div class="ai-title-label"><span class="sparkle">✧</span> AI WORKBENCH </div>
         <div class="workbench-controls">
-          <button id="workbenchSettingsBtn" type="button" title="Manage hosted AI API keys" aria-label="AI provider settings">⚙</button>
+          <button id="workbenchSettingsBtn" type="button" title="AI Workbench setup and optional hosted agents" aria-label="AI Workbench setup">⚙</button>
           <button id="workbenchMinimizeBtn" type="button" title="Minimize workbench content" aria-label="Minimize AI Workbench">−</button>
           <button id="workbenchCollapseBtn" type="button" title="Collapse workbench" aria-label="Collapse AI Workbench">›</button>
         </div>
       </div>
-      <p class="ai-subtitle">Ask Nidavellir Copilot to code, debug, explain, or review the open project. Local inference uses your installed Ollama model.</p>
-      <div class="provider-row agent-team-toolbar">
-        <span id="teamAgentSummary">Choose Local Ollama or add a hosted API key.</span>
-        <label class="coordinator-label"><input type="checkbox" id="useOllama" checked> Local Ollama (no API key)</label>
-        <label class="coordinator-label"><input type="checkbox" id="useCoordinator" checked> 🔮 Coordinator</label>
-      </div>
-      <div class="ollama-status-note"><span class="ollama-status-dot"></span><span>Installed model: <strong>qwen2.5-coder:7b</strong> · No API key required. Start Ollama on this PC before sending a prompt.</span></div>
-      <div class="quick-actions" id="quickActions">
+      <details class="workbench-fold" open>
+        <summary>About this workbench</summary>
+        <p class="ai-subtitle">Ask your configured AI agents to code, debug, explain, or review the open project.</p>
+      </details>
+      <details class="workbench-fold" open>
+        <summary>Agents and coordination</summary>
+        <div class="provider-row agent-team-toolbar">
+        <span id="teamAgentSummary">Add an API key to start</span>
+        <label class="coordinator-label" for="aiChatMode">Chat mode
+          <select id="aiChatMode" aria-label="AI chat mode">
+            <option value="team" selected>Multi-agent team</option>
+            <option value="openai">OpenAI GPT chat</option>
+          </select>
+        </label>
+          <label class="coordinator-label"><input type="checkbox" id="useCoordinator" checked> 🔮 Coordinator</label>
+        </div>
+      </details>
+      <details class="workbench-fold quick-actions-fold">
+        <summary>Quick actions</summary>
+        <div class="quick-actions" id="quickActions">
         <button data-prompt="Explain this code to a beginner, line by line.">Explain code</button>
         <button data-prompt="Find likely bugs and security problems in this code. Give fixes with file/line references where possible.">Find bugs</button>
         <button data-prompt="Suggest and implement a fix for the current error. Explain the change.">Fix error</button>
         <button data-prompt="Write useful tests for this code and explain how to run them.">Write tests</button>
-        <button data-action="generate-tests">🧪 Generate tests</button>
-      </div>
+          <button data-action="generate-tests">🧪 Generate tests</button>
+        </div>
+      </details>
       <div class="chat" id="chat"><div class="welcome-chat"><div class="welcome-icon">✦</div><strong>Your AI coding team</strong><p>Every agent configured on your saved API keys can independently analyze the same prompt; the coordinator then synthesizes a unified answer.</p></div></div>
       <div class="composer">
         <textarea id="promptInput" placeholder="Ask the team to debug, explain, refactor, or build something…" rows="3"></textarea>
         <div class="composer-bottom"><span id="selectionHint">Current file will be included</span><button id="askBtn" class="primary">Ask team ↗</button></div>
       </div>
-      <div class="ai-foot">Local Ollama runs on this PC. Review AI-generated code before running.</div>
+      <div class="ai-foot">Review AI-generated code before running.</div>
     </aside>
   </div>
 
@@ -194,13 +207,13 @@
 <!-- ── Settings modal ── -->
 <div class="modal-backdrop" id="settingsModal" hidden>
   <section class="modal">
-    <div class="modal-title"><div><h2>AI provider settings</h2><p>Keys are encrypted with your operating system's secure storage.</p></div><button id="closeSettings" class="close">×</button></div>
-    <p class="api-key-intro">Manage all your API keys in one list. Give each key a name, choose its provider, and set the key you want to use.</p>
+    <div class="modal-title"><div><h2>AI Workbench · Agent setup</h2><p>Configure your local coding agents and optional hosted teammates.</p></div><button id="closeSettings" class="close" type="button" aria-label="Close AI Workbench settings">×</button></div>
+    <p class="api-key-intro">Add encrypted API keys to configure AI agents that can collaborate on the same project.</p>
     <div class="api-key-toolbar"><span id="apiKeyCount">0 saved keys</span><button type="button" id="openApiKeyEditor" class="primary">＋ Add API key</button></div>
     <div id="savedApiKeyList" class="saved-api-key-list"></div>
     <div class="modal-backdrop api-key-editor-backdrop" id="apiKeyEditorModal" hidden>
       <section class="modal api-key-editor" role="dialog" aria-modal="true" aria-labelledby="apiKeyEditorTitle">
-        <div class="modal-title"><div><h2 id="apiKeyEditorTitle">Add API key</h2><p>Name this key and choose how many agents should use it. Nidavellir detects the provider from the key format.</p></div><button id="closeApiKeyEditor" class="close" type="button" aria-label="Close">×</button></div>
+        <div class="modal-title"><div><h2 id="apiKeyEditorTitle">Add API key</h2><p>Name this key and choose how many parallel agents should use it. Nidavellir detects the provider from the key format.</p></div><button id="closeApiKeyEditor" class="close" type="button" aria-label="Close">×</button></div>
         <label class="api-key-field" for="apiKeyName">Name<input id="apiKeyName" maxlength="80" autocomplete="off" placeholder="e.g. My personal key" /></label>
         <label class="api-key-field" for="apiKeyAgentCount">Coworking agents<input id="apiKeyAgentCount" type="number" min="1" max="8" step="1" value="1" /><small>Each agent uses this key to work on the same project. Choose 1–8 agents.</small></label>
         <label class="api-key-field" for="apiKeyValue">API key<input id="apiKeyValue" type="password" autocomplete="off" placeholder="Paste API key" /></label>

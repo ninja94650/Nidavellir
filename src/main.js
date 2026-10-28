@@ -12,18 +12,23 @@ const pluginSystem = require('./plugins');
 const { autoUpdater } = require('electron-updater');
 const { createUpdater } = require('./updater');
 const { prepareUserPluginsDir } = require('./user-plugins');
-const { createOllamaProvider } = require('./ollama-provider');
 
 /* ─── globals ─── */
 let win;
 let updateService = null;
 const providerKeyCache = {};
-const ollamaProvider = createOllamaProvider({
-  baseUrl: 'http://127.0.0.1:11434',
-  model: process.env.NIDAVELLIR_OLLAMA_MODEL || 'qwen2.5-coder:7b'
-});
 const allowedProviders = new Set(['openai', 'gemini', 'claude', 'openrouter']);
+// OpenAI-compatible endpoint for the IDE's GPT-style agent. Override only if needed.
+const openAiCompatibleBaseUrl = (process.env.NIDAVELLIR_OPENAI_BASE_URL || 'https://omni.inamoriyama.com/v1').replace(/\/+$/, '');
 const approvedRoots = new Set();
+// Explicit grants are limited to this app process. No grant is written to disk.
+// Keys are exact normalized file paths; a grant never expands workspace roots.
+const readGrants = {
+  once: new Set(),
+  conversation: new Set(),
+  outsideWorkspace: new Set(),
+  session: new Set()
+};
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_SAVE_BYTES = 5 * 1024 * 1024;
 
@@ -288,9 +293,47 @@ ipcMain.handle('file:open-folder', async () => {
 ipcMain.handle('file:read-path', async (_event, filePath) => {
   if (typeof filePath !== 'string' || filePath.length > 4096) throw new Error('Invalid file path.');
   const resolved = path.resolve(filePath);
-  if (!await isWithinApprovedRoot(resolved)) throw new Error('Access denied: open a file or folder through the Nidavellir file picker first.');
-  const stat = await fs.stat(resolved);
-  if (!stat.isFile() || stat.size > MAX_FILE_BYTES) throw new Error('File must be a regular file no larger than 2 MB.');
+  if (!await isWithinApprovedRoot(resolved)) {
+    // Check exact-path grants before prompting. Grants never authorize sibling files,
+    // directories, commands, or other applications.
+    const hasGrant = readGrants.conversation.has(resolved) ||
+      readGrants.outsideWorkspace.has(resolved) || readGrants.session.has(resolved);
+    if (!hasGrant) {
+      const answer = await dialog.showMessageBox(win, {
+        type: 'warning',
+        buttons: [
+          'Yes, allow this time',
+          'Yes, allow this exact file until Nidavellir closes',
+          'Yes, allow this exact file for this session (outside workspace only)',
+          'Yes, always allow this exact file until Nidavellir closes',
+          'No — deny access'
+        ],
+        defaultId: 4,
+        cancelId: 4,
+        noLink: true,
+        title: 'Permission required: outside workspace',
+        message: 'The AI is requesting access outside the approved workspace.',
+        detail: 'Requested action: Read file contents\nRequested file: ' + resolved +
+          '\n\nChoose the narrowest permission. Permissions apply only to this exact file path and never grant access to folders, other files, commands, or applications. Session grants are cleared when Nidavellir closes.'
+      });
+      if (answer.response === 0) {
+        readGrants.once.add(resolved);
+      } else if (answer.response === 1) {
+        readGrants.conversation.add(resolved);
+      } else if (answer.response === 2) {
+        readGrants.outsideWorkspace.add(resolved);
+      } else if (answer.response === 3) {
+        readGrants.session.add(resolved);
+      } else {
+        throw new Error('Access denied: you did not approve reading this file.');
+      }
+    }
+    // A one-time grant is consumed before reading so errors/retries cannot silently
+    // broaden or reuse it.
+    if (readGrants.once.has(resolved)) readGrants.once.delete(resolved);
+  }
+  const stat = await fs.lstat(resolved);
+  if (stat.isSymbolicLink() || !stat.isFile() || stat.size > MAX_FILE_BYTES) throw new Error('File must be a regular, non-symbolic-link file no larger than 2 MB.');
   const content = await fs.readFile(resolved, 'utf8');
   pluginSystem.notifyPlugins('fileOpen', { filePath: resolved, fileName: path.basename(resolved), content });
   return { filePath: resolved, content };
@@ -553,10 +596,6 @@ ipcMain.handle('ai:ask-key', async (_event, { provider, keyId, prompt, system, m
   if (!item) throw new Error('The API key for this agent no longer exists.');
   return callProvider(provider, item.key, prompt, system, model);
 });
-ipcMain.handle('ai:ask-local', async (_event, { prompt, system, model } = {}) => {
-  return ollamaProvider.ask({ prompt, system, model });
-});
-
 ipcMain.handle('ai:key-status', async () => {
   const result = {};
   for (const provider of allowedProviders) result[provider] = (await loadProviderKeys(provider)).length > 0;
@@ -573,7 +612,7 @@ async function callProvider(provider, key, userPrompt, systemPrompt, model) {
   let url, headers, body;
 
   if (provider === 'openai' || provider === 'openrouter') {
-    url = provider === 'openrouter' ? 'https://openrouter.ai/api/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions';
+    url = provider === 'openrouter' ? 'https://openrouter.ai/api/v1/chat/completions' : `${openAiCompatibleBaseUrl}/chat/completions`;
     headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
     if (provider === 'openrouter') { headers['HTTP-Referer'] = 'https://github.com/ninja94650/Nidavellir'; headers['X-Title'] = 'Nidavellir IDE'; }
     body = { model: model || modelDefaults[provider], messages: [{ role: 'system', content: sys }, { role: 'user', content: prompt }] };
@@ -622,7 +661,7 @@ ipcMain.handle('ai:synthesize', async (_event, { responses }) => {
       const key = await getKey(provider);
       if (key) return callProvider(provider, key, prompt, system);
     }
-    return ollamaProvider.ask({ prompt, system });
+    throw new Error('Add a supported AI provider API key in AI Workbench settings to synthesize responses.');
   };
   return synthesizeResponses({ responses, askAIFn });
 });
@@ -655,7 +694,7 @@ ipcMain.handle('ai:generate-tests', async (_event, { code, language, fileName })
     '```' + language + '\n' + String(code || '').slice(0, 30000) + '\n```',
     `Provide the complete test file content ready to save and run. Use the standard testing framework for ${language}, including edge cases and error cases.`
   ].join('\n\n');
-  return ollamaProvider.ask({ prompt, system: 'You are an expert test engineer. Output only complete runnable test file content.' });
+  throw new Error('Add a supported AI provider API key in AI Workbench settings to generate tests.');
 });
 
 /* ═══════════════════════════════════════════════════════════
