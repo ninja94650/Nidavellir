@@ -23,6 +23,8 @@ const ollamaProvider = createOllamaProvider({
   model: process.env.NIDAVELLIR_OLLAMA_MODEL || 'qwen2.5-coder:7b'
 });
 const allowedProviders = new Set(['openai', 'gemini', 'claude', 'openrouter']);
+// OpenAI-compatible endpoint for the IDE's GPT-style agent. Override only if needed.
+const openAiCompatibleBaseUrl = (process.env.NIDAVELLIR_OPENAI_BASE_URL || 'https://omni.inamoriyama.com/v1').replace(/\\/+$/, '');
 const approvedRoots = new Set();
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_SAVE_BYTES = 5 * 1024 * 1024;
@@ -587,7 +589,7 @@ async function callProvider(provider, key, userPrompt, systemPrompt, model) {
   let url, headers, body;
 
   if (provider === 'openai' || provider === 'openrouter') {
-    url = provider === 'openrouter' ? 'https://openrouter.ai/api/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions';
+    url = provider === 'openrouter' ? 'https://openrouter.ai/api/v1/chat/completions' : `${openAiCompatibleBaseUrl}/chat/completions`;
     headers = { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
     if (provider === 'openrouter') { headers['HTTP-Referer'] = 'https://github.com/ninja94650/Nidavellir'; headers['X-Title'] = 'Nidavellir IDE'; }
     body = { model: model || modelDefaults[provider], messages: [{ role: 'system', content: sys }, { role: 'user', content: prompt }] };
