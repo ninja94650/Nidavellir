@@ -526,6 +526,10 @@ button.primary:hover {
 .composer textarea:focus {
   border-color: #8273e7;
 }
+.composer-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.composer-actions button { padding: 7px 9px; font-size: 10px; }
+#buildProjectBtn { box-shadow: 0 0 14px #6e5be833; }
+#buildProjectBtn:disabled { opacity: .65; cursor: wait; }
 .composer-bottom {
   display: flex;
   align-items: center;
