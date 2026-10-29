@@ -836,7 +836,7 @@ function parseProjectManifest(text) {
   const files = manifest.files.map(file => {
     if (!file || typeof file.path !== 'string' || typeof file.content !== 'string') throw new Error('Each generated file must have path and content strings.');
     const path = file.path.replace(/\\/g, '/');
-    if (!path || path.startsWith('/') || /^[A-Za-z]:/.test(path) || path.split('/').some(part => !part || part === '.' || part === '..' || part.startsWith('.git'))) throw new Error('The AI proposed an unsafe path: ' + path);
+    if (!path || path.startsWith('/') || /^[A-Za-z]:/.test(path) || path.split('/').some(part => !part || part === '.' || part === '..' || part === '.git')) throw new Error('The AI proposed an unsafe path: ' + path);
     if (seen.has(path.toLowerCase())) throw new Error('The AI returned a duplicate path: ' + path);
     seen.add(path.toLowerCase());
     return { path, content: file.content };
