@@ -10,6 +10,9 @@ const MAX_HISTORY = 10;
 const MAX_OUTPUT_BYTES = 512 * 1024;
 const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
 const DEFAULT_TIMEOUT = 30_000;
+// C/C++/Rust/Java compiler startup can be substantially slower on hosted Windows runners.
+// Compilation has its own floor so the normal execution timeout remains responsive.
+const MIN_COMPILE_TIMEOUT = 90_000;
 const LANGUAGES = Object.freeze({
   javascript: '.js', python: '.py', cpp: '.cpp', c: '.c', java: '.java',
   go: '.go', rust: '.rs', ruby: '.rb', php: '.php', bash: '.sh', powershell: '.ps1'
@@ -85,7 +88,8 @@ function createSafeRunner(sendOutputFn) {
           : language === 'rust'
             ? [source, '-o', binary]
             : [source, ...includeArgs, '-o', binary];
-        const compile = await execProcess(compiler, compileArgs, tempDir, timeoutMs, out, setChild);
+        const compileTimeoutMs = Math.min(Math.max(timeoutMs, MIN_COMPILE_TIMEOUT), 120_000);
+        const compile = await execProcess(compiler, compileArgs, tempDir, compileTimeoutMs, out, setChild);
         if (compile.code !== 0) {
           out('stderr', compile.stderr || compile.stdout || 'Compilation failed.');
           recordHistory(fileName, language, compile.code, Date.now() - startTime);
