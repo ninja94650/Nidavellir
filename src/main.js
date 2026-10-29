@@ -437,6 +437,91 @@ ipcMain.handle('file:copy-text', async (_event, value) => {
 });
 
 /* ═══════════════════════════════════════════════════════════
+   AI PROJECT BUILDER — workspace inspection and approved tests
+   ═══════════════════════════════════════════════════════════ */
+ipcMain.handle('project:inspect', async (_event, payload) => {
+  if (!payload || typeof payload.root !== 'string') throw new Error('Choose a workspace first.');
+  const { resolved: root } = await resolveApprovedDirectory(payload.root);
+  const ignoredDirs = new Set(['.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.venv', 'venv', 'vendor', 'target', 'out']);
+  const secretName = /(^|\\.)(env|pem|key|p12|pfx|keystore|credentials?)(\\.|$)/i;
+  const files = [];
+  let totalBytes = 0;
+  const MAX_FILES = 60, MAX_TOTAL = 300 * 1024, MAX_FILE = 32 * 1024;
+  async function walk(dir, depth) {
+    if (depth > 8 || files.length >= MAX_FILES || totalBytes >= MAX_TOTAL) return;
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (files.length >= MAX_FILES || totalBytes >= MAX_TOTAL) break;
+      if (entry.name === '.git' || entry.name.startsWith('.nidavellir-')) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isSymbolicLink()) continue;
+      if (entry.isDirectory()) {
+        if (!ignoredDirs.has(entry.name) && !entry.name.startsWith('.')) await walk(full, depth + 1);
+        continue;
+      }
+      if (!entry.isFile() || secretName.test(entry.name) || /(^|\\/)(\.env($|\.)|id_rsa|id_ed25519)/i.test(full)) continue;
+      const ext = path.extname(entry.name).toLowerCase();
+      const allowed = new Set(['.js','.jsx','.ts','.tsx','.mjs','.cjs','.json','.html','.css','.scss','.md','.txt','.py','.cpp','.c','.h','.hpp','.java','.go','.rs','.rb','.php','.yml','.yaml','.toml','.xml','.sql','.sh','.ps1','.vue','.svelte']);
+      if (!allowed.has(ext)) continue;
+      try {
+        const stat = await fs.lstat(full);
+        if (stat.size > MAX_FILE || stat.size === 0) continue;
+        const content = await fs.readFile(full, 'utf8');
+        if (content.includes('\\0')) continue;
+        const relative = path.relative(root, full).split(path.sep).join('/');
+        files.push({ path: relative, content });
+        totalBytes += Buffer.byteLength(content, 'utf8');
+      } catch {}
+    }
+  }
+  await walk(root, 0);
+  return { root, files, truncated: files.length >= MAX_FILES || totalBytes >= MAX_TOTAL, totalBytes };
+});
+
+ipcMain.handle('project:run-tests', async (_event, payload) => {
+  if (!payload || typeof payload.root !== 'string') throw new Error('Choose a workspace first.');
+  const { resolved: root } = await resolveApprovedDirectory(payload.root);
+  const packagePath = path.join(root, 'package.json');
+  let packageJson;
+  try { packageJson = JSON.parse(await fs.readFile(packagePath, 'utf8')); }
+  catch { throw new Error('No valid package.json was found. Automatic test execution currently requires a package.json with a test script.'); }
+  if (!packageJson.scripts || typeof packageJson.scripts.test !== 'string' || !packageJson.scripts.test.trim()) {
+    throw new Error('This project does not define scripts.test in package.json.');
+  }
+  const commandLabel = process.platform === 'win32' ? 'npm.cmd test' : 'npm test';
+  const approval = await dialog.showMessageBox(win, {
+    type: 'warning', title: 'Run project tests?',
+    message: 'Allow this project to execute its configured test script?',
+    detail: 'Workspace: ' + root + '\\nCommand: ' + commandLabel +
+      '\\npackage.json scripts.test: ' + packageJson.scripts.test.slice(0, 500) +
+      '\\n\\nProject scripts can execute arbitrary code with your account permissions. Continue only if you trust this workspace.',
+    buttons: ['Run tests', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true
+  });
+  if (approval.response !== 0) return { canceled: true, code: null, stdout: '', stderr: '' };
+  return await new Promise(resolve => {
+    const child = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['test'], {
+      cwd: root, shell: process.platform === 'win32', windowsHide: true,
+      env: process.env, stdio: ['ignore', 'pipe', 'pipe']
+    });
+    let stdout = '', stderr = '', settled = false, outputBytes = 0;
+    const finish = result => { if (settled) return; settled = true; clearTimeout(timer); resolve(result); };
+    const collect = (type, chunk) => {
+      outputBytes += chunk.length;
+      const text = chunk.toString();
+      if (outputBytes <= 256 * 1024) {
+        if (type === 'stdout') stdout += text; else stderr += text;
+      }
+    };
+    child.stdout.on('data', chunk => collect('stdout', chunk));
+    child.stderr.on('data', chunk => collect('stderr', chunk));
+    child.once('error', error => finish({ canceled: false, code: 127, stdout, stderr: stderr + error.message, truncated: outputBytes > 256 * 1024 }));
+    child.once('close', code => finish({ canceled: false, code: code ?? 1, stdout, stderr, truncated: outputBytes > 256 * 1024 }));
+    const timer = setTimeout(() => { child.kill(); finish({ canceled: false, code: 124, stdout, stderr: stderr + '\\nTest command timed out after 120 seconds.', timedOut: true, truncated: outputBytes > 256 * 1024 }); }, 120_000);
+    timer.unref?.();
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════
    AI PROJECT BUILDER — bounded, user-approved workspace writes
    ═══════════════════════════════════════════════════════════ */
 ipcMain.handle('project:apply-changes', async (_event, payload) => {
