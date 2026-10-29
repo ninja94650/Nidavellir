@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'src/index.html'), 'utf8');
@@ -28,6 +29,12 @@ test('AI project builder uses a separate explicit apply action and workspace-sco
   assert.ok(main.includes('existing file(s) will be backed up before replacement'));
   assert.match(main, /No shell commands will be run automatically/);
   assert.match(main, /path\.relative\(root, target\)/);
+});
+
+test('agentic project builder JavaScript files parse successfully', () => {
+  for (const file of ['src/main.js', 'src/preload.js', 'src/app.js']) {
+    assert.doesNotThrow(() => execFileSync(process.execPath, ['--check', path.join(root, file)], { stdio: 'pipe' }), file + ' syntax must be valid');
+  }
 });
 
 test('project builder inspects workspace, renders original/proposed diffs, and gates tests', () => {
