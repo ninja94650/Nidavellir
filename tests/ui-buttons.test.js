@@ -227,7 +227,7 @@ const assert = require('node:assert/strict');
     await called('togglePlugin');
     await click('#closePlugins'); assert.equal(await page.locator('#pluginModal').isVisible(), false);
   });
-  await check('Ask configured coworking agents', async () => { await ensureWorkbenchReady(); await page.locator('#promptInput').fill('Explain test'); await click('#askBtn'); await called('askKey'); await page.waitForFunction(() => document.querySelectorAll('.answer-card').length >= 3); });
+  await check('Ask configured coworking agents', async () => { await ensureWorkbenchReady(); await page.evaluate(() => window.forge.setKey({ provider: 'openai', label: 'UI test agent', key: 'sk-test-ui-only', agentCount: 2 })); await page.locator('#promptInput').fill('Explain test'); await click('#askBtn'); await called('askKey'); await page.waitForFunction(() => document.querySelectorAll('.answer-card').length >= 3); });
   await check('AI quick prompts', async () => { await ensureWorkbenchReady(); for (const label of ['Explain code', 'Find bugs', 'Fix error', 'Write tests']) { await page.locator('.quick-actions button').filter({ hasText: label }).first().click(); } await called('askKey'); });
   await check('Generate tests', async () => { await ensureWorkbenchReady(); await click('.quick-actions button[data-action="generate-tests"]'); await called('generateTests'); });
   await check('Diff review apply/copy/dismiss', async () => {
