@@ -8,6 +8,7 @@ on:
       - feat/vscode-parity-ai-collaboration
       - v0.4-installable
       - fix/startup-and-update-resilience
+      - fix/safe-runner-process-tree-main
       - feature/agentic-project-builder
     paths:
       - 'src/**'
