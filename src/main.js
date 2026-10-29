@@ -443,7 +443,7 @@ ipcMain.handle('project:inspect', async (_event, payload) => {
   if (!payload || typeof payload.root !== 'string') throw new Error('Choose a workspace first.');
   const { resolved: root } = await resolveApprovedDirectory(payload.root);
   const ignoredDirs = new Set(['.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.venv', 'venv', 'vendor', 'target', 'out']);
-  const secretName = /(^|\\.)(env|pem|key|p12|pfx|keystore|credentials?)(\\.|$)/i;
+  const secretName = /(?:^|[._-])(?:env|pem|key|p12|pfx|keystore|credentials?)(?:[._-]|$)/i;
   const files = [];
   let totalBytes = 0;
   const MAX_FILES = 60, MAX_TOTAL = 300 * 1024, MAX_FILE = 32 * 1024;
@@ -492,16 +492,23 @@ ipcMain.handle('project:run-tests', async (_event, payload) => {
   const approval = await dialog.showMessageBox(win, {
     type: 'warning', title: 'Run project tests?',
     message: 'Allow this project to execute its configured test script?',
-    detail: 'Workspace: ' + root + '\\nCommand: ' + commandLabel +
-      '\\npackage.json scripts.test: ' + packageJson.scripts.test.slice(0, 500) +
-      '\\n\\nProject scripts can execute arbitrary code with your account permissions. Continue only if you trust this workspace.',
+    detail: 'Workspace: ' + root + '\nCommand: ' + commandLabel +
+      '\npackage.json scripts.test: ' + packageJson.scripts.test.slice(0, 500) +
+      '\n\nProject scripts can execute arbitrary code with your account permissions. Continue only if you trust this workspace.',
     buttons: ['Run tests', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true
   });
   if (approval.response !== 0) return { canceled: true, code: null, stdout: '', stderr: '' };
   return await new Promise(resolve => {
     const child = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['test'], {
       cwd: root, shell: process.platform === 'win32', windowsHide: true,
-      env: process.env, stdio: ['ignore', 'pipe', 'pipe']
+      env: (() => {
+        const safeEnv = {};
+        const allow = process.platform === 'win32'
+          ? ['PATH', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'COMSPEC', 'PATHEXT']
+          : ['PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE'];
+        for (const key of allow) if (process.env[key]) safeEnv[key] = process.env[key];
+        return safeEnv;
+      })(), stdio: ['ignore', 'pipe', 'pipe']
     });
     let stdout = '', stderr = '', settled = false, outputBytes = 0;
     const finish = result => { if (settled) return; settled = true; clearTimeout(timer); resolve(result); };
@@ -516,7 +523,7 @@ ipcMain.handle('project:run-tests', async (_event, payload) => {
     child.stderr.on('data', chunk => collect('stderr', chunk));
     child.once('error', error => finish({ canceled: false, code: 127, stdout, stderr: stderr + error.message, truncated: outputBytes > 256 * 1024 }));
     child.once('close', code => finish({ canceled: false, code: code ?? 1, stdout, stderr, truncated: outputBytes > 256 * 1024 }));
-    const timer = setTimeout(() => { child.kill(); finish({ canceled: false, code: 124, stdout, stderr: stderr + '\\nTest command timed out after 120 seconds.', timedOut: true, truncated: outputBytes > 256 * 1024 }); }, 120_000);
+    const timer = setTimeout(() => { child.kill(); finish({ canceled: false, code: 124, stdout, stderr: stderr + '\nTest command timed out after 120 seconds.', timedOut: true, truncated: outputBytes > 256 * 1024 }); }, 120_000);
     timer.unref?.();
   });
 });
