@@ -8,6 +8,7 @@ const html = fs.readFileSync(path.join(root, 'src/index.html'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'src/app.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'src/styles.css'), 'utf8');
 const main = fs.readFileSync(path.join(root, 'src/main.js'), 'utf8');
+const preload = fs.readFileSync(path.join(root, 'src/preload.js'), 'utf8');
 
 test('AI Workbench uses configured API-key agents', () => {
   assert.doesNotMatch(html, /qwen2\.5|localAgentCount/i);
@@ -27,6 +28,22 @@ test('AI project builder uses a separate explicit apply action and workspace-sco
   assert.ok(main.includes('existing file(s) will be backed up before replacement'));
   assert.match(main, /No shell commands will be run automatically/);
   assert.match(main, /path\.relative\(root, target\)/);
+});
+
+test('project builder inspects workspace, renders original/proposed diffs, and gates tests', () => {
+  assert.match(app, /window\\.forge\\.inspectProject\\(\\{ root: workspaceRoot \\}\\)/);
+  assert.match(app, /function renderProjectManifestReview/);
+  assert.match(app, /className = 'project-diff-panes'/);
+  assert.match(app, /Original/);
+  assert.match(app, /Proposed/);
+  assert.match(app, /function offerProjectRepair/);
+  assert.match(app, /Repair limit reached/);
+  assert.match(app, /window\\.forge\\.runProjectTests\\(\\{ root: workspaceRoot \\}\\)/);
+  assert.match(main, /project:inspect/);
+  assert.match(main, /project:run-tests/);
+  assert.match(main, /Allow this project to execute its configured test script/);
+  assert.match(preload, /inspectProject: payload => ipcRenderer\\.invoke\\('project:inspect', payload\\)/);
+  assert.match(preload, /runProjectTests: payload => ipcRenderer\\.invoke\\('project:run-tests', payload\\)/);
 });
 
 test('coordinator synthesis remains available for multiple successful agent responses', () => {
