@@ -23,6 +23,10 @@ test('AI project builder uses a separate explicit apply action and workspace-sco
   assert.match(app, /Return ONLY valid JSON/);
   assert.match(app, /window\.forge\.applyProjectChanges\(\{ root: workspaceRoot, changes: manifest\.files \}\)/);
   assert.match(main, /project:apply-changes/);
+  assert.match(main, /Review AI project changes/);
+  assert.match(main, /Existing file\(s\) will be backed up before replacement/);
+  assert.match(main, /No shell commands will be run automatically/);
+  assert.match(main, /path\.relative\(root, target\)/);
 });
 
 test('coordinator synthesis remains available for multiple successful agent responses', () => {
