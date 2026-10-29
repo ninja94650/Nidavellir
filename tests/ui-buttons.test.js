@@ -79,6 +79,14 @@ const assert = require('node:assert/strict');
   await page.waitForSelector('#statusText');
   await page.waitForTimeout(1800);
   const click = async s => { const el = page.locator(s); await el.waitFor({ state: 'visible', timeout: 5000 }); await el.click({ timeout: 5000 }); };
+  const ensureWorkbenchReady = async () => {
+    const panel = page.locator('#aiPanel');
+    if (!(await panel.isVisible())) await click('#settingsBtn');
+    let classes = (await panel.getAttribute('class')) || '';
+    if (classes.includes('minimized')) await click('#workbenchMinimizeBtn');
+    classes = (await panel.getAttribute('class')) || '';
+    if (classes.includes('collapsed')) await click('#workbenchCollapseBtn');
+  };
   const called = async name => assert.ok((await page.evaluate(() => window.__uiCalls)).some(c => c.name === name), 'expected call ' + name);
   const results = [];
   const check = async (name, fn) => { try { await fn(); results.push({ control: name, result: 'PASS' }); } catch (e) { results.push({ control: name, result: 'FAIL', error: String(e.message || e) }); } };
@@ -179,9 +187,9 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('#findBar').isVisible(), false);
   });
   await check('Unified API key list and floating add-key panel', async () => {
-    // The Workbench is visible by default. Only toggle it open when it is actually hidden;
-    // blindly clicking the toggle here hides every control exercised by the AI checks below.
-    if (!(await page.locator('#aiPanel').isVisible())) await click('#settingsBtn');
+    await ensureWorkbenchReady();
+    // The key list belongs to Settings; open its modal before interacting with its controls.
+    await click('#workbenchSettingsBtn');
     await click('#checkKeysBtn');
     await called('listKeys');
     await click('#openApiKeyEditor');
@@ -217,10 +225,11 @@ const assert = require('node:assert/strict');
     await called('togglePlugin');
     await click('#closePlugins'); assert.equal(await page.locator('#pluginModal').isVisible(), false);
   });
-  await check('Ask configured coworking agents', async () => { await page.locator('#promptInput').fill('Explain test'); await click('#askBtn'); await called('askKey'); await page.waitForFunction(() => document.querySelectorAll('.answer-card').length >= 3); });
-  await check('AI quick prompts', async () => { for (const label of ['Explain code', 'Find bugs', 'Fix error', 'Write tests']) { await page.locator('.quick-actions button').filter({ hasText: label }).first().click(); } await called('askKey'); });
-  await check('Generate tests', async () => { await click('.quick-actions button[data-action="generate-tests"]'); await called('generateTests'); });
+  await check('Ask configured coworking agents', async () => { await ensureWorkbenchReady(); await page.locator('#promptInput').fill('Explain test'); await click('#askBtn'); await called('askKey'); await page.waitForFunction(() => document.querySelectorAll('.answer-card').length >= 3); });
+  await check('AI quick prompts', async () => { await ensureWorkbenchReady(); for (const label of ['Explain code', 'Find bugs', 'Fix error', 'Write tests']) { await page.locator('.quick-actions button').filter({ hasText: label }).first().click(); } await called('askKey'); });
+  await check('Generate tests', async () => { await ensureWorkbenchReady(); await click('.quick-actions button[data-action="generate-tests"]'); await called('generateTests'); });
   await check('Diff review apply/copy/dismiss', async () => {
+    await ensureWorkbenchReady();
     await page.locator('#promptInput').fill('propose a code fix'); await click('#askBtn');
     const review = page.getByRole('button', { name: /Review & Apply/ }).first(); await review.waitFor({ timeout: 5000 }); await review.click();
     await page.locator('#diffOverlay').waitFor({ state: 'visible', timeout: 5000 });
@@ -229,7 +238,7 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('#diffOverlay').isVisible(), false);
   });
   await check('Language status picker', async () => { await click('#languageStatus'); assert.ok(await page.locator('#languageStatus').textContent()); });
-  await check('Plugin quick action', async () => { const b = page.locator('.plugin-qa'); if (await b.count()) { await b.click(); await called('askKey'); } });
+  await check('Plugin quick action', async () => { await ensureWorkbenchReady(); const b = page.locator('.plugin-qa'); if (await b.count()) { await b.click(); await called('askKey'); } });
   const inventory = await page.locator('button:visible').evaluateAll(bs => bs.map(b => ({ label: (b.innerText || b.getAttribute('aria-label') || b.title || '').trim(), id: b.id, type: b.type })));
   const summary = { totalChecks: results.length, passed: results.filter(x => x.result === 'PASS').length, failed: results.filter(x => x.result === 'FAIL').length, results, visibleButtonsAtEnd: inventory, pageErrors: errors };
   console.log(JSON.stringify(summary, null, 2));
