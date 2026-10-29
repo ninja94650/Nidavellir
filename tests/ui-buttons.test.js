@@ -27,6 +27,9 @@ const assert = require('node:assert/strict');
     window.__uiCalls = []; window.__uiState = state;
     const record = (name, payload) => window.__uiCalls.push({ name, payload });
     window.prompt = (_message, value) => value || 'javascript';
+    // Hosted-agent requests explicitly ask permission before sharing open-tab code.
+    // In this isolated UI harness, accept that one-time confirmation deterministically.
+    window.confirm = () => true;
     window.forge = {
       openFile: async () => { record('openFile'); return { filePath: '/tmp/example.js', content: 'alpha alpha\n' }; },
       openFolder: async () => { record('openFolder'); return { folder: '/tmp/project', tree: [{ name: 'main.js', path: '/tmp/project/main.js', directory: false }, { name: 'other.cpp', path: '/tmp/project/other.cpp', directory: false }, { name: 'destination', path: '/tmp/project/destination', directory: true, children: [] }] }; },
