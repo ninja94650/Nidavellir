@@ -1,4 +1,8 @@
-# 0.4.16
+# 0.4.17
+
+- Releases the agentic Prompt Builder / Workbench update merged into main after successful unit tests, Linux package and UI checks, and Windows installer smoke test.
+- Adds workspace-aware AI project building with permission-controlled context sharing, manifest-based proposed file changes, side-by-side diff review, and explicit approval before applying edits or running tests.
+- Adds bounded test-and-repair workflows and improves AI Workbench quick-action and coworking-agent UI regression coverage.
 
 - Removes the local Ollama provider while preserving configured API-key agents and multi-agent collaboration.
 - Improves AI Workbench collapsible sections, chat sizing, scrolling, and regression coverage.
