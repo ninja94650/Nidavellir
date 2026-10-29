@@ -27,6 +27,9 @@ const assert = require('node:assert/strict');
     window.__uiCalls = []; window.__uiState = state;
     const record = (name, payload) => window.__uiCalls.push({ name, payload });
     window.prompt = (_message, value) => value || 'javascript';
+    // Hosted-agent requests explicitly ask permission before sharing open-tab code.
+    // In this isolated UI harness, accept that one-time confirmation deterministically.
+    window.confirm = () => true;
     window.forge = {
       openFile: async () => { record('openFile'); return { filePath: '/tmp/example.js', content: 'alpha alpha\n' }; },
       openFolder: async () => { record('openFolder'); return { folder: '/tmp/project', tree: [{ name: 'main.js', path: '/tmp/project/main.js', directory: false }, { name: 'other.cpp', path: '/tmp/project/other.cpp', directory: false }, { name: 'destination', path: '/tmp/project/destination', directory: true, children: [] }] }; },
@@ -79,6 +82,16 @@ const assert = require('node:assert/strict');
   await page.waitForSelector('#statusText');
   await page.waitForTimeout(1800);
   const click = async s => { const el = page.locator(s); await el.waitFor({ state: 'visible', timeout: 5000 }); await el.click({ timeout: 5000 }); };
+  const ensureWorkbenchReady = async () => {
+    const panel = page.locator('#aiPanel');
+    if (await panel.evaluate(el => el.hidden)) await click('#settingsBtn');
+    // Restore both presentation states directly; clicking a control that is itself
+    // clipped by a collapsed panel is unreliable in headless Linux Chromium.
+    await panel.evaluate(el => { el.classList.remove('minimized', 'collapsed'); el.hidden = false; });
+    await page.locator('.quick-actions-fold').evaluate(el => { el.open = true; });
+    await page.locator('.workbench-fold').evaluateAll(els => els.forEach(el => { el.open = true; }));
+    await page.locator('.quick-actions button').first().waitFor({ state: 'visible', timeout: 5000 });
+  };
   const called = async name => assert.ok((await page.evaluate(() => window.__uiCalls)).some(c => c.name === name), 'expected call ' + name);
   const results = [];
   const check = async (name, fn) => { try { await fn(); results.push({ control: name, result: 'PASS' }); } catch (e) { results.push({ control: name, result: 'FAIL', error: String(e.message || e) }); } };
@@ -179,9 +192,9 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('#findBar').isVisible(), false);
   });
   await check('Unified API key list and floating add-key panel', async () => {
-    // The Workbench is visible by default. Only toggle it open when it is actually hidden;
-    // blindly clicking the toggle here hides every control exercised by the AI checks below.
-    if (!(await page.locator('#aiPanel').isVisible())) await click('#settingsBtn');
+    await ensureWorkbenchReady();
+    // The key list belongs to Settings; open its modal before interacting with its controls.
+    await click('#workbenchSettingsBtn');
     await click('#checkKeysBtn');
     await called('listKeys');
     await click('#openApiKeyEditor');
@@ -217,10 +230,11 @@ const assert = require('node:assert/strict');
     await called('togglePlugin');
     await click('#closePlugins'); assert.equal(await page.locator('#pluginModal').isVisible(), false);
   });
-  await check('Ask configured coworking agents', async () => { await page.locator('#promptInput').fill('Explain test'); await click('#askBtn'); await called('askKey'); await page.waitForFunction(() => document.querySelectorAll('.answer-card').length >= 3); });
-  await check('AI quick prompts', async () => { for (const label of ['Explain code', 'Find bugs', 'Fix error', 'Write tests']) { await page.locator('.quick-actions button').filter({ hasText: label }).first().click(); } await called('askKey'); });
-  await check('Generate tests', async () => { await click('.quick-actions button[data-action="generate-tests"]'); await called('generateTests'); });
+  await check('Ask configured coworking agents', async () => { await ensureWorkbenchReady(); await page.evaluate(() => window.forge.setKey({ provider: 'openai', label: 'UI test agent', key: 'sk-test-ui-only', agentCount: 2 })); await page.locator('#promptInput').fill('Explain test'); await click('#askBtn'); await called('askKey'); await page.waitForFunction(() => document.querySelectorAll('.answer-card').length >= 3); });
+  await check('AI quick prompts', async () => { await ensureWorkbenchReady(); for (const label of ['Explain code', 'Find bugs', 'Fix error', 'Write tests']) { await page.locator('.quick-actions button').filter({ hasText: label }).first().click(); } await called('askKey'); });
+  await check('Generate tests', async () => { await ensureWorkbenchReady(); await click('.quick-actions button[data-action="generate-tests"]'); await called('generateTests'); });
   await check('Diff review apply/copy/dismiss', async () => {
+    await ensureWorkbenchReady();
     await page.locator('#promptInput').fill('propose a code fix'); await click('#askBtn');
     const review = page.getByRole('button', { name: /Review & Apply/ }).first(); await review.waitFor({ timeout: 5000 }); await review.click();
     await page.locator('#diffOverlay').waitFor({ state: 'visible', timeout: 5000 });
@@ -229,7 +243,7 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('#diffOverlay').isVisible(), false);
   });
   await check('Language status picker', async () => { await click('#languageStatus'); assert.ok(await page.locator('#languageStatus').textContent()); });
-  await check('Plugin quick action', async () => { const b = page.locator('.plugin-qa'); if (await b.count()) { await b.click(); await called('askKey'); } });
+  await check('Plugin quick action', async () => { await ensureWorkbenchReady(); const b = page.locator('.plugin-qa'); if (await b.count()) { await b.click(); await called('askKey'); } });
   const inventory = await page.locator('button:visible').evaluateAll(bs => bs.map(b => ({ label: (b.innerText || b.getAttribute('aria-label') || b.title || '').trim(), id: b.id, type: b.type })));
   const summary = { totalChecks: results.length, passed: results.filter(x => x.result === 'PASS').length, failed: results.filter(x => x.result === 'FAIL').length, results, visibleButtonsAtEnd: inventory, pageErrors: errors };
   console.log(JSON.stringify(summary, null, 2));

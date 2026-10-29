@@ -2,11 +2,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'src/index.html'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'src/app.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'src/styles.css'), 'utf8');
+const main = fs.readFileSync(path.join(root, 'src/main.js'), 'utf8');
+const preload = fs.readFileSync(path.join(root, 'src/preload.js'), 'utf8');
 
 test('AI Workbench uses configured API-key agents', () => {
   assert.doesNotMatch(html, /qwen2\.5|localAgentCount/i);
@@ -14,6 +17,40 @@ test('AI Workbench uses configured API-key agents', () => {
   assert.match(html, /id="openApiKeyEditor"/);
   assert.match(app, /window\.forge\.askKey\(\{ \.\.\.request, provider: agent\.provider, keyId: agent\.keyId \}\)/);
   assert.match(app, /Add an API key in AI Workbench settings/);
+});
+
+test('AI project builder uses a separate explicit apply action and workspace-scoped IPC', () => {
+  assert.match(html, /id="buildProjectBtn"/);
+  assert.match(app, /async function buildProject\(\)/);
+  assert.match(app, /Return ONLY valid JSON/);
+  assert.ok(app.includes('window.forge.applyProjectChanges({ root: workspaceRoot, changes: projectBuildState.manifest.files })'));
+  assert.match(main, /project:apply-changes/);
+  assert.match(main, /Review AI project changes/);
+  assert.ok(main.includes('existing file(s) will be backed up before replacement'));
+  assert.match(main, /No shell commands will be run automatically/);
+  assert.match(main, /path\.relative\(root, target\)/);
+});
+
+test('agentic project builder JavaScript files parse successfully', () => {
+  for (const file of ['src/main.js', 'src/preload.js', 'src/app.js']) {
+    assert.doesNotThrow(() => execFileSync(process.execPath, ['--check', path.join(root, file)], { stdio: 'pipe' }), file + ' syntax must be valid');
+  }
+});
+
+test('project builder inspects workspace, renders original/proposed diffs, and gates tests', () => {
+  assert.ok(app.includes('window.forge.inspectProject({ root: workspaceRoot })'));
+  assert.ok(app.includes('function renderProjectManifestReview'));
+  assert.ok(app.includes("className = 'project-diff-panes'"));
+  assert.ok(app.includes('Original'));
+  assert.ok(app.includes('Proposed'));
+  assert.ok(app.includes('function offerProjectRepair'));
+  assert.ok(app.includes('Repair limit reached'));
+  assert.ok(app.includes('window.forge.runProjectTests({ root: workspaceRoot })'));
+  assert.ok(main.includes("ipcMain.handle('project:inspect'"));
+  assert.ok(main.includes("ipcMain.handle('project:run-tests'"));
+  assert.ok(main.includes('Allow this project to execute its configured test script'));
+  assert.ok(preload.includes("inspectProject: payload => ipcRenderer.invoke('project:inspect', payload)"));
+  assert.ok(preload.includes("runProjectTests: payload => ipcRenderer.invoke('project:run-tests', payload)"));
 });
 
 test('coordinator synthesis remains available for multiple successful agent responses', () => {

@@ -437,6 +437,189 @@ ipcMain.handle('file:copy-text', async (_event, value) => {
 });
 
 /* ═══════════════════════════════════════════════════════════
+   AI PROJECT BUILDER — workspace inspection and approved tests
+   ═══════════════════════════════════════════════════════════ */
+ipcMain.handle('project:inspect', async (_event, payload) => {
+  if (!payload || typeof payload.root !== 'string') throw new Error('Choose a workspace first.');
+  const { resolved: root } = await resolveApprovedDirectory(payload.root);
+  const ignoredDirs = new Set(['.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.venv', 'venv', 'vendor', 'target', 'out', '.ssh', '.aws', '.config', '.env']);
+  const secretName = /(?:^|[._-])(?:env|pem|key|p12|pfx|keystore|credentials?)(?:[._-]|$)/i;
+  const files = [];
+  let totalBytes = 0;
+  const MAX_FILES = 60, MAX_TOTAL = 300 * 1024, MAX_FILE = 32 * 1024;
+  async function walk(dir, depth) {
+    if (depth > 8 || files.length >= MAX_FILES || totalBytes >= MAX_TOTAL) return;
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (files.length >= MAX_FILES || totalBytes >= MAX_TOTAL) break;
+      if (entry.name === '.git' || entry.name.startsWith('.nidavellir-')) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isSymbolicLink()) continue;
+      if (entry.isDirectory()) {
+        if (!ignoredDirs.has(entry.name)) await walk(full, depth + 1);
+        continue;
+      }
+      if (!entry.isFile() || secretName.test(entry.name) || entry.name.toLowerCase().startsWith('.env') || ['id_rsa', 'id_ed25519'].includes(entry.name.toLowerCase())) continue;
+      const ext = path.extname(entry.name).toLowerCase();
+      const allowed = new Set(['.js','.jsx','.ts','.tsx','.mjs','.cjs','.json','.html','.css','.scss','.md','.txt','.py','.cpp','.c','.h','.hpp','.java','.go','.rs','.rb','.php','.yml','.yaml','.toml','.xml','.sql','.sh','.ps1','.vue','.svelte']);
+      if (!allowed.has(ext)) continue;
+      try {
+        const stat = await fs.lstat(full);
+        if (stat.size > MAX_FILE || stat.size === 0) continue;
+        const content = await fs.readFile(full, 'utf8');
+        if (content.includes('\0')) continue;
+        const relative = path.relative(root, full).split(path.sep).join('/');
+        files.push({ path: relative, content });
+        totalBytes += Buffer.byteLength(content, 'utf8');
+      } catch {}
+    }
+  }
+  await walk(root, 0);
+  return { root, files, truncated: files.length >= MAX_FILES || totalBytes >= MAX_TOTAL, totalBytes };
+});
+
+ipcMain.handle('project:run-tests', async (_event, payload) => {
+  if (!payload || typeof payload.root !== 'string') throw new Error('Choose a workspace first.');
+  const { resolved: root } = await resolveApprovedDirectory(payload.root);
+  const packagePath = path.join(root, 'package.json');
+  let packageJson;
+  try { packageJson = JSON.parse(await fs.readFile(packagePath, 'utf8')); }
+  catch { throw new Error('No valid package.json was found. Automatic test execution currently requires a package.json with a test script.'); }
+  if (!packageJson.scripts || typeof packageJson.scripts.test !== 'string' || !packageJson.scripts.test.trim()) {
+    throw new Error('This project does not define scripts.test in package.json.');
+  }
+  const commandLabel = process.platform === 'win32' ? 'npm.cmd test' : 'npm test';
+  const approval = await dialog.showMessageBox(win, {
+    type: 'warning', title: 'Run project tests?',
+    message: 'Allow this project to execute its configured test script?',
+    detail: 'Workspace: ' + root + '\nCommand: ' + commandLabel +
+      '\npackage.json scripts.test: ' + packageJson.scripts.test.slice(0, 500) +
+      '\n\nProject scripts can execute arbitrary code with your account permissions. Continue only if you trust this workspace.',
+    buttons: ['Run tests', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true
+  });
+  if (approval.response !== 0) return { canceled: true, code: null, stdout: '', stderr: '' };
+  return await new Promise(resolve => {
+    const child = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['test'], {
+      cwd: root, shell: process.platform === 'win32', windowsHide: true,
+      env: (() => {
+        const safeEnv = {};
+        const allow = process.platform === 'win32'
+          ? ['PATH', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'COMSPEC', 'PATHEXT']
+          : ['PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE'];
+        for (const key of allow) if (process.env[key]) safeEnv[key] = process.env[key];
+        return safeEnv;
+      })(), stdio: ['ignore', 'pipe', 'pipe']
+    });
+    let stdout = '', stderr = '', settled = false, outputBytes = 0;
+    const finish = result => { if (settled) return; settled = true; clearTimeout(timer); resolve(result); };
+    const collect = (type, chunk) => {
+      outputBytes += chunk.length;
+      const text = chunk.toString();
+      if (outputBytes <= 256 * 1024) {
+        if (type === 'stdout') stdout += text; else stderr += text;
+      }
+    };
+    child.stdout.on('data', chunk => collect('stdout', chunk));
+    child.stderr.on('data', chunk => collect('stderr', chunk));
+    child.once('error', error => finish({ canceled: false, code: 127, stdout, stderr: stderr + error.message, truncated: outputBytes > 256 * 1024 }));
+    child.once('close', code => finish({ canceled: false, code: code ?? 1, stdout, stderr, truncated: outputBytes > 256 * 1024 }));
+    const timer = setTimeout(() => { child.kill(); finish({ canceled: false, code: 124, stdout, stderr: stderr + '\nTest command timed out after 120 seconds.', timedOut: true, truncated: outputBytes > 256 * 1024 }); }, 120_000);
+    timer.unref?.();
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════
+   AI PROJECT BUILDER — bounded, user-approved workspace writes
+   ═══════════════════════════════════════════════════════════ */
+ipcMain.handle('project:apply-changes', async (_event, payload) => {
+  if (!payload || typeof payload !== 'object' || !Array.isArray(payload.changes)) throw new Error('Invalid project change set.');
+  const { resolved: root } = await resolveApprovedDirectory(payload.root);
+  if (payload.changes.length < 1 || payload.changes.length > 30) throw new Error('A project build must contain between 1 and 30 files.');
+  const prepared = [];
+  const seen = new Set();
+  let totalBytes = 0;
+  for (const change of payload.changes) {
+    if (!change || typeof change.path !== 'string' || typeof change.content !== 'string') throw new Error('Every project file needs a relative path and text content.');
+    validateTextPayload(change.content, 1024 * 1024, 'Project file');
+    const rel = change.path.replace(/\\/g, '/');
+    if (!rel || rel.length > 240 || rel.startsWith('/') || /^[A-Za-z]:/.test(rel) ||
+        rel.split('/').some(part => !part || part === '.' || part === '..' || part === '.git')) {
+      throw new Error('Unsafe project path: ' + change.path);
+    }
+    const target = path.resolve(root, ...rel.split('/'));
+    const relative = path.relative(root, target);
+    if (!relative || relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) throw new Error('Project path escapes the opened workspace.');
+    const key = process.platform === 'win32' ? target.toLowerCase() : target;
+    if (seen.has(key)) throw new Error('Duplicate project path: ' + rel);
+    seen.add(key);
+    totalBytes += Buffer.byteLength(change.content, 'utf8');
+    if (totalBytes > 5 * 1024 * 1024) throw new Error('Project changes exceed the 5 MB total limit.');
+    prepared.push({ relative: rel, target, content: change.content });
+  }
+  const existing = [];
+  for (const item of prepared) {
+    const segments = item.relative.split('/');
+    let cursor = root;
+    let parentMissing = false;
+    for (const segment of segments.slice(0, -1)) {
+      cursor = path.join(cursor, segment);
+      try {
+        const stat = await fs.lstat(cursor);
+        if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('Unsafe project directory: ' + segment);
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+        parentMissing = true;
+        break;
+      }
+    }
+    // Missing parent directories are created only after the user approves the complete file plan.
+    item.parentMissing = parentMissing;
+    try {
+      const stat = await fs.lstat(item.target);
+      if (stat.isSymbolicLink() || !stat.isFile()) throw new Error('Refusing to overwrite a symbolic link or non-file: ' + item.relative);
+      existing.push(item.relative);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+  const preview = prepared.slice(0, 12).map(item => (existing.includes(item.relative) ? 'UPDATE  ' : 'CREATE  ') + item.relative).join('\n');
+  const result = await dialog.showMessageBox(win, {
+    type: 'warning', title: 'Review AI project changes',
+    message: 'Apply ' + prepared.length + ' AI-generated file changes?',
+    detail: preview + (prepared.length > 12 ? '\n…and ' + (prepared.length - 12) + ' more file(s).' : '') +
+      (existing.length ? '\n\n' + existing.length + ' existing file(s) will be backed up before replacement.' : '') +
+      '\n\nOnly the listed files will be changed. No shell commands will be run automatically.',
+    buttons: ['Apply changes', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true
+  });
+  if (result.response !== 0) return { canceled: true, applied: 0 };
+  const backupRoot = path.join(app.getPath('userData'), 'project-backups', Date.now() + '-' + randomUUID());
+  let applied = 0;
+  try {
+    for (const item of prepared) {
+      await fs.mkdir(path.dirname(item.target), { recursive: true });
+      try {
+        const stat = await fs.lstat(item.target);
+        if (stat.isSymbolicLink() || !stat.isFile()) throw new Error('Destination changed after approval: ' + item.relative);
+        await fs.mkdir(backupRoot, { recursive: true });
+        const backupPath = path.join(backupRoot, ...item.relative.split('/'));
+        await fs.mkdir(path.dirname(backupPath), { recursive: true });
+        await fs.copyFile(item.target, backupPath, fsConstants.COPYFILE_EXCL);
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
+      const tempPath = item.target + '.nidavellir-' + randomUUID() + '.tmp';
+      await fs.writeFile(tempPath, item.content, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      try { await fs.rename(tempPath, item.target); }
+      catch (error) { await fs.unlink(tempPath).catch(() => {}); throw error; }
+      applied++;
+    }
+  } catch (error) {
+    throw new Error('Project build stopped after ' + applied + ' file(s). Existing files were backed up in the application data folder. Cause: ' + error.message);
+  }
+  return { canceled: false, applied, files: prepared.map(item => item.relative), backupRoot: existing.length ? backupRoot : null };
+});
+
+/* ═══════════════════════════════════════════════════════════
    RUNNER IPC
    ═══════════════════════════════════════════════════════════ */
 
