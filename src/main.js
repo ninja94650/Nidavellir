@@ -437,6 +437,93 @@ ipcMain.handle('file:copy-text', async (_event, value) => {
 });
 
 /* ═══════════════════════════════════════════════════════════
+   AI PROJECT BUILDER — bounded, user-approved workspace writes
+   ═══════════════════════════════════════════════════════════ */
+ipcMain.handle('project:apply-changes', async (_event, payload) => {
+  if (!payload || typeof payload !== 'object' || !Array.isArray(payload.changes)) throw new Error('Invalid project change set.');
+  const { resolved: root } = await resolveApprovedDirectory(payload.root);
+  if (payload.changes.length < 1 || payload.changes.length > 30) throw new Error('A project build must contain between 1 and 30 files.');
+  const prepared = [];
+  const seen = new Set();
+  let totalBytes = 0;
+  for (const change of payload.changes) {
+    if (!change || typeof change.path !== 'string' || typeof change.content !== 'string') throw new Error('Every project file needs a relative path and text content.');
+    validateTextPayload(change.content, 1024 * 1024, 'Project file');
+    const rel = change.path.replace(/\\/g, '/');
+    if (!rel || rel.length > 240 || rel.startsWith('/') || /^[A-Za-z]:/.test(rel) ||
+        rel.split('/').some(part => !part || part === '.' || part === '..' || part.startsWith('.git'))) {
+      throw new Error('Unsafe project path: ' + change.path);
+    }
+    const target = path.resolve(root, ...rel.split('/'));
+    const relative = path.relative(root, target);
+    if (!relative || relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) throw new Error('Project path escapes the opened workspace.');
+    const key = process.platform === 'win32' ? target.toLowerCase() : target;
+    if (seen.has(key)) throw new Error('Duplicate project path: ' + rel);
+    seen.add(key);
+    totalBytes += Buffer.byteLength(change.content, 'utf8');
+    if (totalBytes > 5 * 1024 * 1024) throw new Error('Project changes exceed the 5 MB total limit.');
+    prepared.push({ relative: rel, target, content: change.content });
+  }
+  const existing = [];
+  for (const item of prepared) {
+    const segments = item.relative.split('/');
+    let cursor = root;
+    for (const segment of segments.slice(0, -1)) {
+      cursor = path.join(cursor, segment);
+      try {
+        const stat = await fs.lstat(cursor);
+        if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('Unsafe project directory: ' + segment);
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+        await fs.mkdir(cursor);
+      }
+    }
+    try {
+      const stat = await fs.lstat(item.target);
+      if (stat.isSymbolicLink() || !stat.isFile()) throw new Error('Refusing to overwrite a symbolic link or non-file: ' + item.relative);
+      existing.push(item.relative);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+  const preview = prepared.slice(0, 12).map(item => (existing.includes(item.relative) ? 'UPDATE  ' : 'CREATE  ') + item.relative).join('\n');
+  const result = await dialog.showMessageBox(win, {
+    type: 'warning', title: 'Review AI project changes',
+    message: 'Apply ' + prepared.length + ' AI-generated file changes?',
+    detail: preview + (prepared.length > 12 ? '\n…and ' + (prepared.length - 12) + ' more file(s).' : '') +
+      (existing.length ? '\n\n' + existing.length + ' existing file(s) will be backed up before replacement.' : '') +
+      '\n\nOnly the listed files will be changed. No shell commands will be run automatically.',
+    buttons: ['Apply changes', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true
+  });
+  if (result.response !== 0) return { canceled: true, applied: 0 };
+  const backupRoot = path.join(app.getPath('userData'), 'project-backups', Date.now() + '-' + randomUUID());
+  let applied = 0;
+  try {
+    for (const item of prepared) {
+      await fs.mkdir(path.dirname(item.target), { recursive: true });
+      try {
+        const stat = await fs.lstat(item.target);
+        if (stat.isSymbolicLink() || !stat.isFile()) throw new Error('Destination changed after approval: ' + item.relative);
+        await fs.mkdir(backupRoot, { recursive: true });
+        const backupPath = path.join(backupRoot, ...item.relative.split('/'));
+        await fs.mkdir(path.dirname(backupPath), { recursive: true });
+        await fs.copyFile(item.target, backupPath, fsConstants.COPYFILE_EXCL);
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
+      const tempPath = item.target + '.nidavellir-' + randomUUID() + '.tmp';
+      await fs.writeFile(tempPath, item.content, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      try { await fs.rename(tempPath, item.target); }
+      catch (error) { await fs.unlink(tempPath).catch(() => {}); throw error; }
+      applied++;
+    }
+  } catch (error) {
+    throw new Error('Project build stopped after ' + applied + ' file(s). Existing files were backed up in the application data folder. Cause: ' + error.message);
+  }
+  return { canceled: false, applied, files: prepared.map(item => item.relative), backupRoot: existing.length ? backupRoot : null };
+});
+
+/* ═══════════════════════════════════════════════════════════
    RUNNER IPC
    ═══════════════════════════════════════════════════════════ */
 
