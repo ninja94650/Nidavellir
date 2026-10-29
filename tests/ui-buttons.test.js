@@ -81,11 +81,13 @@ const assert = require('node:assert/strict');
   const click = async s => { const el = page.locator(s); await el.waitFor({ state: 'visible', timeout: 5000 }); await el.click({ timeout: 5000 }); };
   const ensureWorkbenchReady = async () => {
     const panel = page.locator('#aiPanel');
-    if (!(await panel.isVisible())) await click('#settingsBtn');
-    let classes = (await panel.getAttribute('class')) || '';
-    if (classes.includes('minimized')) await click('#workbenchMinimizeBtn');
-    classes = (await panel.getAttribute('class')) || '';
-    if (classes.includes('collapsed')) await click('#workbenchCollapseBtn');
+    if (await panel.evaluate(el => el.hidden)) await click('#settingsBtn');
+    // Restore both presentation states directly; clicking a control that is itself
+    // clipped by a collapsed panel is unreliable in headless Linux Chromium.
+    await panel.evaluate(el => { el.classList.remove('minimized', 'collapsed'); el.hidden = false; });
+    await page.locator('.quick-actions-fold').evaluate(el => { el.open = true; });
+    await page.locator('.workbench-fold').evaluateAll(els => els.forEach(el => { el.open = true; }));
+    await page.locator('.quick-actions button').first().waitFor({ state: 'visible', timeout: 5000 });
   };
   const called = async name => assert.ok((await page.evaluate(() => window.__uiCalls)).some(c => c.name === name), 'expected call ' + name);
   const results = [];
