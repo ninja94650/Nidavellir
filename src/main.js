@@ -467,7 +467,7 @@ ipcMain.handle('project:inspect', async (_event, payload) => {
         const stat = await fs.lstat(full);
         if (stat.size > MAX_FILE || stat.size === 0) continue;
         const content = await fs.readFile(full, 'utf8');
-        if (content.includes('\\0')) continue;
+        if (content.includes('\0')) continue;
         const relative = path.relative(root, full).split(path.sep).join('/');
         files.push({ path: relative, content });
         totalBytes += Buffer.byteLength(content, 'utf8');
