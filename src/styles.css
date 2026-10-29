@@ -526,6 +526,17 @@ button.primary:hover {
 .composer textarea:focus {
   border-color: #8273e7;
 }
+.project-diff-list { display: grid; gap: 8px; margin-top: 10px; }
+.project-diff-file { border: 1px solid var(--border); border-radius: 7px; overflow: hidden; background: #10141e; }
+.project-diff-file > summary { padding: 8px 10px; cursor: pointer; color: #d8def0; font-size: 11px; font-weight: 650; }
+.project-diff-panes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--border); }
+.project-diff-panes section { min-width: 0; }
+.project-diff-panes section + section { border-left: 1px solid var(--border); }
+.project-diff-panes strong { display: block; padding: 6px 8px; font-size: 10px; color: #aab5cb; background: #1a2030; }
+.project-diff-panes pre { overflow: auto; max-height: 320px; margin: 0; padding: 8px; white-space: pre; font: 10px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; color: #d8def0; }
+.project-build-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.project-build-actions button { max-width: 100%; }
+@media (max-width: 700px) { .project-diff-panes { grid-template-columns: minmax(0, 1fr); } .project-diff-panes section + section { border-left: 0; border-top: 1px solid var(--border); } }
 .composer-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .composer-actions button { padding: 7px 9px; font-size: 10px; }
 #buildProjectBtn { box-shadow: 0 0 14px #6e5be833; }
