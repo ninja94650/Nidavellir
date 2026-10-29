@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld('forge', {
   synthesize:    payload => ipcRenderer.invoke('ai:synthesize', payload),
   generateTests: payload => ipcRenderer.invoke('ai:generate-tests', payload),
   applyProjectChanges: payload => ipcRenderer.invoke('project:apply-changes', payload),
+  inspectProject: payload => ipcRenderer.invoke('project:inspect', payload),
+  runProjectTests: payload => ipcRenderer.invoke('project:run-tests', payload),
 
   // ── plugins ──
   initPlugins:        ()      => ipcRenderer.invoke('plugins:init'),
