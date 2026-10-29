@@ -895,6 +895,7 @@ async function buildProject() {
           card.querySelector('.answer-body').textContent += '\n\nApplied ' + result.applied + ' file(s). Refresh the Explorer to see the generated files.';
           setStatus('Project build applied · ' + result.applied + ' files');
           const refreshed = await window.forge.refreshFolder(workspaceRoot);
+          $('fileTree').replaceChildren();
           renderTree(refreshed.tree, $('fileTree'));
         }
         card.querySelector('.answer-state').textContent = result.canceled ? 'CANCELED' : 'APPLIED';
