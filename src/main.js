@@ -442,7 +442,7 @@ ipcMain.handle('file:copy-text', async (_event, value) => {
 ipcMain.handle('project:inspect', async (_event, payload) => {
   if (!payload || typeof payload.root !== 'string') throw new Error('Choose a workspace first.');
   const { resolved: root } = await resolveApprovedDirectory(payload.root);
-  const ignoredDirs = new Set(['.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.venv', 'venv', 'vendor', 'target', 'out']);
+  const ignoredDirs = new Set(['.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.venv', 'venv', 'vendor', 'target', 'out', '.ssh', '.aws', '.config', '.env']);
   const secretName = /(?:^|[._-])(?:env|pem|key|p12|pfx|keystore|credentials?)(?:[._-]|$)/i;
   const files = [];
   let totalBytes = 0;
@@ -456,7 +456,7 @@ ipcMain.handle('project:inspect', async (_event, payload) => {
       const full = path.join(dir, entry.name);
       if (entry.isSymbolicLink()) continue;
       if (entry.isDirectory()) {
-        if (!ignoredDirs.has(entry.name) && !entry.name.startsWith('.')) await walk(full, depth + 1);
+        if (!ignoredDirs.has(entry.name)) await walk(full, depth + 1);
         continue;
       }
       if (!entry.isFile() || secretName.test(entry.name) || entry.name.toLowerCase().startsWith('.env') || ['id_rsa', 'id_ed25519'].includes(entry.name.toLowerCase())) continue;
