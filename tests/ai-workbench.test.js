@@ -22,7 +22,7 @@ test('AI project builder uses a separate explicit apply action and workspace-sco
   assert.match(html, /id="buildProjectBtn"/);
   assert.match(app, /async function buildProject\(\)/);
   assert.match(app, /Return ONLY valid JSON/);
-  assert.match(app, /window\.forge\.applyProjectChanges\(\{ root: workspaceRoot, changes: manifest\.files \}\)/);
+  assert.ok(app.includes('window.forge.applyProjectChanges({ root: workspaceRoot, changes: projectBuildState.manifest.files })'));
   assert.match(main, /project:apply-changes/);
   assert.match(main, /Review AI project changes/);
   assert.ok(main.includes('existing file(s) will be backed up before replacement'));
