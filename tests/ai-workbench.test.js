@@ -7,6 +7,7 @@ const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'src/index.html'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'src/app.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'src/styles.css'), 'utf8');
+const main = fs.readFileSync(path.join(root, 'src/main.js'), 'utf8');
 
 test('AI Workbench uses configured API-key agents', () => {
   assert.doesNotMatch(html, /qwen2\.5|localAgentCount/i);
@@ -14,6 +15,14 @@ test('AI Workbench uses configured API-key agents', () => {
   assert.match(html, /id="openApiKeyEditor"/);
   assert.match(app, /window\.forge\.askKey\(\{ \.\.\.request, provider: agent\.provider, keyId: agent\.keyId \}\)/);
   assert.match(app, /Add an API key in AI Workbench settings/);
+});
+
+test('AI project builder uses a separate explicit apply action and workspace-scoped IPC', () => {
+  assert.match(html, /id="buildProjectBtn"/);
+  assert.match(app, /async function buildProject\(\)/);
+  assert.match(app, /Return ONLY valid JSON/);
+  assert.match(app, /window\.forge\.applyProjectChanges\(\{ root: workspaceRoot, changes: manifest\.files \}\)/);
+  assert.match(main, /project:apply-changes/);
 });
 
 test('coordinator synthesis remains available for multiple successful agent responses', () => {
