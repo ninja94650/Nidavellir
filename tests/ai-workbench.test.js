@@ -24,7 +24,7 @@ test('AI project builder uses a separate explicit apply action and workspace-sco
   assert.match(app, /window\.forge\.applyProjectChanges\(\{ root: workspaceRoot, changes: manifest\.files \}\)/);
   assert.match(main, /project:apply-changes/);
   assert.match(main, /Review AI project changes/);
-  assert.match(main, /existing file\\(s\\) will be backed up before replacement/);
+  assert.ok(main.includes('existing file(s) will be backed up before replacement'));
   assert.match(main, /No shell commands will be run automatically/);
   assert.match(main, /path\.relative\(root, target\)/);
 });
