@@ -459,7 +459,7 @@ ipcMain.handle('project:inspect', async (_event, payload) => {
         if (!ignoredDirs.has(entry.name) && !entry.name.startsWith('.')) await walk(full, depth + 1);
         continue;
       }
-      if (!entry.isFile() || secretName.test(entry.name) || /(^|\\/)(\.env($|\.)|id_rsa|id_ed25519)/i.test(full)) continue;
+      if (!entry.isFile() || secretName.test(entry.name) || entry.name.toLowerCase().startsWith('.env') || ['id_rsa', 'id_ed25519'].includes(entry.name.toLowerCase())) continue;
       const ext = path.extname(entry.name).toLowerCase();
       const allowed = new Set(['.js','.jsx','.ts','.tsx','.mjs','.cjs','.json','.html','.css','.scss','.md','.txt','.py','.cpp','.c','.h','.hpp','.java','.go','.rs','.rb','.php','.yml','.yaml','.toml','.xml','.sql','.sh','.ps1','.vue','.svelte']);
       if (!allowed.has(ext)) continue;
