@@ -31,19 +31,19 @@ test('AI project builder uses a separate explicit apply action and workspace-sco
 });
 
 test('project builder inspects workspace, renders original/proposed diffs, and gates tests', () => {
-  assert.match(app, /window\\.forge\\.inspectProject\\(\\{ root: workspaceRoot \\}\\)/);
-  assert.match(app, /function renderProjectManifestReview/);
-  assert.match(app, /className = 'project-diff-panes'/);
-  assert.match(app, /Original/);
-  assert.match(app, /Proposed/);
-  assert.match(app, /function offerProjectRepair/);
-  assert.match(app, /Repair limit reached/);
-  assert.match(app, /window\\.forge\\.runProjectTests\\(\\{ root: workspaceRoot \\}\\)/);
-  assert.match(main, /project:inspect/);
-  assert.match(main, /project:run-tests/);
-  assert.match(main, /Allow this project to execute its configured test script/);
-  assert.match(preload, /inspectProject: payload => ipcRenderer\\.invoke\\('project:inspect', payload\\)/);
-  assert.match(preload, /runProjectTests: payload => ipcRenderer\\.invoke\\('project:run-tests', payload\\)/);
+  assert.ok(app.includes('window.forge.inspectProject({ root: workspaceRoot })'));
+  assert.ok(app.includes('function renderProjectManifestReview'));
+  assert.ok(app.includes("className = 'project-diff-panes'"));
+  assert.ok(app.includes('Original'));
+  assert.ok(app.includes('Proposed'));
+  assert.ok(app.includes('function offerProjectRepair'));
+  assert.ok(app.includes('Repair limit reached'));
+  assert.ok(app.includes('window.forge.runProjectTests({ root: workspaceRoot })'));
+  assert.ok(main.includes("ipcMain.handle('project:inspect'"));
+  assert.ok(main.includes("ipcMain.handle('project:run-tests'"));
+  assert.ok(main.includes('Allow this project to execute its configured test script'));
+  assert.ok(preload.includes("inspectProject: payload => ipcRenderer.invoke('project:inspect', payload)"));
+  assert.ok(preload.includes("runProjectTests: payload => ipcRenderer.invoke('project:run-tests', payload)"));
 });
 
 test('coordinator synthesis remains available for multiple successful agent responses', () => {
