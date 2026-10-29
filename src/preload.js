@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('forge', {
   keyStatus:     ()      => ipcRenderer.invoke('ai:key-status'),
   synthesize:    payload => ipcRenderer.invoke('ai:synthesize', payload),
   generateTests: payload => ipcRenderer.invoke('ai:generate-tests', payload),
+  applyProjectChanges: payload => ipcRenderer.invoke('project:apply-changes', payload),
 
   // ── plugins ──
   initPlugins:        ()      => ipcRenderer.invoke('plugins:init'),
