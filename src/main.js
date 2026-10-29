@@ -451,7 +451,7 @@ ipcMain.handle('project:apply-changes', async (_event, payload) => {
     validateTextPayload(change.content, 1024 * 1024, 'Project file');
     const rel = change.path.replace(/\\/g, '/');
     if (!rel || rel.length > 240 || rel.startsWith('/') || /^[A-Za-z]:/.test(rel) ||
-        rel.split('/').some(part => !part || part === '.' || part === '..' || part.startsWith('.git'))) {
+        rel.split('/').some(part => !part || part === '.' || part === '..' || part === '.git')) {
       throw new Error('Unsafe project path: ' + change.path);
     }
     const target = path.resolve(root, ...rel.split('/'));
@@ -468,6 +468,7 @@ ipcMain.handle('project:apply-changes', async (_event, payload) => {
   for (const item of prepared) {
     const segments = item.relative.split('/');
     let cursor = root;
+    let parentMissing = false;
     for (const segment of segments.slice(0, -1)) {
       cursor = path.join(cursor, segment);
       try {
@@ -475,9 +476,12 @@ ipcMain.handle('project:apply-changes', async (_event, payload) => {
         if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('Unsafe project directory: ' + segment);
       } catch (error) {
         if (error.code !== 'ENOENT') throw error;
-        await fs.mkdir(cursor);
+        parentMissing = true;
+        break;
       }
     }
+    // Missing parent directories are created only after the user approves the complete file plan.
+    item.parentMissing = parentMissing;
     try {
       const stat = await fs.lstat(item.target);
       if (stat.isSymbolicLink() || !stat.isFile()) throw new Error('Refusing to overwrite a symbolic link or non-file: ' + item.relative);
