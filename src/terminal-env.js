@@ -11,7 +11,7 @@ function buildTerminalEnvironment(source = process.env) {
   const env = {};
   for (const [name, value] of Object.entries(source || {})) {
     if (SENSITIVE_ENV_NAME.test(name) || SENSITIVE_ENV_EXACT.has(name.toUpperCase())) continue;
-    if (typeof value !== 'string' || name.includes('=') || name.includes('\\0')) continue;
+    if (typeof value !== 'string' || name.includes('=') || name.includes(String.fromCharCode(0)) || value.includes(String.fromCharCode(0))) continue;
     env[name] = value;
   }
   return env;
