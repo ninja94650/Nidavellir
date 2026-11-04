@@ -12,6 +12,7 @@ const pluginSystem = require('./plugins');
 const { autoUpdater } = require('electron-updater');
 const { createUpdater } = require('./updater');
 const { prepareUserPluginsDir } = require('./user-plugins');
+const { buildTerminalEnvironment } = require('./terminal-env');
 
 /* ─── globals ─── */
 let win;
@@ -677,7 +678,7 @@ ipcMain.handle('terminal:start', async (_event, payload = {}) => {
   const args = process.platform === 'win32' ? ['/Q'] : ['--noprofile', '--norc', '-i'];
   terminalOutputBytes = 0;
   const child = spawn(command, args, {
-    cwd, env: process.env, shell: false, windowsHide: true,
+    cwd, env: buildTerminalEnvironment(), shell: false, windowsHide: true,
     stdio: ['pipe', 'pipe', 'pipe']
   });
   terminalProcess = child;
@@ -691,7 +692,7 @@ ipcMain.handle('terminal:start', async (_event, payload = {}) => {
     sendTerminalOutput('muted', `\\n[Shell exited with code ${code ?? 1}]\\n`);
     if (terminalProcess === child) terminalProcess = null;
   });
-  sendTerminalOutput('info', `\\n[Shell started: ${command} — ${cwd}]\\n[Commands execute with your operating-system user permissions.]\\n`);
+  sendTerminalOutput('info', `\\n[Shell started: ${command} — ${cwd}]\\n[Commands execute with your operating-system user permissions.]\\n[Common credential-named environment variables are filtered; this is not a sandbox.]\\n`);
   return { running: true, cwd };
 });
 ipcMain.handle('terminal:write', (_event, input) => {
