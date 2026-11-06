@@ -173,7 +173,7 @@ test('failed plugin activation removes registered hooks and runs partial deactiv
   await fs.mkdir(emptyDir);
   try {
     await plugins.initPluginSystem(dir);
-    assert.equal(plugins.setPluginEnabled('broken-plugin', true), false);
+    assert.equal(await plugins.setPluginEnabled('broken-plugin', true), false);
     assert.equal(plugins.getPlugins()[0].enabled, false);
     assert.equal(await fs.readFile(deactivated, 'utf8'), 'cleaned');
 
@@ -183,6 +183,39 @@ test('failed plugin activation removes registered hooks and runs partial deactiv
     // Reinitialization must not leave an orphaned EventEmitter listener behind.
     await plugins.initPluginSystem(emptyDir);
     plugins.notifyPlugins('beforeRun', {});
+    await assert.rejects(() => fs.access(marker), { code: 'ENOENT' });
+  } finally {
+    await plugins.initPluginSystem(emptyDir);
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+
+test('rejected asynchronous plugin activation is caught and cleaned', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'nidavellir-plugin-async-failure-'));
+  const pluginDir = path.join(dir, 'async-plugin');
+  const marker = path.join(dir, 'async-hook-ran.txt');
+  await fs.mkdir(pluginDir);
+  await fs.writeFile(path.join(pluginDir, 'plugin.json'), JSON.stringify({
+    name: 'async-plugin', version: '1.0.0', main: 'index.js', enabled: true
+  }));
+  await fs.writeFile(path.join(pluginDir, 'index.js'), [
+    'exports.activate = async api => {',
+    `  api.onFileOpen(() => require("node:fs").writeFileSync(${JSON.stringify(marker)}, "ran")); `,
+    '  await Promise.resolve();',
+    '  throw new Error("intentional async activation failure");',
+    '};'
+  ].join('\n'));
+  const emptyDir = path.join(dir, 'empty');
+  await fs.mkdir(emptyDir);
+  try {
+    await plugins.initPluginSystem(dir);
+    assert.equal(await plugins.setPluginEnabled('async-plugin', true), false);
+    assert.equal(plugins.getPlugins()[0].enabled, false);
+    plugins.notifyPlugins('fileOpen', {});
+    await assert.rejects(() => fs.access(marker), { code: 'ENOENT' });
+    await plugins.initPluginSystem(emptyDir);
+    plugins.notifyPlugins('fileOpen', {});
     await assert.rejects(() => fs.access(marker), { code: 'ENOENT' });
   } finally {
     await plugins.initPluginSystem(emptyDir);
