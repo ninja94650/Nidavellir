@@ -128,10 +128,10 @@ jobs:
     needs: [verify, build-windows, build-linux]
     runs-on: ubuntu-latest
     steps:
-      - name: Check out source for release publication
+      - name: Check out source without persisting credentials
         uses: actions/checkout@v5
         with:
-          persist-credentials: true
+          persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
@@ -160,20 +160,18 @@ jobs:
           test -s "release-assets/Nidavellir-$version.AppImage"
           test -s release-assets/latest.yml
           test -s release-assets/latest-linux.yml
-      - name: Create the release tag with the write-scoped token
+      - name: Create the release tag with a step-scoped write token
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           tag="${{ needs.verify.outputs.tag }}"
-          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
-            echo "Tag $tag appeared while this release was building; refusing to overwrite it."
-            exit 1
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag "$tag"
-          git push origin "$tag"
+          # Creating an existing ref fails; never force-update a release tag.
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f "ref=refs/tags/$tag" \
+            -f "sha=$GITHUB_SHA"
       - name: Create one GitHub Release with all installers and update manifests
         run: gh release create "${{ needs.verify.outputs.tag }}" release-assets/* --verify-tag --title "Nidavellir ${{ needs.verify.outputs.version }}" --notes-file CHANGELOG.md
         env:
