@@ -74,16 +74,22 @@ function activatePlugin(name) {
     plugin.enabled = true;
     return true;
   } catch (err) {
+    // activate() may have registered hooks or UI contributions before throwing.
+    // Remove every app-managed contribution before reporting the plugin disabled.
+    deactivatePlugin(name);
     console.error(`Plugin "${name}" activation failed:`, err.message);
-    plugin.enabled = false;
     return false;
   }
 }
 
 function deactivatePlugin(name) {
   const plugin = plugins.get(name);
-  if (!plugin || !plugin.module) return;
-  try { if (typeof plugin.module.deactivate === 'function') plugin.module.deactivate(); } catch {}
+  if (!plugin) return;
+  // Cleanup must also run for partially initialized plugins whose activate()
+  // threw before enabled could be set to true.
+  try {
+    if (plugin.module && typeof plugin.module.deactivate === 'function') plugin.module.deactivate();
+  } catch {}
   // tear down hooks
   for (const { event, listener } of plugin.hookEntries) hooks.removeListener(event, listener);
   plugin.hookEntries = [];
@@ -99,8 +105,8 @@ function deactivatePlugin(name) {
 /* ───── public API ───── */
 
 async function initPluginSystem(pluginsDir) {
-  // deactivate everything first
-  for (const [name, p] of plugins) { if (p.enabled) deactivatePlugin(name); }
+  // deactivate everything first, including partially initialized plugins
+  for (const name of plugins.keys()) deactivatePlugin(name);
   plugins.clear(); statusItems.clear(); quickActions.length = 0;
 
   let entries;
@@ -145,7 +151,7 @@ function setPluginEnabled(name, enabled) {
   const plugin = plugins.get(name);
   if (!plugin) return false;
   if (enabled && !plugin.enabled) return activatePlugin(name);
-  if (!enabled && plugin.enabled) { deactivatePlugin(name); return true; }
+  if (!enabled && (plugin.enabled || plugin.module || plugin.hookEntries.length)) { deactivatePlugin(name); return true; }
   return true;
 }
 
