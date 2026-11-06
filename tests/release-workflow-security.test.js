@@ -27,16 +27,34 @@ test('verification and platform build jobs do not receive write permissions', ()
   }
 });
 
-test('the publication job alone receives write permission and creates the tag', () => {
+test('no checkout persists a credential, including in the publication job', () => {
+  assert.equal((workflow.match(/persist-credentials: false/g) || []).length, 4);
+  assert.doesNotMatch(workflow, /persist-credentials:\s*true/);
+});
+
+test('the publication job alone receives write permission', () => {
   const publish = jobBlock('publish-release');
   assert.match(publish, /permissions:\n      contents: write/);
-  assert.ok(publish.includes('git push origin "$tag"'));
-  assert.match(publish, /Create the release tag with the write-scoped token/);
   assert.doesNotMatch(publish, /npm (install|test)/);
 });
 
-test('the verification job never pushes a release tag while running tests', () => {
+test('write token is exposed only to tag creation and release publication steps', () => {
+  const publish = jobBlock('publish-release');
+  assert.equal((publish.match(/GH_TOKEN:\s*\$\{\{\s*secrets\.GITHUB_TOKEN\s*\}\}/g) || []).length, 2);
+  const beforeTag = publish.split('- name: Create the release tag with a step-scoped write token')[0];
+  assert.doesNotMatch(beforeTag, /GH_TOKEN:/);
+  const tagStep = publish.split('- name: Create the release tag with a step-scoped write token')[1].split('- name: Create one GitHub Release')[0];
+  assert.match(tagStep, /GH_TOKEN:\s*\$\{\{\s*secrets\.GITHUB_TOKEN\s*\}\}/);
+  assert.match(tagStep, /gh api --method POST[\s\S]*git\/refs/);
+  assert.match(tagStep, /-f "sha=\$GITHUB_SHA"/);
+  assert.doesNotMatch(tagStep, /git push origin/);
+  const releaseStep = publish.split('- name: Create one GitHub Release')[1];
+  assert.match(releaseStep, /GH_TOKEN:\s*\$\{\{\s*secrets\.GITHUB_TOKEN\s*\}\}/);
+});
+
+test('verification never pushes a release tag while running tests', () => {
   const verify = jobBlock('verify');
   assert.match(verify, /npm install[\s\S]*npm test/);
   assert.doesNotMatch(verify, /git push origin/);
+  assert.doesNotMatch(verify, /GH_TOKEN:/);
 });
