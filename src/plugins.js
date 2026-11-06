@@ -63,14 +63,14 @@ function createPluginAPI(pluginName) {
 
 /* ───── activate / deactivate ───── */
 
-function activatePlugin(name) {
+async function activatePlugin(name) {
   const plugin = plugins.get(name);
   if (!plugin) return false;
   try {
     delete require.cache[require.resolve(plugin.mainPath)];
     const mod = require(plugin.mainPath);
     plugin.module = mod;
-    if (typeof mod.activate === 'function') mod.activate(createPluginAPI(name));
+    if (typeof mod.activate === 'function') await mod.activate(createPluginAPI(name));
     plugin.enabled = true;
     return true;
   } catch (err) {
@@ -147,7 +147,7 @@ function getPlugins() {
   }));
 }
 
-function setPluginEnabled(name, enabled) {
+async function setPluginEnabled(name, enabled) {
   const plugin = plugins.get(name);
   if (!plugin) return false;
   if (enabled && !plugin.enabled) return activatePlugin(name);
