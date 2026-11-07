@@ -243,7 +243,7 @@ test('plugin enable and disable requests are serialized during asynchronous acti
     '  await new Promise(resolve => setTimeout(resolve, 40));',
     '};',
     `exports.deactivate = async () => fs.appendFileSync(${JSON.stringify(lifecycle)}, "deactivate\\n");`
-  ].join('\\n'));
+  ].join('\n'));
 
   try {
     await plugins.initPluginSystem(dir);
@@ -254,7 +254,7 @@ test('plugin enable and disable requests are serialized during asynchronous acti
 
     assert.deepEqual(await Promise.all([firstEnable, secondEnable, disable]), [true, true, true]);
     assert.equal(plugins.getPlugins()[0].enabled, false);
-    assert.deepEqual((await fs.readFile(lifecycle, 'utf8')).trim().split('\\n'), ['activate', 'deactivate']);
+    assert.deepEqual((await fs.readFile(lifecycle, 'utf8')).trim().split('\n'), ['activate', 'deactivate']);
 
     plugins.notifyPlugins('beforeRun', {});
     await assert.rejects(() => fs.access(hookMarker), { code: 'ENOENT' });
