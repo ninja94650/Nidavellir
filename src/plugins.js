@@ -13,6 +13,7 @@ const hooks = new EventEmitter();
 const statusItems = new Map();    // fullId → { id, text, tooltip, pluginName }
 const quickActions = [];          // [{ label, prompt, pluginName }]
 let winRef = null;
+let pluginSystemInitializing = false;
 
 /* ───── helpers ───── */
 
@@ -28,8 +29,9 @@ function createPluginAPI(pluginName) {
   const plugin = plugins.get(pluginName);
 
   function registerHook(event, listener) {
+    if (!plugin || !plugin.acceptingContributions || typeof listener !== 'function') return;
     hooks.on(event, listener);
-    if (plugin) plugin.hookEntries.push({ event, listener });
+    plugin.hookEntries.push({ event, listener });
   }
 
   return {
@@ -40,17 +42,20 @@ function createPluginAPI(pluginName) {
     onFileOpen:   cb => registerHook('fileOpen', cb),
 
     // UI contributions
-    addStatusItem: ({ id, text, tooltip }) => {
+    addStatusItem: ({ id, text, tooltip } = {}) => {
+      if (!plugin || !plugin.acceptingContributions) return;
       const fullId = `${pluginName}:${id}`;
       statusItems.set(fullId, { id: fullId, text, tooltip: tooltip || '', pluginName });
       sendToRenderer('plugins:status-update', { id: fullId, text, tooltip: tooltip || '' });
     },
     updateStatusItem: (id, text) => {
+      if (!plugin || !plugin.acceptingContributions) return;
       const fullId = `${pluginName}:${id}`;
       const item = statusItems.get(fullId);
       if (item) { item.text = text; sendToRenderer('plugins:status-update', { id: fullId, text }); }
     },
-    addQuickAction: ({ label, prompt }) => {
+    addQuickAction: ({ label, prompt } = {}) => {
+      if (!plugin || !plugin.acceptingContributions) return;
       quickActions.push({ label, prompt, pluginName });
     },
 
@@ -63,6 +68,35 @@ function createPluginAPI(pluginName) {
 
 /* ───── activate / deactivate ───── */
 
+function enqueuePluginOperation(plugin, operation) {
+  const previous = plugin.operation || Promise.resolve();
+  const next = previous.catch(() => {}).then(operation);
+  plugin.operation = next;
+  return next.finally(() => {
+    if (plugin.operation === next) plugin.operation = null;
+  });
+}
+
+async function deactivatePluginRecord(plugin) {
+  if (!plugin) return;
+  const mod = plugin.module;
+  plugin.enabled = false;
+  plugin.acceptingContributions = false;
+  // Remove app-managed callbacks and UI immediately, before awaiting plugin cleanup.
+  for (const { event, listener } of plugin.hookEntries) hooks.removeListener(event, listener);
+  plugin.hookEntries = [];
+  for (const [id, item] of statusItems) {
+    if (item.pluginName === plugin.manifest.name) statusItems.delete(id);
+  }
+  for (let i = quickActions.length - 1; i >= 0; i--) {
+    if (quickActions[i].pluginName === plugin.manifest.name) quickActions.splice(i, 1);
+  }
+  plugin.module = null;
+  try {
+    if (mod && typeof mod.deactivate === 'function') await mod.deactivate();
+  } catch {}
+}
+
 async function activatePlugin(name) {
   const plugin = plugins.get(name);
   if (!plugin) return false;
@@ -70,72 +104,62 @@ async function activatePlugin(name) {
     delete require.cache[require.resolve(plugin.mainPath)];
     const mod = require(plugin.mainPath);
     plugin.module = mod;
+    plugin.acceptingContributions = true;
     if (typeof mod.activate === 'function') await mod.activate(createPluginAPI(name));
     plugin.enabled = true;
     return true;
   } catch (err) {
     // activate() may have registered hooks or UI contributions before throwing.
     // Remove every app-managed contribution before reporting the plugin disabled.
-    deactivatePlugin(name);
+    await deactivatePluginRecord(plugin);
     console.error(`Plugin "${name}" activation failed:`, err.message);
     return false;
   }
 }
 
-function deactivatePlugin(name) {
-  const plugin = plugins.get(name);
-  if (!plugin) return;
-  // Cleanup must also run for partially initialized plugins whose activate()
-  // threw before enabled could be set to true.
-  try {
-    if (plugin.module && typeof plugin.module.deactivate === 'function') plugin.module.deactivate();
-  } catch {}
-  // tear down hooks
-  for (const { event, listener } of plugin.hookEntries) hooks.removeListener(event, listener);
-  plugin.hookEntries = [];
-  // remove UI contributions
-  for (const [id, item] of statusItems) { if (item.pluginName === name) statusItems.delete(id); }
-  for (let i = quickActions.length - 1; i >= 0; i--) {
-    if (quickActions[i].pluginName === name) quickActions.splice(i, 1);
-  }
-  plugin.module = null;
-  plugin.enabled = false;
-}
-
 /* ───── public API ───── */
 
 async function initPluginSystem(pluginsDir) {
-  // deactivate everything first, including partially initialized plugins
-  for (const name of plugins.keys()) deactivatePlugin(name);
-  plugins.clear(); statusItems.clear(); quickActions.length = 0;
+  pluginSystemInitializing = true;
+  try {
+    // Queue teardown behind any in-flight activation before clearing plugin records.
+    const existing = Array.from(plugins.values());
+    await Promise.all(existing.map(plugin =>
+      enqueuePluginOperation(plugin, () => deactivatePluginRecord(plugin))
+    ));
+    plugins.clear(); statusItems.clear(); quickActions.length = 0;
 
-  let entries;
-  try { entries = await fs.readdir(pluginsDir, { withFileTypes: true }); } catch { return; }
+    let entries;
+    try { entries = await fs.readdir(pluginsDir, { withFileTypes: true }); } catch { return; }
 
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const pluginDir = path.join(pluginsDir, entry.name);
-    const manifestPath = path.join(pluginDir, 'plugin.json');
-    try {
-      const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
-      if (!manifest.name || !manifest.main) continue;
-      if (typeof manifest.main !== 'string' || path.isAbsolute(manifest.main)) continue;
-      const realPluginDir = await fs.realpath(pluginDir);
-      const mainPath = path.resolve(pluginDir, manifest.main);
-      const realMainPath = await fs.realpath(mainPath);
-      const relMain = path.relative(realPluginDir, realMainPath);
-      if (!relMain || relMain.startsWith('..') || path.isAbsolute(relMain)) continue;
-      await fs.access(realMainPath);
-      // Third-party plugin code runs with the app's OS permissions. Never auto-run it.
-      plugins.set(manifest.name, {
-        manifest, mainPath: realMainPath, dirPath: realPluginDir,
-        module: null, enabled: false, hookEntries: []
-      });
-    } catch { /* skip invalid plugins */ }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const pluginDir = path.join(pluginsDir, entry.name);
+      const manifestPath = path.join(pluginDir, 'plugin.json');
+      try {
+        const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+        if (!manifest.name || !manifest.main) continue;
+        if (typeof manifest.main !== 'string' || path.isAbsolute(manifest.main)) continue;
+        const realPluginDir = await fs.realpath(pluginDir);
+        const mainPath = path.resolve(pluginDir, manifest.main);
+        const realMainPath = await fs.realpath(mainPath);
+        const relMain = path.relative(realPluginDir, realMainPath);
+        if (!relMain || relMain.startsWith('..') || path.isAbsolute(relMain)) continue;
+        await fs.access(realMainPath);
+        // Third-party plugin code runs with the app's OS permissions. Never auto-run it.
+        plugins.set(manifest.name, {
+          manifest, mainPath: realMainPath, dirPath: realPluginDir,
+          module: null, enabled: false, acceptingContributions: false,
+          hookEntries: [], operation: null
+        });
+      } catch { /* skip invalid plugins */ }
+    }
+
+    // Plugins remain disabled until the user explicitly enables them in the UI.
+    // Enabling is a trust decision; this is not a process sandbox.
+  } finally {
+    pluginSystemInitializing = false;
   }
-
-  // Plugins remain disabled until the user explicitly enables them in the UI.
-  // Enabling is a trust decision; this is not a process sandbox.
 }
 
 function getPlugins() {
@@ -149,10 +173,17 @@ function getPlugins() {
 
 async function setPluginEnabled(name, enabled) {
   const plugin = plugins.get(name);
-  if (!plugin) return false;
-  if (enabled && !plugin.enabled) return activatePlugin(name);
-  if (!enabled && (plugin.enabled || plugin.module || plugin.hookEntries.length)) { deactivatePlugin(name); return true; }
-  return true;
+  if (!plugin || pluginSystemInitializing) return false;
+  return enqueuePluginOperation(plugin, async () => {
+    if (enabled) {
+      if (plugin.enabled) return true;
+      return activatePlugin(name);
+    }
+    if (plugin.enabled || plugin.module || plugin.hookEntries.length) {
+      await deactivatePluginRecord(plugin);
+    }
+    return true;
+  });
 }
 
 function notifyPlugins(event, data) { hooks.emit(event, data); }
