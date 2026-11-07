@@ -9,6 +9,7 @@ on:
       - v0.4-installable
       - fix/startup-and-update-resilience
       - feature/agentic-project-builder
+      - security/plugin-activation-failure-cleanup
     paths:
       - 'src/**'
       - 'plugins/**'

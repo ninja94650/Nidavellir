@@ -148,3 +148,118 @@ test('plugins are discovered disabled and do not execute automatically', async (
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+
+test('failed plugin activation removes registered hooks and runs partial deactivation', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'nidavellir-plugin-failure-'));
+  const pluginDir = path.join(dir, 'broken-plugin');
+  const marker = path.join(dir, 'hook-ran.txt');
+  const deactivated = path.join(dir, 'deactivated.txt');
+  await fs.mkdir(pluginDir);
+  await fs.writeFile(path.join(pluginDir, 'plugin.json'), JSON.stringify({
+    name: 'broken-plugin', version: '1.0.0', main: 'index.js', enabled: true
+  }));
+  await fs.writeFile(path.join(pluginDir, 'index.js'), [
+    'const fs = require("node:fs");',
+    'exports.activate = api => {',
+    `  api.onBeforeRun(() => fs.writeFileSync(${JSON.stringify(marker)}, "ran")); `,
+    '  api.addStatusItem({ id: "partial", text: "Partial" });',
+    '  api.addQuickAction({ label: "Partial", prompt: "partial" });',
+    '  throw new Error("intentional activation failure");',
+    '};',
+    `exports.deactivate = () => fs.writeFileSync(${JSON.stringify(deactivated)}, "cleaned");`
+  ].join('\n'));
+  const emptyDir = path.join(dir, 'empty');
+  await fs.mkdir(emptyDir);
+  try {
+    await plugins.initPluginSystem(dir);
+    assert.equal(await plugins.setPluginEnabled('broken-plugin', true), false);
+    assert.equal(plugins.getPlugins()[0].enabled, false);
+    assert.equal(await fs.readFile(deactivated, 'utf8'), 'cleaned');
+
+    plugins.notifyPlugins('beforeRun', {});
+    await assert.rejects(() => fs.access(marker), { code: 'ENOENT' });
+
+    // Reinitialization must not leave an orphaned EventEmitter listener behind.
+    await plugins.initPluginSystem(emptyDir);
+    plugins.notifyPlugins('beforeRun', {});
+    await assert.rejects(() => fs.access(marker), { code: 'ENOENT' });
+  } finally {
+    await plugins.initPluginSystem(emptyDir);
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+
+test('rejected asynchronous plugin activation is caught and cleaned', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'nidavellir-plugin-async-failure-'));
+  const pluginDir = path.join(dir, 'async-plugin');
+  const marker = path.join(dir, 'async-hook-ran.txt');
+  await fs.mkdir(pluginDir);
+  await fs.writeFile(path.join(pluginDir, 'plugin.json'), JSON.stringify({
+    name: 'async-plugin', version: '1.0.0', main: 'index.js', enabled: true
+  }));
+  await fs.writeFile(path.join(pluginDir, 'index.js'), [
+    'exports.activate = async api => {',
+    `  api.onFileOpen(() => require("node:fs").writeFileSync(${JSON.stringify(marker)}, "ran")); `,
+    '  await Promise.resolve();',
+    '  throw new Error("intentional async activation failure");',
+    '};'
+  ].join('\n'));
+  const emptyDir = path.join(dir, 'empty');
+  await fs.mkdir(emptyDir);
+  try {
+    await plugins.initPluginSystem(dir);
+    assert.equal(await plugins.setPluginEnabled('async-plugin', true), false);
+    assert.equal(plugins.getPlugins()[0].enabled, false);
+    plugins.notifyPlugins('fileOpen', {});
+    await assert.rejects(() => fs.access(marker), { code: 'ENOENT' });
+    await plugins.initPluginSystem(emptyDir);
+    plugins.notifyPlugins('fileOpen', {});
+    await assert.rejects(() => fs.access(marker), { code: 'ENOENT' });
+  } finally {
+    await plugins.initPluginSystem(emptyDir);
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+
+test('plugin enable and disable requests are serialized during asynchronous activation', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'nidavellir-plugin-activation-race-'));
+  const pluginDir = path.join(dir, 'serialized-plugin');
+  const lifecycle = path.join(dir, 'lifecycle.txt');
+  const hookMarker = path.join(dir, 'hook-ran.txt');
+  const emptyDir = path.join(dir, 'empty');
+  await fs.mkdir(pluginDir);
+  await fs.mkdir(emptyDir);
+  await fs.writeFile(path.join(pluginDir, 'plugin.json'), JSON.stringify({
+    name: 'serialized-plugin', version: '1.0.0', main: 'index.js'
+  }));
+  await fs.writeFile(path.join(pluginDir, 'index.js'), [
+    'const fs = require("node:fs");',
+    'exports.activate = async api => {',
+    `  fs.appendFileSync(${JSON.stringify(lifecycle)}, "activate\\n");`,
+    `  api.onBeforeRun(() => fs.appendFileSync(${JSON.stringify(hookMarker)}, "ran\\n"));`,
+    '  await new Promise(resolve => setTimeout(resolve, 40));',
+    '};',
+    `exports.deactivate = async () => fs.appendFileSync(${JSON.stringify(lifecycle)}, "deactivate\\n");`
+  ].join('\n'));
+
+  try {
+    await plugins.initPluginSystem(dir);
+    const firstEnable = plugins.setPluginEnabled('serialized-plugin', true);
+    await new Promise(resolve => setTimeout(resolve, 5));
+    const secondEnable = plugins.setPluginEnabled('serialized-plugin', true);
+    const disable = plugins.setPluginEnabled('serialized-plugin', false);
+
+    assert.deepEqual(await Promise.all([firstEnable, secondEnable, disable]), [true, true, true]);
+    assert.equal(plugins.getPlugins()[0].enabled, false);
+    assert.deepEqual((await fs.readFile(lifecycle, 'utf8')).trim().split('\n'), ['activate', 'deactivate']);
+
+    plugins.notifyPlugins('beforeRun', {});
+    await assert.rejects(() => fs.access(hookMarker), { code: 'ENOENT' });
+  } finally {
+    await plugins.initPluginSystem(emptyDir);
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
