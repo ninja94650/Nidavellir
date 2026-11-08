@@ -1,19 +1,38 @@
-// Filter common credential-bearing environment variables before starting
-// the integrated terminal. This is defense in depth, not an OS sandbox.
-const SENSITIVE_ENV_NAME = /(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE[_-]?KEY|ACCESS[_-]?KEY|CLIENT[_-]?SECRET|AUTH(?:ORIZATION)?|COOKIE|SIGNING[_-]?KEY)/i;
-const SENSITIVE_ENV_EXACT = new Set([
-  'SSH_AUTH_SOCK', 'GPG_AGENT_INFO', 'DOCKER_CONFIG', 'KUBECONFIG',
-  'AWS_SHARED_CREDENTIALS_FILE', 'AWS_CONFIG_FILE', 'NPM_CONFIG_USERCONFIG',
-  'NETRC', 'GIT_ASKPASS', 'SSH_ASKPASS', 'GIT_SSH_COMMAND'
+// Pass only a small, explicit set of development/runtime variables to the
+// integrated terminal. A denylist cannot reliably identify custom secret names.
+// This is defense in depth, not an OS sandbox: the shell still runs as the user.
+const WINDOWS_ALLOWED = new Set([
+  'PATH', 'SYSTEMROOT', 'WINDIR', 'SYSTEMDRIVE', 'TEMP', 'TMP',
+  'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'COMSPEC', 'PATHEXT',
+  'PROGRAMFILES', 'PROGRAMFILES(X86)', 'PROGRAMW6432',
+  'COMMONPROGRAMFILES', 'COMMONPROGRAMFILES(X86)', 'COMMONPROGRAMW6432',
+  'JAVA_HOME', 'ANDROID_HOME', 'ANDROID_SDK_ROOT', 'GRADLE_HOME',
+  'MAVEN_HOME', 'GOPATH', 'GOROOT', 'CARGO_HOME', 'RUSTUP_HOME',
+  'PYTHONHOME', 'VIRTUAL_ENV', 'NVM_HOME', 'NVM_SYMLINK', 'NODE_HOME',
+  'TERM', 'COLORTERM'
 ]);
 
-function buildTerminalEnvironment(source = process.env) {
+const POSIX_ALLOWED = new Set([
+  'PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE',
+  'TERM', 'COLORTERM', 'JAVA_HOME', 'ANDROID_HOME', 'ANDROID_SDK_ROOT',
+  'GRADLE_HOME', 'MAVEN_HOME', 'GOPATH', 'GOROOT', 'CARGO_HOME',
+  'RUSTUP_HOME', 'PYTHONHOME', 'VIRTUAL_ENV', 'NVM_DIR', 'NODE_HOME'
+]);
+
+const NUL = String.fromCharCode(0);
+
+function buildTerminalEnvironment(source = process.env, platform = process.platform) {
+  const windows = platform === 'win32';
+  const allowed = windows ? WINDOWS_ALLOWED : POSIX_ALLOWED;
   const env = {};
+
   for (const [name, value] of Object.entries(source || {})) {
-    if (SENSITIVE_ENV_NAME.test(name) || SENSITIVE_ENV_EXACT.has(name.toUpperCase())) continue;
-    if (typeof value !== 'string' || name.includes('=') || name.includes(String.fromCharCode(0)) || value.includes(String.fromCharCode(0))) continue;
+    const normalizedName = windows ? name.toUpperCase() : name;
+    if (!allowed.has(normalizedName)) continue;
+    if (typeof value !== 'string' || name.includes('=') || name.includes(NUL) || value.includes(NUL)) continue;
     env[name] = value;
   }
+
   return env;
 }
 
