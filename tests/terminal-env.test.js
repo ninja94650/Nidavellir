@@ -59,11 +59,12 @@ test('Windows terminal environment allowlist is case-insensitive', () => {
 });
 
 test('terminal environment rejects invalid names and values', () => {
+  const nul = String.fromCharCode(0);
   const input = {
     PATH: '/bin',
     'PATH=INJECTED': '/attacker',
-    BAD: 'value' + String.fromCharCode(0) + 'tail',
-    ['BAD' + String.fromCharCode(0) + 'NAME']: 'value'
+    BAD: 'value' + nul + 'tail',
+    ['BAD' + nul + 'NAME']: 'value'
   };
 
   assert.deepEqual(buildTerminalEnvironment(input, 'linux'), { PATH: '/bin' });
@@ -78,7 +79,7 @@ test('terminal environment filtering does not mutate the parent environment', ()
 
 test('integrated terminal uses the filtered environment helper', () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/main.js'), 'utf8');
-  assert.match(source, /require\\(['"]\\.\\/terminal-env['"]\\)/);
-  assert.match(source, /env:\\s*buildTerminalEnvironment\\(\\)/);
-  assert.doesNotMatch(source, /cwd,\\s*env:\\s*process\\.env,\\s*shell:\\s*false/);
+  assert.ok(source.includes("require('./terminal-env')"));
+  assert.ok(source.includes('env: buildTerminalEnvironment()'));
+  assert.ok(!source.includes('env: process.env'));
 });
