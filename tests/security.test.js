@@ -202,12 +202,13 @@ test('runner Stop terminates descendants even if the root process exits first', 
 
 test('integrated terminal and project test runner await process-tree cleanup', async () => {
   const source = await fs.readFile(path.join(__dirname, '../src/main.js'), 'utf8');
-  assert.match(source, /const \\{ createSafeRunner, terminateProcessTree \\} = require\\(['"]\\.\\/safe-runner['"]\\)/);
-  assert.equal((source.match(/detached: process\\.platform !== 'win32'/g) || []).length, 2,
+  assert.ok(source.includes("const { createSafeRunner, terminateProcessTree } = require('./safe-runner');"));
+  assert.equal((source.match(/detached: process\.platform !== 'win32'/g) || []).length, 2,
     'terminal and project test runner must each create a POSIX process group');
-  assert.match(source, /terminalTermination = terminateProcessTree\\(child\\)/);
-  assert.match(source, /function stopProjectTestProcess\\(\\)[\\s\\S]*?terminateProcessTree\\(child\\)/);
-  assert.match(source, /terminationPromise = stopProjectTestProcess\\(\\)/);
-  assert.match(source, /app\\.on\\(['"]before-quit['"][\\s\\S]*?stopIntegratedTerminal\\(\\)[\\s\\S]*?stopProjectTestProcess\\(\\)/);
-  assert.match(source, /ipcMain\\.handle\\(['"]terminal:stop['"], async/);
+  assert.ok(source.includes('terminalTermination = terminateProcessTree(child)'));
+  assert.ok(source.includes('operation = terminateProcessTree(child)'));
+  assert.ok(source.includes('terminationPromise = stopProjectTestProcess()'));
+  assert.ok(source.includes("app.on('before-quit'"));
+  assert.ok(source.includes('Promise.all([stopIntegratedTerminal(), stopProjectTestProcess()])'));
+  assert.ok(source.includes("ipcMain.handle('terminal:stop', async"));
 });
