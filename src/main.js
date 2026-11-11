@@ -6,7 +6,7 @@ const os = require('node:os');
 const { spawn } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 
-const { createSafeRunner } = require('./safe-runner');
+const { createSafeRunner, terminateProcessTree } = require('./safe-runner');
 const { synthesizeResponses } = require('./coordinator');
 const pluginSystem = require('./plugins');
 const { autoUpdater } = require('electron-updater');
@@ -74,6 +74,9 @@ function sendRunnerState(running) {
 /* ─── safe runner instance ─── */
 const runner = createSafeRunner(sendOutput);
 let terminalProcess = null;
+let terminalTermination = null;
+let projectTestProcess = null;
+let projectTestTermination = null;
 let terminalOutputBytes = 0;
 function sendTerminalOutput(type, text) {
   if (!win || win.isDestroyed()) return;
@@ -81,18 +84,49 @@ function sendTerminalOutput(type, text) {
   terminalOutputBytes += Buffer.byteLength(value, 'utf8');
   if (terminalOutputBytes > 2 * 1024 * 1024) {
     win.webContents.send('terminal:output', { type: 'stderr', text: '\\n[Terminal output limit reached; shell stopped.]' });
-    stopIntegratedTerminal();
+    void stopIntegratedTerminal();
     return;
   }
   win.webContents.send('terminal:output', { type, text: value });
 }
 function stopIntegratedTerminal() {
-  if (!terminalProcess) return false;
+  if (!terminalProcess) return Promise.resolve(false);
   const child = terminalProcess;
-  terminalProcess = null;
-  try { child.kill('SIGTERM'); } catch {}
-  return true;
+  if (!terminalTermination) {
+    terminalTermination = terminateProcessTree(child).catch(error => {
+      console.error('Failed to terminate integrated terminal process tree:', error.message);
+      try { child.kill('SIGKILL'); } catch {}
+    }).finally(() => {
+      if (terminalProcess === child) terminalProcess = null;
+      terminalTermination = null;
+    });
+  }
+  return terminalTermination.then(() => true);
 }
+
+function stopProjectTestProcess() {
+  if (!projectTestProcess) return Promise.resolve(false);
+  const child = projectTestProcess;
+  if (!projectTestTermination) {
+    let operation;
+    operation = terminateProcessTree(child).catch(error => {
+      console.error('Failed to terminate project test process tree:', error.message);
+      try { child.kill('SIGKILL'); } catch {}
+    }).finally(() => {
+      if (projectTestProcess === child) projectTestProcess = null;
+      if (projectTestTermination === operation) projectTestTermination = null;
+    });
+    projectTestTermination = operation;
+  }
+  return projectTestTermination.then(() => true);
+}
+
+app.on('before-quit', event => {
+  if (!terminalProcess && !projectTestProcess) return;
+  event.preventDefault();
+  Promise.all([stopIntegratedTerminal(), stopProjectTestProcess()])
+    .finally(() => app.quit());
+});
 
 /* ─── window ─── */
 function sendEditorCommand(command) {
@@ -498,9 +532,11 @@ ipcMain.handle('project:run-tests', async (_event, payload) => {
     buttons: ['Run tests', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true
   });
   if (approval.response !== 0) return { canceled: true, code: null, stdout: '', stderr: '' };
+  if (projectTestProcess) throw new Error('A project test command is already running or stopping.');
   return await new Promise(resolve => {
     const child = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['test'], {
       cwd: root, shell: process.platform === 'win32', windowsHide: true,
+      detached: process.platform !== 'win32',
       env: (() => {
         const safeEnv = {};
         const allow = process.platform === 'win32'
@@ -510,8 +546,23 @@ ipcMain.handle('project:run-tests', async (_event, payload) => {
         return safeEnv;
       })(), stdio: ['ignore', 'pipe', 'pipe']
     });
-    let stdout = '', stderr = '', settled = false, outputBytes = 0;
-    const finish = result => { if (settled) return; settled = true; clearTimeout(timer); resolve(result); };
+    projectTestProcess = child;
+    let stdout = '', stderr = '', settled = false, finishing = false, outputBytes = 0;
+    let terminationPromise = null, timer = null;
+    const finish = result => {
+      if (settled || finishing) return;
+      finishing = true;
+      const pendingTermination = terminationPromise ||
+        (projectTestProcess === child ? projectTestTermination : null);
+      Promise.resolve(pendingTermination).catch(() => {}).then(() => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        if (projectTestProcess === child) projectTestProcess = null;
+        if (projectTestTermination === pendingTermination) projectTestTermination = null;
+        resolve(result);
+      });
+    };
     const collect = (type, chunk) => {
       outputBytes += chunk.length;
       const text = chunk.toString();
@@ -523,7 +574,10 @@ ipcMain.handle('project:run-tests', async (_event, payload) => {
     child.stderr.on('data', chunk => collect('stderr', chunk));
     child.once('error', error => finish({ canceled: false, code: 127, stdout, stderr: stderr + error.message, truncated: outputBytes > 256 * 1024 }));
     child.once('close', code => finish({ canceled: false, code: code ?? 1, stdout, stderr, truncated: outputBytes > 256 * 1024 }));
-    const timer = setTimeout(() => { child.kill(); finish({ canceled: false, code: 124, stdout, stderr: stderr + '\nTest command timed out after 120 seconds.', timedOut: true, truncated: outputBytes > 256 * 1024 }); }, 120_000);
+    timer = setTimeout(() => {
+      terminationPromise = stopProjectTestProcess();
+      finish({ canceled: false, code: 124, stdout, stderr: stderr + '\\nTest command timed out after 120 seconds.', timedOut: true, truncated: outputBytes > 256 * 1024 });
+    }, 120_000);
     timer.unref?.();
   });
 });
@@ -665,7 +719,7 @@ ipcMain.handle('runner:history', () => runner.getHistory());
 
 /* Integrated terminal: explicit user-launched shell, scoped to an approved project folder. */
 ipcMain.handle('terminal:start', async (_event, payload = {}) => {
-  if (terminalProcess && !terminalProcess.killed) throw new Error('The integrated shell is already running.');
+  if (terminalProcess) throw new Error('The integrated shell is already running or stopping.');
   let cwd = payload.cwd;
   if (cwd == null || cwd === '') cwd = [...approvedRoots].at(-1);
   if (typeof cwd !== 'string' || cwd.length > 4096) throw new Error('Open a project folder or file before starting the terminal.');
@@ -678,6 +732,7 @@ ipcMain.handle('terminal:start', async (_event, payload = {}) => {
   terminalOutputBytes = 0;
   const child = spawn(command, args, {
     cwd, env: process.env, shell: false, windowsHide: true,
+    detached: process.platform !== 'win32',
     stdio: ['pipe', 'pipe', 'pipe']
   });
   terminalProcess = child;
@@ -685,11 +740,11 @@ ipcMain.handle('terminal:start', async (_event, payload = {}) => {
   child.stderr.on('data', chunk => sendTerminalOutput('stderr', chunk.toString()));
   child.on('error', error => {
     sendTerminalOutput('stderr', error.message);
-    if (terminalProcess === child) terminalProcess = null;
+    if (terminalProcess === child && !terminalTermination) terminalProcess = null;
   });
   child.on('close', code => {
     sendTerminalOutput('muted', `\\n[Shell exited with code ${code ?? 1}]\\n`);
-    if (terminalProcess === child) terminalProcess = null;
+    if (terminalProcess === child && !terminalTermination) terminalProcess = null;
   });
   sendTerminalOutput('info', `\\n[Shell started: ${command} — ${cwd}]\\n[Commands execute with your operating-system user permissions.]\\n`);
   return { running: true, cwd };
@@ -700,7 +755,7 @@ ipcMain.handle('terminal:write', (_event, input) => {
   terminalProcess.stdin.write(input);
   return { running: true };
 });
-ipcMain.handle('terminal:stop', () => ({ stopped: stopIntegratedTerminal() }));
+ipcMain.handle('terminal:stop', async () => ({ stopped: await stopIntegratedTerminal() }));
 
 /* ═══════════════════════════════════════════════════════════
    AI — KEY STORAGE
