@@ -260,4 +260,4 @@ function createSafeRunner(sendOutputFn) {
   return { run, kill, writeInput, getHistory: () => [...history], isRunning: () => running };
 }
 
-module.exports = { createSafeRunner, MAX_SOURCE_BYTES, MAX_OUTPUT_BYTES, LANGUAGES };
+module.exports = { createSafeRunner, MAX_SOURCE_BYTES, MAX_OUTPUT_BYTES, LANGUAGES, terminateProcessTree };
